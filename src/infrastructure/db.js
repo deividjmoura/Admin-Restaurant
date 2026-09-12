@@ -19,9 +19,6 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle PostgreSQL client', err);
 });
 
-/**
- * Helper para queries com logging básico em dev.
- */
 export async function query(text, params) {
   const start = Date.now();
   const res = await pool.query(text, params);
