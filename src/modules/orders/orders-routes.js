@@ -7,6 +7,7 @@ import {
   transitionOrderStatus,
   cancelOrderAsCustomer,
 } from './orders.repository.js';
+import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
 const createOrderSchema = z.object({
@@ -68,6 +69,23 @@ function mapOrderError(err) {
   }
 }
 
+function emitOrder(storeId, type, order, extra = {}) {
+  publishStoreOrderEvent(storeId, {
+    type,
+    order: {
+      id: order.id,
+      status: order.status,
+      channel: order.channel,
+      tableSessionId: order.table_session_id ?? order.tableSessionId ?? null,
+      notes: order.notes,
+      createdAt: order.created_at ?? order.createdAt,
+      updatedAt: order.updated_at ?? order.updatedAt,
+      cancelledAt: order.cancelled_at ?? order.cancelledAt ?? null,
+    },
+    ...extra,
+  });
+}
+
 async function ordersRoutes(app) {
   app.post(
     '/api/orders',
@@ -101,6 +119,16 @@ async function ordersRoutes(app) {
             addonIds: i.addonIds,
           })),
         });
+
+        if (!result.replayed) {
+          emitOrder(request.storeId, 'order.created', result.order, {
+            items: result.items.map((it) => ({
+              id: it.id,
+              productName: it.product_name,
+              quantity: it.quantity,
+            })),
+          });
+        }
 
         const statusCode = result.replayed ? 200 : 201;
         return reply.code(statusCode).send({
@@ -169,7 +197,6 @@ async function ordersRoutes(app) {
     }
   );
 
-  /** Customer cancel — time window + status rules on the server. */
   app.post(
     '/api/orders/:id/cancel',
     { preHandler: [app.requireTenant] },
@@ -181,6 +208,7 @@ async function ordersRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+        emitOrder(request.storeId, 'order.cancelled', order);
         return {
           order: {
             id: order.id,
@@ -199,7 +227,6 @@ async function ordersRoutes(app) {
     }
   );
 
-  /** Status transition — staff only (includes cancel without customer window). */
   app.patch(
     '/api/orders/:id/status',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -222,6 +249,8 @@ async function ordersRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+
+        emitOrder(request.storeId, 'order.status_changed', order);
 
         return {
           order: {
