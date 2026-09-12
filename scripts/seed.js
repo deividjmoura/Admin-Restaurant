@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Seed: stores + SUPER_ADMIN + OWNER on demo store.
+ * Seed: stores + users + demo menu for the "demo" store.
  */
 import 'dotenv/config';
-import { pool } from '../src/infrastructure/db.js';
+import { pool, query } from '../src/infrastructure/db.js';
 import * as storeRepo from '../src/modules/tenancy/store.repository.js';
 import {
   findUserByEmail,
@@ -12,6 +12,7 @@ import {
   listStoreMemberships,
 } from '../src/modules/auth/user.repository.js';
 import { hashPassword } from '../src/modules/auth/password.js';
+import { createCategory, createProduct, listCategories } from '../src/modules/menu/menu.repository.js';
 
 async function ensureStore(slug, name) {
   const existing = await storeRepo.findBySlug(slug);
@@ -29,6 +30,64 @@ async function ensureStore(slug, name) {
   });
   console.log('  ✓ Store created:', store.slug, store.id);
   return store;
+}
+
+async function ensureDemoMenu(storeId) {
+  const existing = await listCategories(storeId);
+  if (existing.length > 0) {
+    console.log('  Demo menu already seeded');
+    return;
+  }
+
+  const lanches = await createCategory(storeId, { name: 'Lanches', sortOrder: 1 });
+  const bebidas = await createCategory(storeId, { name: 'Bebidas', sortOrder: 2 });
+  const extras = await createCategory(storeId, { name: 'Acompanhamentos', sortOrder: 3 });
+
+  const burger = await createProduct(storeId, {
+    categoryId: lanches.id,
+    name: 'X-Burger',
+    description: 'Pão, hambúrguer, queijo e salada',
+    price: 22.9,
+    sortOrder: 1,
+  });
+
+  await createProduct(storeId, {
+    categoryId: lanches.id,
+    name: 'X-Bacon',
+    description: 'Pão, hambúrguer, queijo, bacon e salada',
+    price: 26.9,
+    sortOrder: 2,
+  });
+
+  await createProduct(storeId, {
+    categoryId: bebidas.id,
+    name: 'Refrigerante Lata',
+    description: '350ml',
+    price: 6.0,
+    sortOrder: 1,
+  });
+
+  await createProduct(storeId, {
+    categoryId: extras.id,
+    name: 'Batata Frita',
+    description: 'Porção média',
+    price: 14.0,
+    sortOrder: 1,
+  });
+
+  // Sample addon on burger
+  await query(
+    `INSERT INTO product_addons (store_id, product_id, name, price, sort_order)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [storeId, burger.id, 'Ovo', 3.0, 1]
+  );
+  await query(
+    `INSERT INTO product_addons (store_id, product_id, name, price, sort_order)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [storeId, burger.id, 'Bacon extra', 4.5, 2]
+  );
+
+  console.log('  ✓ Demo menu seeded (categories, products, addons)');
 }
 
 async function main() {
@@ -77,9 +136,12 @@ async function main() {
     console.log('  OWNER already linked to demo');
   }
 
+  await ensureDemoMenu(demo.id);
+
   console.log('\nSeed credentials (change in production):');
   console.log(`  SUPER_ADMIN  ${superEmail} / ${password}`);
   console.log(`  OWNER(demo)  ${ownerEmail} / ${password}`);
+  console.log('  Menu: GET /api/menu with X-Tenant-Slug: demo (dev)');
   console.log('Seed done.');
 }
 
