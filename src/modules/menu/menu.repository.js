@@ -1,4 +1,5 @@
 import { query } from '../../infrastructure/db.js';
+import { invalidateMenuCache } from './menu-cache.js';
 
 /** All queries are scoped by store_id. */
 
@@ -92,6 +93,7 @@ export async function createCategory(storeId, { name, sortOrder = 0 }) {
      RETURNING id, store_id, name, sort_order, is_active, created_at, updated_at`,
     [storeId, name, sortOrder]
   );
+  invalidateMenuCache(storeId);
   return rows[0];
 }
 
@@ -103,7 +105,6 @@ export async function createProduct(storeId, {
   imageUrl = null,
   sortOrder = 0,
 }) {
-  // Ensure category belongs to the same store
   const { rows: cats } = await query(
     `SELECT id FROM categories WHERE id = $1 AND store_id = $2`,
     [categoryId, storeId]
@@ -122,5 +123,6 @@ export async function createProduct(storeId, {
                is_available, is_active, sort_order, created_at, updated_at`,
     [storeId, categoryId, name, description, price, imageUrl, sortOrder]
   );
+  invalidateMenuCache(storeId);
   return rows[0];
 }
