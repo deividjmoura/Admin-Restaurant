@@ -5,6 +5,7 @@ import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
+import authPlugin from './modules/auth/auth-plugin.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProd = process.env.NODE_ENV === 'production';
@@ -34,6 +35,7 @@ await app.register(rateLimit, {
 });
 
 await app.register(tenantPlugin);
+await app.register(authPlugin);
 
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 app.get('/ready', async () => ({ status: 'ready' }));
@@ -44,6 +46,9 @@ app.get('/', async (request) => ({
   message: 'SaaS multi-tenant para lanchonetes — em construção',
   tenant: request.store
     ? { id: request.store.id, slug: request.store.slug, name: request.store.name }
+    : null,
+  user: request.user
+    ? { id: request.user.id, email: request.user.email, isSuperAdmin: request.user.isSuperAdmin }
     : null,
 }));
 
