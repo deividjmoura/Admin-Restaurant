@@ -5,6 +5,7 @@ import {
   findOrderById,
   listOrderItems,
   transitionOrderStatus,
+  cancelOrderAsCustomer,
 } from './orders.repository.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
@@ -45,7 +46,22 @@ function mapOrderError(err) {
         `Transição inválida: ${err.from} → ${err.to}.`,
         409
       );
-    case '23505': // unique violation (idempotency race)
+    case 'CANCEL_NOT_ALLOWED':
+      if (err.reason === 'window') {
+        return new AppError(
+          'CANCEL_WINDOW_EXPIRED',
+          'Prazo de cancelamento pelo cliente esgotado.',
+          409,
+          { windowSeconds: err.windowSeconds }
+        );
+      }
+      return new AppError(
+        'CANCEL_NOT_ALLOWED',
+        'Cancelamento não permitido neste status. Fale com a loja.',
+        409,
+        { status: err.status }
+      );
+    case '23505':
       return new AppError('CONFLICT', 'Conflito de idempotência. Tente novamente.', 409);
     default:
       return null;
@@ -53,7 +69,6 @@ function mapOrderError(err) {
 }
 
 async function ordersRoutes(app) {
-  /** Create order (public for table channel when tenant is known). */
   app.post(
     '/api/orders',
     { preHandler: [app.requireTenant] },
@@ -67,7 +82,6 @@ async function ordersRoutes(app) {
         return reply.code(statusCode).send(body);
       }
 
-      // Prefer header for idempotency (also accept body)
       const headerKey = request.headers['idempotency-key'];
       const idempotencyKey =
         (typeof headerKey === 'string' && headerKey.trim()) ||
@@ -120,7 +134,6 @@ async function ordersRoutes(app) {
     }
   );
 
-  /** Get order by id (tenant-scoped). */
   app.get(
     '/api/orders/:id',
     { preHandler: [app.requireTenant] },
@@ -156,7 +169,37 @@ async function ordersRoutes(app) {
     }
   );
 
-  /** Status transition — staff only. */
+  /** Customer cancel — time window + status rules on the server. */
+  app.post(
+    '/api/orders/:id/cancel',
+    { preHandler: [app.requireTenant] },
+    async (request, reply) => {
+      try {
+        const order = await cancelOrderAsCustomer(request.storeId, request.params.id);
+        if (!order) {
+          const err = new AppError('ORDER_NOT_FOUND', 'Pedido não encontrado.', 404);
+          const { statusCode, body } = errorResponse(err);
+          return reply.code(statusCode).send(body);
+        }
+        return {
+          order: {
+            id: order.id,
+            status: order.status,
+            cancelledAt: order.cancelled_at,
+          },
+        };
+      } catch (err) {
+        const mapped = mapOrderError(err);
+        if (mapped) {
+          const { statusCode, body } = errorResponse(mapped);
+          return reply.code(statusCode).send(body);
+        }
+        throw err;
+      }
+    }
+  );
+
+  /** Status transition — staff only (includes cancel without customer window). */
   app.patch(
     '/api/orders/:id/status',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
