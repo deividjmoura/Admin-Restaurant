@@ -1,28 +1,64 @@
 import fp from 'fastify-plugin';
-import { listKitchenOrders } from '../orders/orders.repository.js';
+import { listStationOrders } from '../orders/orders.repository.js';
 import { subscribeStoreOrders } from '../realtime/store-events.js';
+import { AppError, errorResponse } from '../../shared/errors.js';
+
+function parseStation(queryStation) {
+  const s = String(queryStation || 'KITCHEN').toUpperCase();
+  if (s !== 'KITCHEN' && s !== 'BAR') return null;
+  return s;
+}
 
 async function kitchenRoutes(app) {
+  /**
+   * Painel por estação.
+   * GET /api/kitchen/orders?station=KITCHEN
+   * GET /api/kitchen/orders?station=BAR
+   */
   app.get(
     '/api/kitchen/orders',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
-    async (request) => {
-      const orders = await listKitchenOrders(request.storeId);
+    async (request, reply) => {
+      const station = parseStation(request.query?.station);
+      if (!station) {
+        const err = new AppError(
+          'INVALID_STATION',
+          'Use station=KITCHEN ou station=BAR.',
+          400
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      const orders = await listStationOrders(request.storeId, { station });
       return {
         storeId: request.storeId,
+        station,
         orders,
       };
     }
   );
 
   /**
-   * Server-Sent Events — channel store:{storeId}:orders
-   * Auth + tenant required so one kitchen never receives another store's events.
+   * SSE filtrado por estação.
+   * GET /api/kitchen/events?station=KITCHEN
+   * GET /api/kitchen/events?station=BAR
    */
   app.get(
     '/api/kitchen/events',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
     async (request, reply) => {
+      const station = parseStation(request.query?.station);
+      if (!station) {
+        const err = new AppError(
+          'INVALID_STATION',
+          'Use station=KITCHEN ou station=BAR.',
+          400
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
       const storeId = request.storeId;
 
       reply.hijack();
@@ -39,12 +75,16 @@ async function kitchenRoutes(app) {
       };
 
       send('connected', {
-        channel: `store:${storeId}:orders`,
+        channel: `store:${storeId}:orders:${station}`,
         storeId,
+        station,
       });
 
       const unsubscribe = subscribeStoreOrders(storeId, (payload) => {
-        send(payload.type || 'order', payload);
+        const stations = payload.stations || [];
+        // Eventos sem stations (ex. status global) → enviam para as duas estações
+        if (stations.length > 0 && !stations.includes(station)) return;
+        send(payload.type || 'order', { ...payload, stationFilter: station });
       });
 
       const heartbeat = setInterval(() => {

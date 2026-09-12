@@ -14,7 +14,6 @@ const CUSTOMER_CANCEL_WINDOW_MS =
 
 const CUSTOMER_CANCELABLE = new Set(['PENDING', 'CONFIRMED']);
 
-/** Statuses shown on kitchen board by default */
 const KITCHEN_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
 
 export function canTransition(from, to) {
@@ -47,7 +46,7 @@ export async function findOrderByIdempotencyKey(storeId, key) {
 export async function listOrderItems(storeId, orderId) {
   const { rows } = await query(
     `SELECT id, store_id, order_id, product_id, product_name, unit_price,
-            quantity, notes, status, created_at, updated_at
+            quantity, notes, status, station, created_at, updated_at
      FROM order_items
      WHERE order_id = $1 AND store_id = $2
      ORDER BY created_at`,
@@ -57,35 +56,50 @@ export async function listOrderItems(storeId, orderId) {
 }
 
 /**
- * Kitchen / ops board: active orders for one store only.
+ * Painel de estação: KITCHEN ou BAR.
+ * Só devolve pedidos que tenham pelo menos um item da estação,
+ * e só os itens daquela estação.
  */
-export async function listKitchenOrders(storeId, { statuses = KITCHEN_STATUSES, limit = 100 } = {}) {
+export async function listStationOrders(
+  storeId,
+  { station, statuses = KITCHEN_STATUSES, limit = 100 } = {}
+) {
+  if (!station || !['KITCHEN', 'BAR'].includes(station)) {
+    const err = new Error('INVALID_STATION');
+    err.code = 'INVALID_STATION';
+    throw err;
+  }
+
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 200);
   const statusList = statuses?.length ? statuses : KITCHEN_STATUSES;
 
   const { rows: orders } = await query(
-    `SELECT o.id, o.store_id, o.table_session_id, o.status, o.channel, o.notes,
+    `SELECT DISTINCT o.id, o.store_id, o.table_session_id, o.status, o.channel, o.notes,
             o.created_at, o.updated_at,
             t.number AS table_number
      FROM orders o
+     INNER JOIN order_items oi ON oi.order_id = o.id AND oi.store_id = o.store_id
      LEFT JOIN table_sessions ts ON ts.id = o.table_session_id
      LEFT JOIN tables t ON t.id = ts.table_id
      WHERE o.store_id = $1
        AND o.status = ANY($2::text[])
+       AND oi.station = $3
      ORDER BY o.created_at ASC
-     LIMIT $3`,
-    [storeId, statusList, safeLimit]
+     LIMIT $4`,
+    [storeId, statusList, station, safeLimit]
   );
 
   if (!orders.length) return [];
 
   const orderIds = orders.map((o) => o.id);
   const { rows: items } = await query(
-    `SELECT id, order_id, product_id, product_name, unit_price, quantity, notes, status
+    `SELECT id, order_id, product_id, product_name, unit_price, quantity, notes, status, station
      FROM order_items
-     WHERE store_id = $1 AND order_id = ANY($2::uuid[])
+     WHERE store_id = $1
+       AND order_id = ANY($2::uuid[])
+       AND station = $3
      ORDER BY created_at`,
-    [storeId, orderIds]
+    [storeId, orderIds, station]
   );
 
   const itemsByOrder = new Map();
@@ -99,6 +113,7 @@ export async function listKitchenOrders(storeId, { statuses = KITCHEN_STATUSES, 
       quantity: it.quantity,
       notes: it.notes,
       status: it.status,
+      station: it.station,
     });
   }
 
@@ -109,10 +124,16 @@ export async function listKitchenOrders(storeId, { statuses = KITCHEN_STATUSES, 
     notes: o.notes,
     tableSessionId: o.table_session_id,
     tableNumber: o.table_number,
+    station,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
     items: itemsByOrder.get(o.id) || [],
   }));
+}
+
+/** @deprecated use listStationOrders — kept as alias for KITCHEN */
+export async function listKitchenOrders(storeId, opts = {}) {
+  return listStationOrders(storeId, { ...opts, station: 'KITCHEN' });
 }
 
 export async function createOrder(storeId, {
@@ -139,7 +160,7 @@ export async function createOrder(storeId, {
   return withTransaction(async (client) => {
     const productIds = [...new Set(items.map((i) => i.productId))];
     const { rows: products } = await client.query(
-      `SELECT id, name, price, is_available, is_active
+      `SELECT id, name, price, is_available, is_active, station
        FROM products
        WHERE store_id = $1 AND id = ANY($2::uuid[])`,
       [storeId, productIds]
@@ -171,14 +192,19 @@ export async function createOrder(storeId, {
     const order = orderRows[0];
 
     const createdItems = [];
+    const stations = new Set();
+
     for (const item of items) {
       const p = productMap.get(item.productId);
+      const station = p.station === 'BAR' ? 'BAR' : 'KITCHEN';
+      stations.add(station);
+
       const { rows: itemRows } = await client.query(
         `INSERT INTO order_items
-          (store_id, order_id, product_id, product_name, unit_price, quantity, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+          (store_id, order_id, product_id, product_name, unit_price, quantity, notes, station)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, store_id, order_id, product_id, product_name, unit_price,
-                   quantity, notes, status, created_at, updated_at`,
+                   quantity, notes, status, station, created_at, updated_at`,
         [
           storeId,
           order.id,
@@ -187,6 +213,7 @@ export async function createOrder(storeId, {
           p.price,
           item.quantity,
           item.notes ?? null,
+          station,
         ]
       );
       const orderItem = itemRows[0];
@@ -211,7 +238,12 @@ export async function createOrder(storeId, {
       createdItems.push(orderItem);
     }
 
-    return { order, items: createdItems, replayed: false };
+    return {
+      order,
+      items: createdItems,
+      stations: [...stations],
+      replayed: false,
+    };
   });
 }
 
@@ -265,6 +297,16 @@ export async function cancelOrderAsCustomer(storeId, orderId) {
   }
 
   return transitionOrderStatus(storeId, orderId, 'CANCELLED');
+}
+
+export async function getOrderStations(storeId, orderId) {
+  const { rows } = await query(
+    `SELECT DISTINCT station
+     FROM order_items
+     WHERE store_id = $1 AND order_id = $2`,
+    [storeId, orderId]
+  );
+  return rows.map((r) => r.station);
 }
 
 export { CUSTOMER_CANCEL_WINDOW_MS, KITCHEN_STATUSES };

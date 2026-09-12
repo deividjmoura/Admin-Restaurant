@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Seed: stores + users + demo menu + demo tables.
+ * Bebidas → station BAR; lanches/acompanhamentos → KITCHEN.
  */
 import 'dotenv/config';
 import { pool, query } from '../src/infrastructure/db.js';
@@ -50,6 +51,7 @@ async function ensureDemoMenu(storeId) {
     description: 'Pão, hambúrguer, queijo e salada',
     price: 22.9,
     sortOrder: 1,
+    station: 'KITCHEN',
   });
 
   await createProduct(storeId, {
@@ -58,6 +60,7 @@ async function ensureDemoMenu(storeId) {
     description: 'Pão, hambúrguer, queijo, bacon e salada',
     price: 26.9,
     sortOrder: 2,
+    station: 'KITCHEN',
   });
 
   await createProduct(storeId, {
@@ -66,6 +69,7 @@ async function ensureDemoMenu(storeId) {
     description: '350ml',
     price: 6.0,
     sortOrder: 1,
+    station: 'BAR',
   });
 
   await createProduct(storeId, {
@@ -74,6 +78,7 @@ async function ensureDemoMenu(storeId) {
     description: 'Porção média',
     price: 14.0,
     sortOrder: 1,
+    station: 'KITCHEN',
   });
 
   await query(
@@ -87,7 +92,7 @@ async function ensureDemoMenu(storeId) {
     [storeId, burger.id, 'Bacon extra', 4.5, 2]
   );
 
-  console.log('  ✓ Demo menu seeded');
+  console.log('  ✓ Demo menu seeded (KITCHEN + BAR)');
 }
 
 async function ensureDemoTables(storeId) {
@@ -161,8 +166,8 @@ async function main() {
   console.log('\nSeed credentials (change in production):');
   console.log(`  SUPER_ADMIN  ${superEmail} / ${password}`);
   console.log(`  OWNER(demo)  ${ownerEmail} / ${password}`);
-  console.log('  Menu:  GET /api/menu  + header X-Tenant-Slug: demo');
-  console.log('  Table: GET /api/tables/by-token/:publicToken');
+  console.log('  Cozinha: GET /api/kitchen/orders?station=KITCHEN');
+  console.log('  Bar:     GET /api/kitchen/orders?station=BAR');
   console.log('Seed done.');
 }
 
