@@ -1,29 +1,23 @@
-# Módulo Auth
+# Auth module
 
-## Schema (migration 0003)
+## Schema
+- `users` — global accounts (`is_super_admin`)
+- `store_users` — membership per store + role
 
-### `users`
-- Login global (email único)
-- `is_super_admin` para operadores da plataforma
-- Senha apenas como `password_hash` (scrypt/bcrypt — implementação na próxima PR)
+## Session
+- httpOnly cookie `ar_session` (JWT via `jose`)
+- Password: Node `scrypt` (`salt:hash` hex)
 
-### `store_users`
-- Liga `user_id` + `store_id` + `role`
-- Roles de loja: `OWNER` | `MANAGER` | `KITCHEN` | `STAFF`
-- Um usuário pode pertencer a várias lojas (várias linhas)
+## Routes
+| Method | Path | Auth |
+|--------|------|------|
+| POST | `/api/auth/login` | public |
+| POST | `/api/auth/logout` | public |
+| GET | `/api/auth/me` | required |
 
-## Papéis
+## Middlewares
+- `app.requireAuth`
+- `app.requireStoreAccess` — auth + membership on `request.storeId` (SUPER_ADMIN bypass)
 
-| Papel         | Escopo                         |
-|---------------|--------------------------------|
-| SUPER_ADMIN   | Plataforma (`users.is_super_admin`) |
-| OWNER         | Loja — tudo                    |
-| MANAGER       | Loja — quase tudo              |
-| KITCHEN       | Pedidos / status               |
-| STAFF         | Operacional básico             |
-
-## Próximos PRs
-
-1. Hash de senha + login + JWT/cookies
-2. Middlewares `requireAuth` / `requireRole` / `requireStoreAccess`
-3. Seed de SUPER_ADMIN + OWNER da loja demo
+## Seed users
+See `scripts/seed.js` (SUPER_ADMIN + OWNER on demo store).
