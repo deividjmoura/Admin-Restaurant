@@ -9,6 +9,12 @@ const ALLOWED_TRANSITIONS = {
   CANCELLED: [],
 };
 
+/** Customer self-cancel only while PENDING/CONFIRMED and within this window. */
+const CUSTOMER_CANCEL_WINDOW_MS =
+  (Number(process.env.ORDER_CANCEL_WINDOW_SECONDS) || 120) * 1000;
+
+const CUSTOMER_CANCELABLE = new Set(['PENDING', 'CONFIRMED']);
+
 export function canTransition(from, to) {
   return (ALLOWED_TRANSITIONS[from] || []).includes(to);
 }
@@ -48,11 +54,6 @@ export async function listOrderItems(storeId, orderId) {
   return rows;
 }
 
-/**
- * Create order + items in one transaction.
- * items: [{ productId, quantity, notes?, addonIds? }]
- * Prices/names loaded from DB (never trust client prices).
- */
 export async function createOrder(storeId, {
   tableSessionId = null,
   channel = 'TABLE',
@@ -180,3 +181,33 @@ export async function transitionOrderStatus(storeId, orderId, nextStatus) {
 
   return rows[0] ?? null;
 }
+
+/**
+ * Customer-facing cancel: only PENDING/CONFIRMED and within time window.
+ * Staff should use transitionOrderStatus(..., 'CANCELLED') instead.
+ */
+export async function cancelOrderAsCustomer(storeId, orderId) {
+  const order = await findOrderById(storeId, orderId);
+  if (!order) return null;
+
+  if (!CUSTOMER_CANCELABLE.has(order.status)) {
+    const err = new Error('CANCEL_NOT_ALLOWED');
+    err.code = 'CANCEL_NOT_ALLOWED';
+    err.reason = 'status';
+    err.status = order.status;
+    throw err;
+  }
+
+  const ageMs = Date.now() - new Date(order.created_at).getTime();
+  if (ageMs > CUSTOMER_CANCEL_WINDOW_MS) {
+    const err = new Error('CANCEL_NOT_ALLOWED');
+    err.code = 'CANCEL_NOT_ALLOWED';
+    err.reason = 'window';
+    err.windowSeconds = CUSTOMER_CANCEL_WINDOW_MS / 1000;
+    throw err;
+  }
+
+  return transitionOrderStatus(storeId, orderId, 'CANCELLED');
+}
+
+export { CUSTOMER_CANCEL_WINDOW_MS };
