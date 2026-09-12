@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProd = process.env.NODE_ENV === 'production';
@@ -15,11 +16,11 @@ const app = Fastify({
 });
 
 await app.register(helmet, {
-  contentSecurityPolicy: false, // ajustar depois com frontend
+  contentSecurityPolicy: false,
 });
 
 await app.register(cors, {
-  origin: isProd ? false : true, // restringir em produção
+  origin: isProd ? false : true,
   credentials: true,
 });
 
@@ -32,16 +33,34 @@ await app.register(rateLimit, {
   timeWindow: '1 minute',
 });
 
-// Health checks
+await app.register(tenantPlugin);
+
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 app.get('/ready', async () => ({ status: 'ready' }));
 
-// Placeholder — módulos serão registrados aqui
-app.get('/', async () => ({
+app.get('/', async (request) => ({
   name: 'Admin-Restaurant',
   version: '0.1.0',
   message: 'SaaS multi-tenant para lanchonetes — em construção',
+  tenant: request.store
+    ? { id: request.store.id, slug: request.store.slug, name: request.store.name }
+    : null,
 }));
+
+app.get(
+  '/api/me/store',
+  {
+    preHandler: [app.requireTenant],
+  },
+  async (request) => ({
+    store: {
+      id: request.store.id,
+      slug: request.store.slug,
+      name: request.store.name,
+      status: request.store.status,
+    },
+  })
+);
 
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
