@@ -1,22 +1,41 @@
 import fp from 'fastify-plugin';
 import { getMenuForStore } from './menu.repository.js';
+import { getCachedMenu, setCachedMenu } from './menu-cache.js';
 
 async function menuRoutes(app) {
   /**
    * Public menu for the current tenant.
-   * Requires resolved store (subdomain / custom domain / X-Tenant-Slug in dev).
+   * Cache key is always menu:store:{storeId}.
    */
   app.get(
     '/api/menu',
     { preHandler: [app.requireTenant] },
     async (request) => {
-      const menu = await getMenuForStore(request.storeId);
+      const storeId = request.storeId;
+
+      const cached = getCachedMenu(storeId);
+      if (cached) {
+        return {
+          store: {
+            id: request.store.id,
+            slug: request.store.slug,
+            name: request.store.name,
+          },
+          cache: 'HIT',
+          ...cached,
+        };
+      }
+
+      const menu = await getMenuForStore(storeId);
+      setCachedMenu(storeId, menu);
+
       return {
         store: {
           id: request.store.id,
           slug: request.store.slug,
           name: request.store.name,
         },
+        cache: 'MISS',
         ...menu,
       };
     }

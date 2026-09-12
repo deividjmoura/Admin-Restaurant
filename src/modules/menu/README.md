@@ -6,13 +6,18 @@
 - `products` — `is_available` for sold-out without deleting
 - `product_addons`
 
-## Rules
+## Cache
 
-- Every query filters by `store_id`
-- Creating a product checks that `category_id` belongs to the same store
-- Public menu: `getMenuForStore(storeId)`
+- Key: `menu:store:{storeId}`
+- In-memory Map (TTL default 60s, `MENU_CACHE_TTL_MS`)
+- `invalidateMenuCache(storeId)` on create category/product
+- **Never** reuse one store's entry for another
+
+## Routes
+
+- `GET /api/menu` — public, requires tenant; response includes `cache: HIT|MISS`
 
 ## Next
 
-- Public GET `/api/menu` (requires tenant)
-- Admin CRUD + cache invalidation (issue #20)
+- Admin CRUD endpoints + invalidate on update/delete
+- Redis adapter later if needed
