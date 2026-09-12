@@ -9,11 +9,13 @@ const ALLOWED_TRANSITIONS = {
   CANCELLED: [],
 };
 
-/** Customer self-cancel only while PENDING/CONFIRMED and within this window. */
 const CUSTOMER_CANCEL_WINDOW_MS =
   (Number(process.env.ORDER_CANCEL_WINDOW_SECONDS) || 120) * 1000;
 
 const CUSTOMER_CANCELABLE = new Set(['PENDING', 'CONFIRMED']);
+
+/** Statuses shown on kitchen board by default */
+const KITCHEN_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
 
 export function canTransition(from, to) {
   return (ALLOWED_TRANSITIONS[from] || []).includes(to);
@@ -52,6 +54,65 @@ export async function listOrderItems(storeId, orderId) {
     [orderId, storeId]
   );
   return rows;
+}
+
+/**
+ * Kitchen / ops board: active orders for one store only.
+ */
+export async function listKitchenOrders(storeId, { statuses = KITCHEN_STATUSES, limit = 100 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 200);
+  const statusList = statuses?.length ? statuses : KITCHEN_STATUSES;
+
+  const { rows: orders } = await query(
+    `SELECT o.id, o.store_id, o.table_session_id, o.status, o.channel, o.notes,
+            o.created_at, o.updated_at,
+            t.number AS table_number
+     FROM orders o
+     LEFT JOIN table_sessions ts ON ts.id = o.table_session_id
+     LEFT JOIN tables t ON t.id = ts.table_id
+     WHERE o.store_id = $1
+       AND o.status = ANY($2::text[])
+     ORDER BY o.created_at ASC
+     LIMIT $3`,
+    [storeId, statusList, safeLimit]
+  );
+
+  if (!orders.length) return [];
+
+  const orderIds = orders.map((o) => o.id);
+  const { rows: items } = await query(
+    `SELECT id, order_id, product_id, product_name, unit_price, quantity, notes, status
+     FROM order_items
+     WHERE store_id = $1 AND order_id = ANY($2::uuid[])
+     ORDER BY created_at`,
+    [storeId, orderIds]
+  );
+
+  const itemsByOrder = new Map();
+  for (const it of items) {
+    if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
+    itemsByOrder.get(it.order_id).push({
+      id: it.id,
+      productId: it.product_id,
+      productName: it.product_name,
+      unitPrice: Number(it.unit_price),
+      quantity: it.quantity,
+      notes: it.notes,
+      status: it.status,
+    });
+  }
+
+  return orders.map((o) => ({
+    id: o.id,
+    status: o.status,
+    channel: o.channel,
+    notes: o.notes,
+    tableSessionId: o.table_session_id,
+    tableNumber: o.table_number,
+    createdAt: o.created_at,
+    updatedAt: o.updated_at,
+    items: itemsByOrder.get(o.id) || [],
+  }));
 }
 
 export async function createOrder(storeId, {
@@ -182,10 +243,6 @@ export async function transitionOrderStatus(storeId, orderId, nextStatus) {
   return rows[0] ?? null;
 }
 
-/**
- * Customer-facing cancel: only PENDING/CONFIRMED and within time window.
- * Staff should use transitionOrderStatus(..., 'CANCELLED') instead.
- */
 export async function cancelOrderAsCustomer(storeId, orderId) {
   const order = await findOrderById(storeId, orderId);
   if (!order) return null;
@@ -210,4 +267,4 @@ export async function cancelOrderAsCustomer(storeId, orderId) {
   return transitionOrderStatus(storeId, orderId, 'CANCELLED');
 }
 
-export { CUSTOMER_CANCEL_WINDOW_MS };
+export { CUSTOMER_CANCEL_WINDOW_MS, KITCHEN_STATUSES };
