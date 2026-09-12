@@ -1,51 +1,14 @@
 import { findBySlug, findByCustomDomain } from './store.repository.js';
 import { AppError } from '../../shared/errors.js';
+import {
+  normalizeHost,
+  extractSubdomainSlug,
+  getBaseDomain,
+} from './tenant-host.js';
 
-const BASE_DOMAIN = (process.env.BASE_DOMAIN || 'localhost').toLowerCase();
+export { normalizeHost, extractSubdomainSlug };
+
 const isDev = process.env.NODE_ENV !== 'production';
-
-/**
- * Extrai o host sem porta.
- * @param {string} hostHeader
- * @returns {string}
- */
-export function normalizeHost(hostHeader) {
-  if (!hostHeader || typeof hostHeader !== 'string') return '';
-  return hostHeader.split(':')[0].trim().toLowerCase();
-}
-
-/**
- * Dado o host, tenta extrair o slug do subdomínio em relação ao BASE_DOMAIN.
- * Exemplos (BASE_DOMAIN=seudominio.com):
- *   loja1.seudominio.com  → loja1
- *   www.seudominio.com    → null (apex / www)
- *   seudominio.com        → null
- *
- * Para localhost:
- *   demo.localhost        → demo
- *   localhost             → null
- *
- * @param {string} host
- * @returns {string|null}
- */
-export function extractSubdomainSlug(host) {
-  const h = normalizeHost(host);
-  if (!h) return null;
-
-  if (h === BASE_DOMAIN || h === `www.${BASE_DOMAIN}`) {
-    return null;
-  }
-
-  const suffix = `.${BASE_DOMAIN}`;
-  if (h.endsWith(suffix)) {
-    const sub = h.slice(0, -suffix.length);
-    if (sub && !sub.includes('.')) {
-      return sub;
-    }
-  }
-
-  return null;
-}
 
 /**
  * Resolve a loja a partir do request.
@@ -74,7 +37,7 @@ export async function resolveStoreFromRequest(request) {
     return store;
   }
 
-  if (host && host !== BASE_DOMAIN && host !== `www.${BASE_DOMAIN}`) {
+  if (host && host !== getBaseDomain() && host !== `www.${getBaseDomain()}`) {
     const byDomain = await findByCustomDomain(host);
     if (byDomain) {
       if (byDomain.status !== 'active') {

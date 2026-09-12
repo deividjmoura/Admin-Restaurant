@@ -1,13 +1,12 @@
 import { query, withTransaction } from '../../infrastructure/db.js';
+import {
+  canTransition,
+  canTransitionItem,
+  ORDER_ALLOWED_TRANSITIONS,
+  ITEM_ALLOWED_TRANSITIONS,
+} from './status-machine.js';
 
-const ALLOWED_TRANSITIONS = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY', 'CANCELLED'],
-  READY: ['DELIVERED'],
-  DELIVERED: [],
-  CANCELLED: [],
-};
+export { canTransition, canTransitionItem };
 
 const CUSTOMER_CANCEL_WINDOW_MS =
   (Number(process.env.ORDER_CANCEL_WINDOW_SECONDS) || 120) * 1000;
@@ -15,10 +14,6 @@ const CUSTOMER_CANCEL_WINDOW_MS =
 const CUSTOMER_CANCELABLE = new Set(['PENDING', 'CONFIRMED']);
 
 const KITCHEN_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
-
-export function canTransition(from, to) {
-  return (ALLOWED_TRANSITIONS[from] || []).includes(to);
-}
 
 export async function findOrderById(storeId, orderId) {
   const { rows } = await query(
@@ -312,18 +307,6 @@ export async function getOrderStations(storeId, orderId) {
 // ---------------------------------------------------------------------------
 // Item-level status (cozinha / garçom)
 // ---------------------------------------------------------------------------
-
-const ITEM_ALLOWED_TRANSITIONS = {
-  PENDING: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY', 'CANCELLED'],
-  READY: ['DELIVERED', 'CANCELLED'],
-  DELIVERED: [],
-  CANCELLED: [],
-};
-
-export function canTransitionItem(from, to) {
-  return (ITEM_ALLOWED_TRANSITIONS[from] || []).includes(to);
-}
 
 export async function findOrderItemById(storeId, itemId) {
   const { rows } = await query(
@@ -643,4 +626,4 @@ export async function listOpenSessions(storeId, { limit = 50 } = {}) {
   }));
 }
 
-export { CUSTOMER_CANCEL_WINDOW_MS, KITCHEN_STATUSES, ITEM_ALLOWED_TRANSITIONS };
+export { CUSTOMER_CANCEL_WINDOW_MS, KITCHEN_STATUSES, ITEM_ALLOWED_TRANSITIONS, ORDER_ALLOWED_TRANSITIONS };

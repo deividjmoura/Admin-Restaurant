@@ -9,8 +9,10 @@
     "start": "node src/server.js",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
-    "test": "node --test",
-    "lint": "echo \"lint placeholder\""
+    "test": "node --test test/**/*.test.js",
+    "lint": "echo \"lint placeholder\"",
+    "test:unit": "node --test test/isolation/menu-cache.test.js test/isolation/tenant-resolution.test.js test/isolation/order-scoping.test.js",
+    "test:isolation": "node --test test/isolation/**/*.test.js"
   },
   "engines": {
     "node": ">=20"
