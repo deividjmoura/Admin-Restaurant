@@ -15,6 +15,7 @@ import {
 import { hashPassword } from '../src/modules/auth/password.js';
 import { createCategory, createProduct, listCategories } from '../src/modules/menu/menu.repository.js';
 import { createTable, listTables } from '../src/modules/tables/tables.repository.js';
+import { listZones, createZone } from '../src/modules/delivery/delivery.repository.js';
 
 async function ensureStore(slug, name) {
   const existing = await storeRepo.findBySlug(slug);
@@ -114,6 +115,34 @@ async function ensureDemoTables(storeId) {
   return created;
 }
 
+
+async function ensureDemoDeliveryZones(storeId) {
+  const existing = await listZones(storeId, { activeOnly: false });
+  if (existing.length > 0) {
+    console.log('  Demo delivery zones already seeded');
+    return existing;
+  }
+  const zones = [];
+  zones.push(await createZone(storeId, {
+    name: 'Centro',
+    fee: 5,
+    minOrderAmount: 25,
+    etaMinutesMin: 25,
+    etaMinutesMax: 40,
+    sortOrder: 1,
+  }));
+  zones.push(await createZone(storeId, {
+    name: 'Bairros próximos',
+    fee: 8.5,
+    minOrderAmount: 30,
+    etaMinutesMin: 35,
+    etaMinutesMax: 55,
+    sortOrder: 2,
+  }));
+  console.log('  ✓ Delivery zones:', zones.map((z) => z.name).join(', '));
+  return zones;
+}
+
 async function main() {
   console.log('→ Seed starting...');
 
@@ -162,6 +191,7 @@ async function main() {
 
   await ensureDemoMenu(demo.id);
   await ensureDemoTables(demo.id);
+  await ensureDemoDeliveryZones(demo.id);
 
   console.log('\nSeed credentials (change in production):');
   console.log(`  SUPER_ADMIN  ${superEmail} / ${password}`);
