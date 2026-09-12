@@ -13,6 +13,7 @@ import {
   clearSessionCookie,
   readSessionCookie,
 } from './session.js';
+import { writeAuditLog } from '../audit/index.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
 const loginSchema = z.object({
@@ -40,7 +41,6 @@ async function authPlugin(app) {
         };
       }
     } catch {
-      // invalid/expired token → treat as logged out
       request.user = null;
     }
   });
@@ -53,10 +53,6 @@ async function authPlugin(app) {
     }
   });
 
-  /**
-   * Requires auth + access to current tenant (request.storeId).
-   * SUPER_ADMIN always passes when a store context exists or not.
-   */
   app.decorate('requireStoreAccess', async function requireStoreAccess(request, reply) {
     if (!request.user) {
       const err = new AppError('UNAUTHORIZED', 'Authentication required.', 401);
@@ -98,7 +94,6 @@ async function authPlugin(app) {
     const { email, password } = parsed.data;
     const user = await findUserByEmail(email);
 
-    // constant-ish failure message (avoid user enumeration as much as practical)
     const invalid = new AppError('INVALID_CREDENTIALS', 'Invalid email or password.', 401);
 
     if (!user || !user.is_active) {
@@ -116,6 +111,23 @@ async function authPlugin(app) {
     setSessionCookie(reply, token);
 
     const memberships = await listStoreMemberships(user.id);
+
+    // Audit is secondary: never block login if logging fails
+    writeAuditLog({
+      storeId: request.storeId ?? null,
+      actorUserId: user.id,
+      action: 'auth.login',
+      resource: 'user',
+      resourceId: user.id,
+      metadata: {
+        email: user.email,
+        isSuperAdmin: user.is_super_admin,
+      },
+      ip: request.ip,
+      userAgent: request.headers['user-agent'] || null,
+    }).catch((err) => {
+      request.log?.warn({ err }, 'audit log failed on login');
+    });
 
     return {
       user: {
