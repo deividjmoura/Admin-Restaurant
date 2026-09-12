@@ -7,16 +7,31 @@ PENDING → CONFIRMED → PREPARING → READY → DELIVERED
                 ↘ CANCELLED (from PENDING/CONFIRMED/PREPARING)
 ```
 
-## Tables
-- `orders` — `store_id`, optional `table_session_id`, `idempotency_key`
-- `order_items` — price/name **snapshots**
-- `order_item_addons` — addon snapshots
+## Routes
+
+| Method | Path | Auth |
+|--------|------|------|
+| POST | `/api/orders` | tenant |
+| GET | `/api/orders/:id` | tenant |
+| PATCH | `/api/orders/:id/status` | tenant + store access |
+
+### Create body
+
+```json
+{
+  "tableSessionId": "uuid-optional",
+  "channel": "TABLE",
+  "notes": null,
+  "idempotencyKey": "client-generated-key",
+  "items": [
+    { "productId": "uuid", "quantity": 1, "addonIds": [], "notes": null }
+  ]
+}
+```
+
+Header `Idempotency-Key` is also accepted.
 
 ## Rules
-- Never trust client prices
-- Same `idempotency_key` + `store_id` → same order (no duplicate)
-- All queries filter by `store_id`
-
-## Next
-- HTTP routes POST /api/orders + PATCH status
-- Cancellation window rules
+- Prices always from DB
+- Same idempotency key → same order (200 replay)
+- Invalid status transition → 409
