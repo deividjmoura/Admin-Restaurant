@@ -77,17 +77,6 @@ Veja as [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues) e os E
 
 ---
 
-## Como rodar (em breve)
-
-```bash
-cp .env.example .env
-npm install
-npm run db:migrate
-npm run dev
-```
-
----
-
 ## Princípios
 
 - Multi-tenancy desde o dia 1
