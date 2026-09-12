@@ -18,7 +18,7 @@ export async function listProducts(storeId, { includeUnavailable = true } = {}) 
   const availability = includeUnavailable ? '' : 'AND p.is_available = TRUE';
   const { rows } = await query(
     `SELECT p.id, p.store_id, p.category_id, p.name, p.description, p.price,
-            p.image_url, p.is_available, p.is_active, p.sort_order,
+            p.image_url, p.is_available, p.is_active, p.sort_order, p.station,
             p.created_at, p.updated_at
      FROM products p
      WHERE p.store_id = $1 AND p.is_active = TRUE ${availability}
@@ -42,7 +42,6 @@ export async function listAddonsForProducts(storeId, productIds) {
   return rows;
 }
 
-/** Full menu payload for a store (categories + products + addons). */
 export async function getMenuForStore(storeId) {
   const categories = await listCategories(storeId);
   const products = await listProducts(storeId, { includeUnavailable: true });
@@ -72,6 +71,7 @@ export async function getMenuForStore(storeId) {
       imageUrl: p.image_url,
       isAvailable: p.is_available,
       sortOrder: p.sort_order,
+      station: p.station,
       addons: addonsByProduct.get(p.id) || [],
     });
   }
@@ -104,6 +104,7 @@ export async function createProduct(storeId, {
   price,
   imageUrl = null,
   sortOrder = 0,
+  station = 'KITCHEN',
 }) {
   const { rows: cats } = await query(
     `SELECT id FROM categories WHERE id = $1 AND store_id = $2`,
@@ -115,13 +116,15 @@ export async function createProduct(storeId, {
     throw err;
   }
 
+  const safeStation = station === 'BAR' ? 'BAR' : 'KITCHEN';
+
   const { rows } = await query(
     `INSERT INTO products
-      (store_id, category_id, name, description, price, image_url, sort_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+      (store_id, category_id, name, description, price, image_url, sort_order, station)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, store_id, category_id, name, description, price, image_url,
-               is_available, is_active, sort_order, created_at, updated_at`,
-    [storeId, categoryId, name, description, price, imageUrl, sortOrder]
+               is_available, is_active, sort_order, station, created_at, updated_at`,
+    [storeId, categoryId, name, description, price, imageUrl, sortOrder, safeStation]
   );
   invalidateMenuCache(storeId);
   return rows[0];

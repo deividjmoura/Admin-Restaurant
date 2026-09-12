@@ -1,32 +1,20 @@
-# Kitchen module
+# Kitchen / Bar
 
-## Routes
+Dois painéis, mesma loja:
 
-| Method | Path | Auth |
-|--------|------|------|
-| GET | `/api/kitchen/orders` | tenant + store access |
-| GET | `/api/kitchen/events` | tenant + store access (SSE) |
+| Estação | Uso |
+|---------|-----|
+| `KITCHEN` | Lanches, pratos, fritura |
+| `BAR` | Bebidas / balcão |
 
-## SSE channel
+## Rotas
 
-`store:{storeId}:orders`
-
-Events:
-- `connected`
-- `order.created`
-- `order.status_changed`
-- `order.cancelled`
-
-Isolation: subscription is always bound to `request.storeId` from the server tenant context.
-
-## Client sketch
-
-```js
-const es = new EventSource('/api/kitchen/events', { withCredentials: true });
-es.addEventListener('order.created', (e) => {
-  const data = JSON.parse(e.data);
-  // refresh board or append order
-});
+```text
+GET /api/kitchen/orders?station=KITCHEN
+GET /api/kitchen/orders?station=BAR
+GET /api/kitchen/events?station=KITCHEN   # SSE
+GET /api/kitchen/events?station=BAR
 ```
 
-Note: native EventSource does not send custom headers; prefer cookie session auth.
+Cada produto tem `station`. No pedido, o item grava o snapshot da estação.
+Um pedido misto (lanche + refri) aparece **nos dois** painéis, cada um só com seus itens.

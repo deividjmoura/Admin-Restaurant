@@ -6,6 +6,7 @@ import {
   listOrderItems,
   transitionOrderStatus,
   cancelOrderAsCustomer,
+  getOrderStations,
 } from './orders.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
@@ -122,10 +123,12 @@ async function ordersRoutes(app) {
 
         if (!result.replayed) {
           emitOrder(request.storeId, 'order.created', result.order, {
+            stations: result.stations || [],
             items: result.items.map((it) => ({
               id: it.id,
               productName: it.product_name,
               quantity: it.quantity,
+              station: it.station,
             })),
           });
         }
@@ -141,6 +144,7 @@ async function ordersRoutes(app) {
             notes: result.order.notes,
             createdAt: result.order.created_at,
           },
+          stations: result.stations || [],
           items: result.items.map((it) => ({
             id: it.id,
             productId: it.product_id,
@@ -149,6 +153,7 @@ async function ordersRoutes(app) {
             quantity: it.quantity,
             notes: it.notes,
             status: it.status,
+            station: it.station,
           })),
         });
       } catch (err) {
@@ -192,6 +197,7 @@ async function ordersRoutes(app) {
           quantity: it.quantity,
           notes: it.notes,
           status: it.status,
+          station: it.station,
         })),
       };
     }
@@ -208,7 +214,8 @@ async function ordersRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
-        emitOrder(request.storeId, 'order.cancelled', order);
+        const stations = await getOrderStations(request.storeId, order.id);
+        emitOrder(request.storeId, 'order.cancelled', order, { stations });
         return {
           order: {
             id: order.id,
@@ -250,7 +257,8 @@ async function ordersRoutes(app) {
           return reply.code(statusCode).send(body);
         }
 
-        emitOrder(request.storeId, 'order.status_changed', order);
+        const stations = await getOrderStations(request.storeId, order.id);
+        emitOrder(request.storeId, 'order.status_changed', order, { stations });
 
         return {
           order: {
