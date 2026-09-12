@@ -42,6 +42,7 @@ async function tablesRoutes(app) {
         id: session.id,
         status: session.status,
         openedAt: session.opened_at,
+        cartVersion: session.cart_version ?? 0,
       },
       storeId: table.store_id,
     };

@@ -13,6 +13,7 @@ import menuRoutes from './modules/menu/menu-routes.js';
 import tablesRoutes from './modules/tables/tables-routes.js';
 import ordersRoutes from './modules/orders/orders-routes.js';
 import kitchenRoutes from './modules/kitchen/kitchen-routes.js';
+import cartRoutes from './modules/tables/cart-routes.js';
 
 /**
  * @param {{ logger?: boolean | object }} [opts]
@@ -53,6 +54,7 @@ export async function buildApp(opts = {}) {
   await app.register(tablesRoutes);
   await app.register(ordersRoutes);
   await app.register(kitchenRoutes);
+  await app.register(cartRoutes);
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
   app.get('/ready', async () => ({ status: 'ready' }));

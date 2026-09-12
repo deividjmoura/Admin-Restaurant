@@ -50,7 +50,7 @@ export async function createTable(storeId, { number, label = null }) {
 
 export async function getOpenSession(tableId) {
   const { rows } = await query(
-    `SELECT id, store_id, table_id, opened_at, closed_at, status, created_at, updated_at
+    `SELECT id, store_id, table_id, opened_at, closed_at, status, cart_version, created_at, updated_at
      FROM table_sessions
      WHERE table_id = $1 AND status = 'open'`,
     [tableId]
@@ -94,7 +94,7 @@ export async function openOrGetSession(storeId, tableId) {
   const { rows } = await query(
     `INSERT INTO table_sessions (store_id, table_id, status)
      VALUES ($1, $2, 'open')
-     RETURNING id, store_id, table_id, opened_at, closed_at, status, created_at, updated_at`,
+     RETURNING id, store_id, table_id, opened_at, closed_at, status, cart_version, created_at, updated_at`,
     [storeId, tableId]
   );
 

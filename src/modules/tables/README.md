@@ -1,19 +1,21 @@
-# Tables module
+# Tables + Sessions + Shared Cart
 
-## Security model (Discussion #41)
+## Fluxo QR
 
-1. **QR token** = UUID v4 (`public_token`) — not guessable
-2. **QR sticker is permanent**; it hits `/api/tables/by-token/:token` which opens/resumes a **session**
-3. **Session TTL** (default **6 hours**, `TABLE_SESSION_TTL_HOURS`) — expired open sessions are closed on next scan
-4. **store_id** always enforced when tenant context exists
+1. Cliente abre `/api/tables/by-token/:token` → mesa + sessão aberta + `cartVersion`
+2. Vários clientes na mesma sessão compartilham o carrinho
+3. Mutações enviam `expectedVersion` (optimistic lock)
+4. Conflito → `409 CART_VERSION_CONFLICT` com `currentVersion`
+5. Checkout converte carrinho → pedido e esvazia o carrinho
 
-## Routes
+## Rotas do carrinho
 
 | Method | Path | Auth |
 |--------|------|------|
-| GET | `/api/tables/by-token/:token` | public |
-| GET | `/api/tables` | tenant + store access |
+| GET | `/api/sessions/:sessionId/cart` | público (sessão) |
+| POST | `/api/sessions/:sessionId/cart/items` | público |
+| PATCH | `/api/sessions/:sessionId/cart/items/:itemId` | público |
+| DELETE | `/api/sessions/:sessionId/cart/items/:itemId` | público (body: expectedVersion) |
+| POST | `/api/sessions/:sessionId/cart/checkout` | público |
 
-## Schema
-- `tables` — `public_token`
-- `table_sessions` — one `open` row per table (partial unique index)
+Todas as mutações exigem `expectedVersion`. Isolamento por `store_id` da sessão.
