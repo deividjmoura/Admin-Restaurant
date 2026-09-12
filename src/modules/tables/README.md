@@ -1,27 +1,21 @@
 # Tables module
 
-## Tables
+## Schema
+- `tables` — `public_token` (UUID) for QR
+- `table_sessions` — one open session per table
 
-| Column        | Notes |
-|---------------|--------|
-| store_id      | Tenant isolation |
-| number        | Unique per store |
-| public_token  | UUID for QR URL — **not** the table number |
-| status        | free \| occupied |
+## Routes
 
-QR URL shape (later):
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/tables/by-token/:token` | public |
+| GET | `/api/tables` | tenant + store access |
+
+If the request has a tenant context, the table's `store_id` must match (else 404).
+
+## QR shape
 
 ```text
-https://{slug}.seudominio.com/table/{public_token}
+https://{slug}.domain/table/{public_token}
+→ API: GET /api/tables/by-token/{public_token}
 ```
-
-## table_sessions
-
-- One **open** session per table (partial unique index)
-- Shared cart/orders will attach to `table_sessions.id`
-
-## Next
-
-- Public route by token + open session
-- Seed demo tables
-- Shared cart concurrency (issue #22)

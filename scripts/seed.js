@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seed: stores + users + demo menu for the "demo" store.
+ * Seed: stores + users + demo menu + demo tables.
  */
 import 'dotenv/config';
 import { pool, query } from '../src/infrastructure/db.js';
@@ -13,6 +13,7 @@ import {
 } from '../src/modules/auth/user.repository.js';
 import { hashPassword } from '../src/modules/auth/password.js';
 import { createCategory, createProduct, listCategories } from '../src/modules/menu/menu.repository.js';
+import { createTable, listTables } from '../src/modules/tables/tables.repository.js';
 
 async function ensureStore(slug, name) {
   const existing = await storeRepo.findBySlug(slug);
@@ -75,7 +76,6 @@ async function ensureDemoMenu(storeId) {
     sortOrder: 1,
   });
 
-  // Sample addon on burger
   await query(
     `INSERT INTO product_addons (store_id, product_id, name, price, sort_order)
      VALUES ($1, $2, $3, $4, $5)`,
@@ -87,7 +87,26 @@ async function ensureDemoMenu(storeId) {
     [storeId, burger.id, 'Bacon extra', 4.5, 2]
   );
 
-  console.log('  ✓ Demo menu seeded (categories, products, addons)');
+  console.log('  ✓ Demo menu seeded');
+}
+
+async function ensureDemoTables(storeId) {
+  const existing = await listTables(storeId);
+  if (existing.length > 0) {
+    console.log('  Demo tables already seeded');
+    existing.forEach((t) => {
+      console.log(`    Mesa ${t.number} token=${t.public_token}`);
+    });
+    return existing;
+  }
+
+  const created = [];
+  for (let n = 1; n <= 5; n++) {
+    const t = await createTable(storeId, { number: n, label: n <= 2 ? `Salão ${n}` : null });
+    created.push(t);
+    console.log(`  ✓ Table ${n} token=${t.public_token}`);
+  }
+  return created;
 }
 
 async function main() {
@@ -137,11 +156,13 @@ async function main() {
   }
 
   await ensureDemoMenu(demo.id);
+  await ensureDemoTables(demo.id);
 
   console.log('\nSeed credentials (change in production):');
   console.log(`  SUPER_ADMIN  ${superEmail} / ${password}`);
   console.log(`  OWNER(demo)  ${ownerEmail} / ${password}`);
-  console.log('  Menu: GET /api/menu with X-Tenant-Slug: demo (dev)');
+  console.log('  Menu:  GET /api/menu  + header X-Tenant-Slug: demo');
+  console.log('  Table: GET /api/tables/by-token/:publicToken');
   console.log('Seed done.');
 }
 
