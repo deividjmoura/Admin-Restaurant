@@ -1,5 +1,18 @@
-# Módulo Menu (Cardápio)
+# Menu module
 
-Categorias, produtos, adicionais, disponibilidade e cache isolado por tenant.
+## Tables (all with `store_id`)
 
-Ver Epic #3 e issue #20.
+- `categories`
+- `products` — `is_available` for sold-out without deleting
+- `product_addons`
+
+## Rules
+
+- Every query filters by `store_id`
+- Creating a product checks that `category_id` belongs to the same store
+- Public menu: `getMenuForStore(storeId)`
+
+## Next
+
+- Public GET `/api/menu` (requires tenant)
+- Admin CRUD + cache invalidation (issue #20)
