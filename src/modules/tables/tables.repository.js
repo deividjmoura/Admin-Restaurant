@@ -1,5 +1,9 @@
 import { query } from '../../infrastructure/db.js';
 
+/** Default 6h — covers a long meal; QR sticker stays permanent (see Discussion #41). */
+const SESSION_TTL_MS =
+  (Number(process.env.TABLE_SESSION_TTL_HOURS) || 6) * 60 * 60 * 1000;
+
 /** All queries scoped by store_id when listing/mutating for a store. */
 
 export async function listTables(storeId) {
@@ -54,19 +58,37 @@ export async function getOpenSession(tableId) {
   return rows[0] ?? null;
 }
 
+function isSessionExpired(session) {
+  if (!session?.opened_at) return true;
+  const opened = new Date(session.opened_at).getTime();
+  return Date.now() - opened > SESSION_TTL_MS;
+}
+
 /**
- * Open a session if none is open; return existing open session otherwise.
- * Marks table as occupied.
+ * Open a session if none is open (or the open one expired); return active session.
+ * QR token is permanent; session has TTL (Discussion #41).
  */
 export async function openOrGetSession(storeId, tableId) {
   const existing = await getOpenSession(tableId);
+
   if (existing) {
     if (existing.store_id !== storeId) {
       const err = new Error('STORE_MISMATCH');
       err.code = 'STORE_MISMATCH';
       throw err;
     }
-    return existing;
+
+    if (!isSessionExpired(existing)) {
+      return existing;
+    }
+
+    // Expire stale session so a leaked QR photo cannot keep an old session forever
+    await query(
+      `UPDATE table_sessions
+       SET status = 'closed', closed_at = now(), updated_at = now()
+       WHERE id = $1 AND store_id = $2 AND status = 'open'`,
+      [existing.id, storeId]
+    );
   }
 
   const { rows } = await query(
@@ -103,3 +125,5 @@ export async function closeSession(storeId, sessionId) {
 
   return session;
 }
+
+export { SESSION_TTL_MS };
