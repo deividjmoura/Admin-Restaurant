@@ -22,3 +22,9 @@ Usar o projeto `lanchonete-qr-semi-final` apenas como **referência de domínio 
 **Decisão:** Usar Fastify.
 
 **Motivo:** Schema validation, plugins maduros (cookie, helmet, rate-limit, cors), melhor base para crescer sem reescrever o servidor depois. Ainda mantém a simplicidade próxima do projeto de referência.
+
+## 2026-09-12 — Documentação separada em GOLDEN_RULES
+
+**Decisão:** Extrair o checklist e regras de ouro para `docs/GOLDEN_RULES.md`.
+
+**Motivo:** Facilitar consulta rápida no dia a dia e nos PRs, sem misturar com a descrição de arquitetura.

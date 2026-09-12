@@ -40,29 +40,40 @@ Nunca confiar em `store_id` enviado pelo cliente quando o domínio já define o 
 | KITCHEN       | Pedidos / status    |
 | STAFF         | Operacional básico  |
 
-## Checklist antes de qualquer feature (Regra de Ouro)
+## Modelo de pastas
 
-1. Qual é o tenant dessa operação?
-2. Quem pode executar?
-3. Quais dados podem ser acessados?
-4. Existe possibilidade de concorrência?
-5. A operação precisa ser idempotente?
-6. Precisa de transação?
-7. Precisa de evento?
-8. Precisa de cache?
-9. Pode ser assíncrona?
-10. Como será monitorada?
-11. Como será testada?
-12. O que acontece se falhar?
-
-## Prioridades
-
+```text
+src/
+├── modules/           # Domínio isolado por responsabilidade
+│   ├── auth/
+│   ├── tenancy/
+│   ├── menu/
+│   ├── tables/
+│   ├── orders/
+│   ├── delivery/
+│   ├── payments/
+│   ├── kitchen/
+│   ├── reports/
+│   └── ...
+├── shared/            # Erros, utilitários, tipos comuns
+├── infrastructure/    # DB, cache, filas, providers externos
+└── workers/           # Jobs assíncronos
+migrations/            # SQL versionado
+docs/
+scripts/
 ```
-segurança > integridade dos dados > correção > manutenibilidade > performance > complexidade
-```
+
+## Event-driven (quando apropriado)
+
+Eventos internos alimentam realtime, notificações, impressão, analytics e auditoria, reduzindo acoplamento:
+
+- `OrderCreated`
+- `OrderStatusChanged`
+- `PaymentConfirmed`
+- `OrderCancelled`
 
 ## Referência de domínio
 
 Comportamento de pedidos, mesas, cardápio e fluxos operacionais inspira-se no projeto [lanchonete-qr-semi-final](https://github.com/deividjmoura/lanchonete-qr-semi-final), reescrito sob esta arquitetura.
 
-**Não portamos** features legadas não utilizadas (ex.: ponto da carne).
+**Não portamos** features legadas não utilizadas.
