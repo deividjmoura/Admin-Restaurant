@@ -7,7 +7,12 @@ import {
   transitionOrderStatus,
   cancelOrderAsCustomer,
   getOrderStations,
+  transitionOrderItemStatus,
+  listReadyItems,
+  getSessionSummary,
+  listOpenSessions,
 } from './orders.repository.js';
+import { closeSession } from '../tables/tables.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
@@ -33,6 +38,10 @@ const statusSchema = z.object({
   status: z.enum(['CONFIRMED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED']),
 });
 
+const itemStatusSchema = z.object({
+  status: z.enum(['PREPARING', 'READY', 'DELIVERED', 'CANCELLED']),
+});
+
 function mapOrderError(err) {
   const code = err.code || err.message;
   switch (code) {
@@ -46,6 +55,12 @@ function mapOrderError(err) {
       return new AppError(
         'INVALID_STATUS_TRANSITION',
         `Transição inválida: ${err.from} → ${err.to}.`,
+        409
+      );
+    case 'INVALID_ITEM_STATUS_TRANSITION':
+      return new AppError(
+        'INVALID_ITEM_STATUS_TRANSITION',
+        `Transição de item inválida: ${err.from} → ${err.to}.`,
         409
       );
     case 'CANCEL_NOT_ALLOWED':
@@ -276,6 +291,211 @@ async function ordersRoutes(app) {
         }
         throw err;
       }
+    }
+  );
+
+  /**
+   * Transição de status de item (cozinha / garçom / manager).
+   * PATCH /api/orders/items/:itemId/status
+   * Body: { "status": "PREPARING" | "READY" | "DELIVERED" | "CANCELLED" }
+   */
+  app.patch(
+    '/api/orders/items/:itemId/status',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request, reply) => {
+      const parsed = itemStatusSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        const err = new AppError('VALIDATION_ERROR', 'Status de item inválido.', 400);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      try {
+        const item = await transitionOrderItemStatus(
+          request.storeId,
+          request.params.itemId,
+          parsed.data.status
+        );
+        if (!item) {
+          const err = new AppError('ITEM_NOT_FOUND', 'Item não encontrado nesta loja.', 404);
+          const { statusCode, body } = errorResponse(err);
+          return reply.code(statusCode).send(body);
+        }
+
+        publishStoreOrderEvent(request.storeId, {
+          type: 'order.item_status_changed',
+          item: {
+            id: item.id,
+            orderId: item.order_id,
+            status: item.status,
+            station: item.station,
+            productName: item.product_name,
+            quantity: item.quantity,
+            deliveredAt: item.delivered_at,
+          },
+        });
+
+        return {
+          item: {
+            id: item.id,
+            orderId: item.order_id,
+            status: item.status,
+            station: item.station,
+            productName: item.product_name,
+            quantity: item.quantity,
+            deliveredAt: item.delivered_at,
+            updatedAt: item.updated_at,
+          },
+        };
+      } catch (err) {
+        const mapped = mapOrderError(err);
+        if (mapped) {
+          const { statusCode, body } = errorResponse(mapped);
+          return reply.code(statusCode).send(body);
+        }
+        throw err;
+      }
+    }
+  );
+
+  /**
+   * Garçom: itens READY aguardando entrega.
+   * GET /api/waiter/ready-items?station=KITCHEN|BAR
+   */
+  app.get(
+    '/api/waiter/ready-items',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request) => {
+      const station = request.query?.station
+        ? String(request.query.station).toUpperCase()
+        : null;
+      const items = await listReadyItems(request.storeId, {
+        station: station === 'KITCHEN' || station === 'BAR' ? station : null,
+      });
+      return { storeId: request.storeId, items };
+    }
+  );
+
+  /**
+   * Atalho: marcar item READY → DELIVERED.
+   * PATCH /api/waiter/items/:itemId/deliver
+   */
+  app.patch(
+    '/api/waiter/items/:itemId/deliver',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request, reply) => {
+      try {
+        const item = await transitionOrderItemStatus(
+          request.storeId,
+          request.params.itemId,
+          'DELIVERED'
+        );
+        if (!item) {
+          const err = new AppError('ITEM_NOT_FOUND', 'Item não encontrado nesta loja.', 404);
+          const { statusCode, body } = errorResponse(err);
+          return reply.code(statusCode).send(body);
+        }
+
+        publishStoreOrderEvent(request.storeId, {
+          type: 'order.item_delivered',
+          item: {
+            id: item.id,
+            orderId: item.order_id,
+            status: item.status,
+            station: item.station,
+            productName: item.product_name,
+            quantity: item.quantity,
+            deliveredAt: item.delivered_at,
+          },
+        });
+
+        return {
+          item: {
+            id: item.id,
+            orderId: item.order_id,
+            status: item.status,
+            deliveredAt: item.delivered_at,
+          },
+        };
+      } catch (err) {
+        const mapped = mapOrderError(err);
+        if (mapped) {
+          const { statusCode, body } = errorResponse(mapped);
+          return reply.code(statusCode).send(body);
+        }
+        throw err;
+      }
+    }
+  );
+
+  /**
+   * Caixa: sessões abertas com totais.
+   * GET /api/cashier/sessions
+   */
+  app.get(
+    '/api/cashier/sessions',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request) => {
+      const sessions = await listOpenSessions(request.storeId);
+      return { storeId: request.storeId, sessions };
+    }
+  );
+
+  /**
+   * Caixa: detalhe + consumo de uma sessão.
+   * GET /api/cashier/sessions/:id
+   */
+  app.get(
+    '/api/cashier/sessions/:id',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request, reply) => {
+      const summary = await getSessionSummary(request.storeId, request.params.id);
+      if (!summary) {
+        const err = new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada.', 404);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+      return summary;
+    }
+  );
+
+  /**
+   * Caixa: fecha a sessão e libera a mesa.
+   * POST /api/cashier/sessions/:id/close
+   * (pagamentos reais virão em etapa posterior)
+   */
+  app.post(
+    '/api/cashier/sessions/:id/close',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request, reply) => {
+      const session = await closeSession(request.storeId, request.params.id);
+      if (!session) {
+        const err = new AppError(
+          'SESSION_NOT_FOUND',
+          'Sessão não encontrada ou já fechada.',
+          404
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      publishStoreOrderEvent(request.storeId, {
+        type: 'session.closed',
+        session: {
+          id: session.id,
+          tableId: session.table_id,
+          closedAt: session.closed_at,
+        },
+      });
+
+      return {
+        session: {
+          id: session.id,
+          tableId: session.table_id,
+          status: session.status,
+          closedAt: session.closed_at,
+        },
+      };
     }
   );
 }
