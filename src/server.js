@@ -7,6 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 import authPlugin from './modules/auth/auth-plugin.js';
 import menuRoutes from './modules/menu/menu-routes.js';
+import tablesRoutes from './modules/tables/tables-routes.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProd = process.env.NODE_ENV === 'production';
@@ -38,6 +39,7 @@ await app.register(rateLimit, {
 await app.register(tenantPlugin);
 await app.register(authPlugin);
 await app.register(menuRoutes);
+await app.register(tablesRoutes);
 
 app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 app.get('/ready', async () => ({ status: 'ready' }));
