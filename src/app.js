@@ -16,6 +16,7 @@ import kitchenRoutes from './modules/kitchen/kitchen-routes.js';
 import cartRoutes from './modules/tables/cart-routes.js';
 import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
+import reportsRoutes from './modules/reports/reports-routes.js';
 
 /**
  * @param {{ logger?: boolean | object }} [opts]
@@ -59,6 +60,7 @@ export async function buildApp(opts = {}) {
   await app.register(cartRoutes);
   await app.register(deliveryRoutes);
   await app.register(paymentsRoutes);
+  await app.register(reportsRoutes);
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
   app.get('/ready', async () => ({ status: 'ready' }));
