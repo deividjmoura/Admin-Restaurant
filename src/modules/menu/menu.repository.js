@@ -129,3 +129,205 @@ export async function createProduct(storeId, {
   invalidateMenuCache(storeId);
   return rows[0];
 }
+
+/** ——— Admin (inclui inativos) ——— */
+
+export async function listCategoriesAdmin(storeId) {
+  const { rows } = await query(
+    `SELECT id, store_id, name, sort_order, is_active, created_at, updated_at
+     FROM categories
+     WHERE store_id = $1
+     ORDER BY sort_order, name`,
+    [storeId]
+  );
+  return rows;
+}
+
+export async function findCategoryById(storeId, categoryId) {
+  const { rows } = await query(
+    `SELECT id, store_id, name, sort_order, is_active, created_at, updated_at
+     FROM categories WHERE id = $1 AND store_id = $2`,
+    [categoryId, storeId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function updateCategory(storeId, categoryId, patch) {
+  const current = await findCategoryById(storeId, categoryId);
+  if (!current) return null;
+
+  const name = patch.name ?? current.name;
+  const sortOrder = patch.sortOrder ?? current.sort_order;
+  const isActive = patch.isActive ?? current.is_active;
+
+  const { rows } = await query(
+    `UPDATE categories
+     SET name = $3, sort_order = $4, is_active = $5, updated_at = now()
+     WHERE id = $1 AND store_id = $2
+     RETURNING id, store_id, name, sort_order, is_active, created_at, updated_at`,
+    [categoryId, storeId, name, sortOrder, isActive]
+  );
+  invalidateMenuCache(storeId);
+  return rows[0] ?? null;
+}
+
+export async function listProductsAdmin(storeId, { categoryId = null } = {}) {
+  const params = [storeId];
+  let filter = '';
+  if (categoryId) {
+    params.push(categoryId);
+    filter = ` AND p.category_id = $${params.length}`;
+  }
+  const { rows } = await query(
+    `SELECT p.id, p.store_id, p.category_id, p.name, p.description, p.price,
+            p.image_url, p.is_available, p.is_active, p.sort_order, p.station,
+            p.created_at, p.updated_at
+     FROM products p
+     WHERE p.store_id = $1${filter}
+     ORDER BY p.sort_order, p.name`,
+    params
+  );
+  return rows;
+}
+
+export async function findProductById(storeId, productId) {
+  const { rows } = await query(
+    `SELECT id, store_id, category_id, name, description, price, image_url,
+            is_available, is_active, sort_order, station, created_at, updated_at
+     FROM products WHERE id = $1 AND store_id = $2`,
+    [productId, storeId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function updateProduct(storeId, productId, patch) {
+  const current = await findProductById(storeId, productId);
+  if (!current) return null;
+
+  if (patch.categoryId) {
+    const { rows: cats } = await query(
+      `SELECT id FROM categories WHERE id = $1 AND store_id = $2`,
+      [patch.categoryId, storeId]
+    );
+    if (!cats[0]) {
+      const err = new Error('CATEGORY_NOT_FOUND');
+      err.code = 'CATEGORY_NOT_FOUND';
+      throw err;
+    }
+  }
+
+  const categoryId = patch.categoryId ?? current.category_id;
+  const name = patch.name ?? current.name;
+  const description =
+    patch.description !== undefined ? patch.description : current.description;
+  const price = patch.price ?? current.price;
+  const imageUrl =
+    patch.imageUrl !== undefined ? patch.imageUrl : current.image_url;
+  const sortOrder = patch.sortOrder ?? current.sort_order;
+  const isAvailable =
+    patch.isAvailable !== undefined ? patch.isAvailable : current.is_available;
+  const isActive =
+    patch.isActive !== undefined ? patch.isActive : current.is_active;
+  let station = current.station;
+  if (patch.station !== undefined) {
+    station = patch.station === 'BAR' ? 'BAR' : 'KITCHEN';
+  }
+
+  const { rows } = await query(
+    `UPDATE products
+     SET category_id = $3,
+         name = $4,
+         description = $5,
+         price = $6,
+         image_url = $7,
+         sort_order = $8,
+         is_available = $9,
+         is_active = $10,
+         station = $11,
+         updated_at = now()
+     WHERE id = $1 AND store_id = $2
+     RETURNING id, store_id, category_id, name, description, price, image_url,
+               is_available, is_active, sort_order, station, created_at, updated_at`,
+    [
+      productId,
+      storeId,
+      categoryId,
+      name,
+      description,
+      price,
+      imageUrl,
+      sortOrder,
+      isAvailable,
+      isActive,
+      station,
+    ]
+  );
+  invalidateMenuCache(storeId);
+  return rows[0] ?? null;
+}
+
+export async function createAddon(
+  storeId,
+  { productId, name, price = 0, sortOrder = 0 }
+) {
+  const product = await findProductById(storeId, productId);
+  if (!product) {
+    const err = new Error('PRODUCT_NOT_FOUND');
+    err.code = 'PRODUCT_NOT_FOUND';
+    throw err;
+  }
+
+  const { rows } = await query(
+    `INSERT INTO product_addons (store_id, product_id, name, price, sort_order)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, store_id, product_id, name, price, is_active, sort_order,
+               created_at, updated_at`,
+    [storeId, productId, name, price, sortOrder]
+  );
+  invalidateMenuCache(storeId);
+  return rows[0];
+}
+
+export async function listAddonsAdmin(storeId, productId) {
+  const { rows } = await query(
+    `SELECT id, store_id, product_id, name, price, is_active, sort_order,
+            created_at, updated_at
+     FROM product_addons
+     WHERE store_id = $1 AND product_id = $2
+     ORDER BY sort_order, name`,
+    [storeId, productId]
+  );
+  return rows;
+}
+
+export async function findAddonById(storeId, addonId) {
+  const { rows } = await query(
+    `SELECT id, store_id, product_id, name, price, is_active, sort_order,
+            created_at, updated_at
+     FROM product_addons WHERE id = $1 AND store_id = $2`,
+    [addonId, storeId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function updateAddon(storeId, addonId, patch) {
+  const current = await findAddonById(storeId, addonId);
+  if (!current) return null;
+
+  const name = patch.name ?? current.name;
+  const price = patch.price ?? current.price;
+  const sortOrder = patch.sortOrder ?? current.sort_order;
+  const isActive =
+    patch.isActive !== undefined ? patch.isActive : current.is_active;
+
+  const { rows } = await query(
+    `UPDATE product_addons
+     SET name = $3, price = $4, sort_order = $5, is_active = $6, updated_at = now()
+     WHERE id = $1 AND store_id = $2
+     RETURNING id, store_id, product_id, name, price, is_active, sort_order,
+               created_at, updated_at`,
+    [addonId, storeId, name, price, sortOrder, isActive]
+  );
+  invalidateMenuCache(storeId);
+  return rows[0] ?? null;
+}

@@ -1,23 +1,16 @@
-# Menu module
+# Menu
 
-## Tables (all with `store_id`)
+## Público
+- `GET /api/menu` — cardápio ativo (com cache por store)
 
-- `categories`
-- `products` — `is_available` for sold-out without deleting
-- `product_addons`
+## Admin (staff + tenant)
+| Method | Path |
+|--------|------|
+| GET/POST | `/api/admin/categories` |
+| PATCH/DELETE | `/api/admin/categories/:id` |
+| GET/POST | `/api/admin/products` |
+| GET/PATCH/DELETE | `/api/admin/products/:id` |
+| GET/POST | `/api/admin/products/:productId/addons` |
+| PATCH/DELETE | `/api/admin/addons/:id` |
 
-## Cache
-
-- Key: `menu:store:{storeId}`
-- In-memory Map (TTL default 60s, `MENU_CACHE_TTL_MS`)
-- `invalidateMenuCache(storeId)` on create category/product
-- **Never** reuse one store's entry for another
-
-## Routes
-
-- `GET /api/menu` — public, requires tenant; response includes `cache: HIT|MISS`
-
-## Next
-
-- Admin CRUD endpoints + invalidate on update/delete
-- Redis adapter later if needed
+DELETE = soft (`is_active = false`). Toda mutação invalida o cache do menu da loja.

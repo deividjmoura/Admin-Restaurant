@@ -10,6 +10,7 @@ import rateLimit from '@fastify/rate-limit';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 import authPlugin from './modules/auth/auth-plugin.js';
 import menuRoutes from './modules/menu/menu-routes.js';
+import menuAdminRoutes from './modules/menu/menu-admin-routes.js';
 import tablesRoutes from './modules/tables/tables-routes.js';
 import ordersRoutes from './modules/orders/orders-routes.js';
 import kitchenRoutes from './modules/kitchen/kitchen-routes.js';
@@ -54,6 +55,7 @@ export async function buildApp(opts = {}) {
   await app.register(tenantPlugin);
   await app.register(authPlugin);
   await app.register(menuRoutes);
+  await app.register(menuAdminRoutes);
   await app.register(tablesRoutes);
   await app.register(ordersRoutes);
   await app.register(kitchenRoutes);
