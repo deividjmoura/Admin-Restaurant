@@ -37,3 +37,5 @@ tmp/
 
 # Misc
 *.tsbuildinfo
+frontend/node_modules/
+frontend/dist/

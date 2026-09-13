@@ -39,8 +39,13 @@ export async function buildApp(opts = {}) {
     contentSecurityPolicy: false,
   });
 
+  const corsOrigin = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
   await app.register(cors, {
-    origin: isProd ? false : true,
+    origin: isProd
+      ? corsOrigin
+        ? corsOrigin.split(',').map((s) => s.trim())
+        : false
+      : true,
     credentials: true,
   });
 
