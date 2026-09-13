@@ -39,13 +39,22 @@ export async function findTableById(storeId, tableId) {
 }
 
 export async function createTable(storeId, { number, label = null }) {
-  const { rows } = await query(
-    `INSERT INTO tables (store_id, number, label)
-     VALUES ($1, $2, $3)
-     RETURNING id, store_id, number, label, public_token, status, is_active, created_at, updated_at`,
-    [storeId, number, label]
-  );
-  return rows[0];
+  try {
+    const { rows } = await query(
+      `INSERT INTO tables (store_id, number, label)
+       VALUES ($1, $2, $3)
+       RETURNING id, store_id, number, label, public_token, status, is_active, created_at, updated_at`,
+      [storeId, number, label]
+    );
+    return rows[0];
+  } catch (err) {
+    if (err.code === '23505') {
+      const e = new Error('TABLE_NUMBER_TAKEN');
+      e.code = 'TABLE_NUMBER_TAKEN';
+      throw e;
+    }
+    throw err;
+  }
 }
 
 export async function getOpenSession(tableId) {
@@ -127,3 +136,69 @@ export async function closeSession(storeId, sessionId) {
 }
 
 export { SESSION_TTL_MS };
+
+export async function listTablesAdmin(storeId) {
+  const { rows } = await query(
+    `SELECT id, store_id, number, label, public_token, status, is_active, created_at, updated_at
+     FROM tables
+     WHERE store_id = $1
+     ORDER BY number`,
+    [storeId]
+  );
+  return rows;
+}
+
+export async function updateTable(storeId, tableId, { number, label, status, isActive }) {
+  const current = await findTableById(storeId, tableId);
+  if (!current) return null;
+
+  const nextNumber = number !== undefined ? number : current.number;
+  const nextLabel = label !== undefined ? label : current.label;
+  const nextStatus = status !== undefined ? status : current.status;
+  const nextActive = isActive !== undefined ? isActive : current.is_active;
+
+  if (!['free', 'occupied'].includes(nextStatus)) {
+    const err = new Error('INVALID_TABLE_STATUS');
+    err.code = 'INVALID_TABLE_STATUS';
+    throw err;
+  }
+
+  try {
+    const { rows } = await query(
+      `UPDATE tables
+       SET number = $3,
+           label = $4,
+           status = $5,
+           is_active = $6,
+           updated_at = now()
+       WHERE id = $1 AND store_id = $2
+       RETURNING id, store_id, number, label, public_token, status, is_active, created_at, updated_at`,
+      [tableId, storeId, nextNumber, nextLabel, nextStatus, nextActive]
+    );
+    return rows[0] ?? null;
+  } catch (err) {
+    if (err.code === '23505') {
+      const e = new Error('TABLE_NUMBER_TAKEN');
+      e.code = 'TABLE_NUMBER_TAKEN';
+      throw e;
+    }
+    throw err;
+  }
+}
+
+export async function deactivateTable(storeId, tableId) {
+  return updateTable(storeId, tableId, { isActive: false });
+}
+
+/** Gera novo token QR (sticker antigo deixa de funcionar). */
+export async function regenerateTableToken(storeId, tableId) {
+  const { rows } = await query(
+    `UPDATE tables
+     SET public_token = gen_random_uuid(),
+         updated_at = now()
+     WHERE id = $1 AND store_id = $2
+     RETURNING id, store_id, number, label, public_token, status, is_active, created_at, updated_at`,
+    [tableId, storeId]
+  );
+  return rows[0] ?? null;
+}

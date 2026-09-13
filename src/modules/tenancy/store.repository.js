@@ -67,3 +67,28 @@ export async function updateStatus(id, status) {
   );
   return rows[0] ?? null;
 }
+
+export async function updateSettings(storeId, patch) {
+  const current = await findById(storeId);
+  if (!current) return null;
+
+  const currentSettings =
+    typeof current.settings === 'object' && current.settings
+      ? current.settings
+      : {};
+  const next = { ...currentSettings, ...patch };
+
+  // deep-merge pix if present
+  if (patch.pix && typeof patch.pix === 'object') {
+    next.pix = { ...(currentSettings.pix || {}), ...patch.pix };
+  }
+
+  const { rows } = await query(
+    `UPDATE stores
+     SET settings = $2::jsonb, updated_at = now()
+     WHERE id = $1
+     RETURNING id, slug, name, custom_domain, status, settings, created_at, updated_at`,
+    [storeId, JSON.stringify(next)]
+  );
+  return rows[0] ?? null;
+}

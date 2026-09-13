@@ -18,6 +18,7 @@ import cartRoutes from './modules/tables/cart-routes.js';
 import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
+import storeRoutes from './modules/tenancy/store-routes.js';
 
 /**
  * @param {{ logger?: boolean | object }} [opts]
@@ -63,9 +64,26 @@ export async function buildApp(opts = {}) {
   await app.register(deliveryRoutes);
   await app.register(paymentsRoutes);
   await app.register(reportsRoutes);
+  await app.register(storeRoutes);
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
-  app.get('/ready', async () => ({ status: 'ready' }));
+
+  app.get('/ready', async (_request, reply) => {
+    try {
+      const { pool } = await import('./infrastructure/db.js');
+      const r = await pool.query('SELECT 1 AS ok');
+      if (!r.rows[0]) {
+        return reply.code(503).send({ status: 'not_ready', db: false });
+      }
+      return { status: 'ready', db: true, ts: new Date().toISOString() };
+    } catch (err) {
+      return reply.code(503).send({
+        status: 'not_ready',
+        db: false,
+        error: process.env.NODE_ENV === 'production' ? 'db_unavailable' : String(err.message),
+      });
+    }
+  });
 
   app.get('/', async (request) => ({
     name: 'Admin-Restaurant',
