@@ -8,14 +8,12 @@ import {
 
 export { normalizeHost, extractSubdomainSlug };
 
-const isDev = process.env.NODE_ENV !== 'production';
-
 /**
  * Resolve a loja a partir do request.
  * Ordem:
  * 1. Subdomínio do BASE_DOMAIN
  * 2. custom_domain (host completo)
- * 3. (somente dev) header X-Tenant-Slug
+ * 3. Header X-Tenant-Slug (fallback — necessário para SPA em domínio diferente)
  *
  * Nunca confia em store_id enviado pelo cliente como fonte de verdade.
  *
@@ -47,18 +45,17 @@ export async function resolveStoreFromRequest(request) {
     }
   }
 
-  if (isDev) {
-    const headerSlug = request.headers['x-tenant-slug'];
-    if (typeof headerSlug === 'string' && headerSlug.trim()) {
-      const store = await findBySlug(headerSlug.trim());
-      if (!store) {
-        throw new AppError('TENANT_NOT_FOUND', 'Loja não encontrada.', 404);
-      }
-      if (store.status !== 'active') {
-        throw new AppError('TENANT_INACTIVE', 'Loja indisponível.', 403);
-      }
-      return store;
+  // Fallback: header (SPA em domínio separado, ou ferramentas como curl/Postman)
+  const headerSlug = request.headers['x-tenant-slug'];
+  if (typeof headerSlug === 'string' && headerSlug.trim()) {
+    const store = await findBySlug(headerSlug.trim());
+    if (!store) {
+      throw new AppError('TENANT_NOT_FOUND', 'Loja não encontrada.', 404);
     }
+    if (store.status !== 'active') {
+      throw new AppError('TENANT_INACTIVE', 'Loja indisponível.', 403);
+    }
+    return store;
   }
 
   return null;

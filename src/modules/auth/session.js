@@ -15,6 +15,23 @@ function getSecret() {
 }
 
 /**
+ * Cookie options shared by set/clear.
+ * In production (cross-origin SPA + API) we need sameSite=none + secure
+ * so the browser accepts and sends the httpOnly session cookie.
+ */
+function cookieOptions(maxAge) {
+  const opts = {
+    path: '/',
+    httpOnly: true,
+    secure: isProd,
+    // 'none' is required for cross-site credentialed requests (frontend on another domain)
+    sameSite: isProd ? 'none' : 'lax',
+  };
+  if (maxAge !== undefined) opts.maxAge = maxAge;
+  return opts;
+}
+
+/**
  * @param {{ id: string, is_super_admin: boolean }} user
  */
 export async function signSessionToken(user) {
@@ -38,17 +55,11 @@ export async function verifySessionToken(token) {
 }
 
 export function setSessionCookie(reply, token) {
-  reply.setCookie(COOKIE_NAME, token, {
-    path: '/',
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  });
+  reply.setCookie(COOKIE_NAME, token, cookieOptions(60 * 60 * 24 * 7)); // 7 days
 }
 
 export function clearSessionCookie(reply) {
-  reply.clearCookie(COOKIE_NAME, { path: '/' });
+  reply.clearCookie(COOKIE_NAME, cookieOptions());
 }
 
 export function readSessionCookie(request) {
