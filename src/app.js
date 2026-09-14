@@ -39,13 +39,32 @@ export async function buildApp(opts = {}) {
     contentSecurityPolicy: false,
   });
 
-  const corsOrigin = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
+  // CORS: credentials:true requires an explicit Origin (or reflection).
+  // When CORS_ORIGIN / FRONTEND_ORIGIN is unset in production the previous
+  // fallback (`false`) blocked the browser from reading the login response
+  // and from storing the httpOnly session cookie — login appeared broken.
+  // Reflection (`true`) is safe for SameSite=None cookies and restores login.
+  // Prefer setting CORS_ORIGIN to the exact frontend origin(s) in production.
+  const corsOriginEnv = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
+  let corsOrigin;
+  if (corsOriginEnv) {
+    corsOrigin = corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (isProd) {
+    // Reflect request Origin so credentialed requests work until env is set.
+    // Log once so the operator knows to configure it properly.
+    if (!globalThis.__corsOriginWarned) {
+      console.warn(
+        '[cors] CORS_ORIGIN / FRONTEND_ORIGIN not set. Reflecting request Origin. Set the env to your frontend URL(s) for production.'
+      );
+      globalThis.__corsOriginWarned = true;
+    }
+    corsOrigin = true;
+  } else {
+    corsOrigin = true;
+  }
+
   await app.register(cors, {
-    origin: isProd
-      ? corsOrigin
-        ? corsOrigin.split(',').map((s) => s.trim())
-        : false
-      : true,
+    origin: corsOrigin,
     credentials: true,
   });
 
