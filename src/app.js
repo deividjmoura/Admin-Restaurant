@@ -19,6 +19,7 @@ import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
+import signupRoutes from './modules/onboarding/signup-routes.js';
 
 /**
  * @param {{ logger?: boolean | object }} [opts]
@@ -89,6 +90,7 @@ export async function buildApp(opts = {}) {
   await app.register(paymentsRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
+  await app.register(signupRoutes);
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 
