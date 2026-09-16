@@ -3,7 +3,7 @@ import { query } from '../../infrastructure/db.js';
 export async function findUserByEmail(email) {
   if (!email) return null;
   const { rows } = await query(
-    `SELECT id, email, password_hash, name, is_super_admin, is_active, created_at, updated_at
+    `SELECT id, email, password_hash, name, is_super_admin, is_active, email_verified_at, created_at, updated_at
      FROM users
      WHERE lower(email) = lower($1)`,
     [email]
@@ -13,7 +13,7 @@ export async function findUserByEmail(email) {
 
 export async function findUserById(id) {
   const { rows } = await query(
-    `SELECT id, email, password_hash, name, is_super_admin, is_active, created_at, updated_at
+    `SELECT id, email, password_hash, name, is_super_admin, is_active, email_verified_at, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id]
