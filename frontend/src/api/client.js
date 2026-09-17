@@ -16,17 +16,24 @@ export function getTenant() {
 
 /**
  * Fetch JSON against API with tenant header + cookies.
+ * options.idempotencyKey → header Idempotency-Key (operações críticas).
  */
 export async function api(path, options = {}) {
+  const { idempotencyKey, headers: extraHeaders, ...rest } = options;
+
   const headers = {
     'Content-Type': 'application/json',
     'X-Tenant-Slug': getTenantSlug(),
-    ...(options.headers || {}),
+    ...(extraHeaders || {}),
   };
+
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey;
+  }
 
   const res = await fetch(`${API_URL}${path}`, {
     credentials: 'include',
-    ...options,
+    ...rest,
     headers,
   });
 
