@@ -55,7 +55,7 @@
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
 | T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **REIVINDICADO por agente-pwa** |
+| T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -275,11 +275,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** PWA garçom (#64)
-**Arquivos/pastas principais:** `frontend/public/manifest.json`, `frontend/src/pages/staff/WaiterPage.jsx`, `frontend/vite.config.js`
-**Status:** em andamento
+**Arquivos/pastas principais:** `frontend/public/manifest.json`, `frontend/public/service-worker.js`, `frontend/public/icon-192.png`, `frontend/public/icon-512.png`, `frontend/index.html`, `frontend/src/pages/staff/WaiterPage.jsx`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons + carteiras aguardando revisão; núcleo fechado
-**Observações:** Em desenvolvimento: PWA garçom (#64) — manifest, service worker, cache offline garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
+**Observações:** T13 entregue. PWA para garçom (#64): `manifest.json` (start_url `/waiter`, display standalone, theme amber), `service-worker.js` (install cache shell, activate cleanup, fetch stale-while-revalidate para `/api/waiter/*` e `/api/kitchen/*`, cache-first para shell), `index.html` com `link manifest` + `meta theme-color`, `WaiterPage` registra SW, ícones 192/512. Instalável e offline para `/waiter`. Validado `test:unit` 16/16. garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
 
 ## 🗒️ Log de eventos
 
@@ -304,3 +304,4 @@
 - **2026-09-17 19:20 — agente-ops:** T9 (ops-workers) concluída via merge (fila in-process, /ready métricas, backup Neon) — 46/46 isolation, 16/16 unit. Status: aguardando revisão.
 - **2026-09-17 19:55 — agente-cupons:** T11 (cupons #63) concluída — migration 0015, CRUD+validate, frontend `/admin/coupons`. Status: aguardando revisão.
 - **2026-09-17 20:05 — agente-carteiras:** Carteiras digitais (#62) concluída — migration 0016, API wallets com idempotência. Status: aguardando revisão.
+- **2026-09-17 20:15 — agente-pwa:** PWA garçom (#64) concluída — manifest, SW, offline cache para `/waiter`. Status: aguardando revisão.
