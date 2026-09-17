@@ -1,0 +1,21 @@
+{
+  "name": "Garçom — Admin Restaurant",
+  "short_name": "Garçom",
+  "description": "PWA para garçom — itens READY → entregue, offline cache",
+  "start_url": "/waiter",
+  "display": "standalone",
+  "background_color": "#f59e0b",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
