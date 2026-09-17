@@ -1,14 +1,14 @@
 # COORDENACAO.md — Fonte única de verdade
 
-> Protocolo: [`PROTOCOLO-AGENTES.md`](./PROTOCOLO-AGENTES.md) · **Modo término:** reivindicar → fazer → handoff → próxima LIVRE sem esperar merge.
+> **Modo término:** reivindicar → fazer → handoff → próxima LIVRE. Merge em lote pelo Líder no final.
 
 ---
 
 ## ⚠️ Regras
-1. Nada direto na `main` — branch + PR; merge em lote pelo Líder no final.
-2. Front: `/api/...` relativo; SSE com `?tenant=slug`.
+1. Nada direto na `main`.
+2. Front: `/api/...` relativo; SSE `?tenant=slug`.
 3. GOLDEN_RULES: store_id, auth server-side, idempotência.
-4. T5 com o Líder — não pegar.
+4. T5 com o Líder.
 
 ---
 
@@ -18,12 +18,12 @@
 |----|--------|--------|
 | T1 | CI isolamento | CONCLUÍDA |
 | T2 | Matriz permissões | CONCLUÍDA |
-| T3 | Frontend cliente | **aguardando revisão** PR #70 (agente-ci) |
+| T3 | Frontend cliente | aguardando revisão PR #70 |
 | T4 | Frontend operação | CONCLUÍDA |
 | T5 | Frontend admin | com o Líder |
 | T6 | Validação menu-admin | CONCLUÍDA |
-| T7 | Delivery Fase 6 | **REIVINDICADO agente-ci** |
-| T8 | PIX dinâmico | LIVRE (sandbox via env) |
+| T7 | Delivery Fase 6 | **aguardando revisão** (agente-ci) |
+| T8 | PIX dinâmico | **REIVINDICADO agente-ci** |
 | T9 | Ops Fase 9 | LIVRE |
 | T10 | E-mail transacional | LIVRE |
 | T12 | base | CONCLUÍDA |
@@ -32,12 +32,15 @@
 
 ## 👥 Registro
 
-## [agente-ci] — T3 frontend-cliente · **aguardando revisão**
-**PR:** #70 · **Branch:** `feature/frontend-cliente`
-**Handoff:** QR → menu → carrinho (qty/remove) → checkout com Idempotency-Key → confirmação. Client relative `/api`. Arquivos: `frontend/src/pages/customer/*`, `frontend/src/api/client.js`, `frontend/src/lib/session.js`.
+## [agente-ci] — T3 · PR #70 · aguardando revisão
+Handoff: QR→menu→carrinho→checkout Idempotency-Key. `frontend/src/pages/customer/*`, `api/client.js`.
 
-## [agente-ci] — 2026-09-17 16:15
-**Domínio:** T7 — delivery
-**Status:** em andamento
+## [agente-ci] — T7 delivery · aguardando revisão
 **Branch:** `feature/delivery-fase6`
-**Observações:** Completar zonas/taxas, listagem staff, status entregador, tracking.
+**Handoff:** courier_status machine + migration 0015; listagem staff; PATCH courier-status; testes isolamento. Arquivos: `migrations/0015_*`, `src/modules/delivery/*`, `test/isolation/delivery.test.js`.
+
+## [agente-ci] — 2026-09-17 16:20
+**Domínio:** T8 — PIX dinâmico
+**Status:** em andamento
+**Branch:** `feature/pix-dinamico`
+**Observações:** Provider Mercado Pago sandbox via env; webhook assinado + idempotente (`payment_events`). Credenciais nunca no código.
