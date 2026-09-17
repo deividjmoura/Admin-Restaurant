@@ -1,3 +1,10 @@
+/**
+ * Client HTTP do frontend.
+ *
+ * A API serve o front no mesmo origin (docs/DEPLOY.md).
+ * Use sempre caminhos relativos (`/api/...`).
+ * VITE_API_URL só se precisar apontar para outro host (dev legado).
+ */
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const DEFAULT_TENANT = import.meta.env.VITE_TENANT_SLUG || 'demo';
 
@@ -14,19 +21,32 @@ export function getTenant() {
   return getTenantSlug();
 }
 
+function resolveUrl(path) {
+  if (!path.startsWith('/')) path = `/${path}`;
+  if (!API_URL) return path;
+  return `${API_URL}${path}`;
+}
+
 /**
  * Fetch JSON against API with tenant header + cookies.
+ * options.idempotencyKey → header Idempotency-Key (operações críticas).
  */
 export async function api(path, options = {}) {
+  const { idempotencyKey, headers: extraHeaders, ...rest } = options;
+
   const headers = {
     'Content-Type': 'application/json',
     'X-Tenant-Slug': getTenantSlug(),
-    ...(options.headers || {}),
+    ...(extraHeaders || {}),
   };
 
-  const res = await fetch(`${API_URL}${path}`, {
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey;
+  }
+
+  const res = await fetch(resolveUrl(path), {
     credentials: 'include',
-    ...options,
+    ...rest,
     headers,
   });
 
@@ -49,5 +69,5 @@ export async function api(path, options = {}) {
 }
 
 export function apiUrl(path) {
-  return `${API_URL}${path}`;
+  return resolveUrl(path);
 }
