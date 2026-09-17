@@ -60,6 +60,22 @@ async function tablesRoutes(app) {
 
     const session = await openOrGetSession(table.store_id, table.id);
 
+    // Tenant slug for client to scope subsequent menu/cart requests (multi-tenant).
+    // Fetch fresh so QR flow works even when frontend had stale/default tenantSlug.
+    let storeSlug = null;
+    let storeName = null;
+    try {
+      const { query } = await import('../../infrastructure/db.js');
+      const { rows } = await query(
+        `SELECT slug, name FROM stores WHERE id = $1`,
+        [table.store_id]
+      );
+      storeSlug = rows[0]?.slug || null;
+      storeName = rows[0]?.name || null;
+    } catch {
+      // non-critical — frontend can still operate with storeId
+    }
+
     return {
       table: {
         id: table.id,
@@ -75,6 +91,8 @@ async function tablesRoutes(app) {
         cartVersion: session.cart_version ?? 0,
       },
       storeId: table.store_id,
+      storeSlug,
+      storeName,
     };
   });
 

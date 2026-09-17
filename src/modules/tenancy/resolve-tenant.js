@@ -58,5 +58,19 @@ export async function resolveStoreFromRequest(request) {
     return store;
   }
 
+  // Fallback extra para EventSource/SSE: tenant via query ?tenant=slug
+  // EventSource não permite custom headers, então o frontend passa o tenant na URL.
+  const querySlug = request.query?.tenant || request.query?.store || request.query?.storeSlug || request.query?.slug;
+  if (typeof querySlug === 'string' && querySlug.trim()) {
+    const store = await findBySlug(querySlug.trim());
+    if (!store) {
+      throw new AppError('TENANT_NOT_FOUND', 'Loja não encontrada.', 404);
+    }
+    if (store.status !== 'active') {
+      throw new AppError('TENANT_INACTIVE', 'Loja indisponível.', 403);
+    }
+    return store;
+  }
+
   return null;
 }

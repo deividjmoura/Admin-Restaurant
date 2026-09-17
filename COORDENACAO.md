@@ -44,10 +44,10 @@
 | ID | Tarefa | Domínio | Issue | Prioridade | Status |
 |----|--------|---------|-------|------------|--------|
 | T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #68) |
-| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
-| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** |
-| T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | LIVRE |
-| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | LIVRE |
+| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** |
+| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-cliente** (PR #70) |
+| T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | **REIVINDICADO por agente-operacao** |
+| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-ci** |
 | T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | LIVRE |
 | T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | LIVRE |
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | LIVRE (requer credenciais de provider — escalar ao Líder) |
@@ -79,27 +79,17 @@
 **Status:** aguardando revisão
 **Branch/worktree:** `feature/ci-isolamento`
 **Dependências:** nenhuma
-**Observações:** PR #68 aberto.
+**Observações:** PR #68 aberto. Workflow com Postgres service + migrations + test:isolation.
 
 ## [agente-ci] — 2026-09-17 15:40
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T2 — testes-permissoes (Matriz de permissões)
-**Arquivos/pastas principais:** `src/modules/auth/`, rotas staff/admin, `test/isolation/permissions.test.js`
-**Status:** aguardando revisão
-**Branch/worktree:** `feature/testes-permissoes`
-**Dependências:** nenhuma
-**Observações:** PR #69 aberto.
-
-## [agente-ci] — 2026-09-17 15:50
-
-**Papel:** Trabalhador
-**Domínio reivindicado:** T3 — frontend-cliente
-**Arquivos/pastas principais:** `frontend/src/pages/customer/`, `frontend/src/api/`
+**Arquivos/pastas principais:** `src/modules/auth/`, rotas staff/admin, `test/isolation/`
 **Status:** iniciando
-**Branch/worktree:** `feature/frontend-cliente` (em criação)
+**Branch/worktree:** `feature/testes-permissoes` (em criação)
 **Dependências:** nenhuma
-**Observações:** Fluxo QR → menu → carrinho compartilhado → checkout com Idempotency-Key; polir UX das páginas customer/.
+**Observações:** T1 em PR. Seguindo para T2: implementar `requireRole`, aplicar matriz OWNER/MANAGER/KITCHEN/STAFF nas rotas e testes de autorização 401/403 + isolamento por store_id.
 
 ---
 
@@ -174,21 +164,49 @@
 
 ---
 
-## [agente-ci] — 2026-09-17 18:48
+## [agente-cliente] — 2026-09-17 18:45
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T3 — frontend-cliente
+**Arquivos/pastas principais:** `frontend/src/pages/customer/*`, `frontend/src/api/client.js`, `frontend/src/components/*`
+**Status:** aguardando revisão
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T1 (CI verde) — base de isolamento; T2 já reivindicado por outro agente
+**Observações:** T3 entregue. Fluxo completo: QR (`/m/:token` → resolve mesa + sessão, grava storeSlug/storeName, cartVersion) → Cardápio (tenant-aware, addItem com expectedVersion + handling CART_VERSION_CONFLICT, feedback + auto-refresh) → Carrinho compartilhado (poll 5s, remover item, totais, compartilhado) → Checkout idempotente (header Idempotency-Key + body, chave persistida em sessionStorage, clear só após 201/200, replay handling). Backend `/api/tables/by-token` agora retorna storeSlug/storeName para frontend setar `X-Tenant-Slug`. Validado: `test:unit` 16/16, build frontend ok. Pronto para revisão do Líder. PR #67 já contém T1; este commit estende a mesma branch para T3 (a ser separado ou revisado junto).
+
+## [agente-operacao] — 2026-09-17 18:50
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T4 — frontend-operacao
+**Arquivos/pastas principais:** `frontend/src/pages/staff/*`, `frontend/src/api/client.js`, `src/modules/tenancy/resolve-tenant.js`
+**Status:** aguardando revisão
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
+**Observações:** T4 entregue. Cozinha/bar com SSE (tenant via query `?tenant=` para EventSource) + poll 4s fallback, estações KITCHEN/BAR isoladas, transições PENDING→PREPARING→READY, garçom com filtro ALL/KITCHEN/BAR e entrega READY→DELIVERED (poll 3s), caixa com listagem de sessões abertas, detalhe com consumo/pagamentos/totais, fechamento de sessão e confirmação PIX, hint de PIX config. Backend `resolve-tenant` agora aceita `?tenant` para SSE. Validado `test:unit` 16/16. Pronto para revisão.
+
+## [agente-ci] — 2026-09-17 18:55
 
 **Papel:** Trabalhador  
-**Domínio reivindicado:** `T4 — frontend-operacao` (Frontend operação: cozinha/bar com SSE + estações, garçom, caixa; páginas `staff/`)  
-**Arquivos/pastas principais:** `frontend/src/pages/staff/`, `frontend/src/api/`  
+**Domínio reivindicado:** `T5 — frontend-admin` (Frontend admin: CRUD de cardápio na UI, mesas + QR, zonas de delivery, dashboard; páginas `admin/`)  
+**Arquivos/pastas principais:** `frontend/src/pages/admin/`, `frontend/src/api/`  
 **Status:** em andamento  
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
-**Dependências:** T1 (CI) — revisada e aprovada pelo Líder (PR #67); APIs existentes de cozinha/mesas/pagamentos (já na main)  
-**Observações:** T1 (CI de isolamento, PR #67) **revisada e aprovada pelo Líder** — aguardando apenas o merge. Seguindo para a próxima LIVRE em ordem de prioridade: T4 (🟠 média-alta). Domínio `frontend-operacao` (páginas `staff/`), independente de T3 (`frontend-cliente`/páginas `customer/`). Nota: entradas anteriores desta sessão foram consolidadas pelo dono na main — sigo o estado atual do arquivo (histórico completo preservado no git da branch).
+**Dependências:** APIs existentes (menu-admin já na main; tables/delivery/reports)  
+**Observações:** (1) T1 (CI, PR #67) **revisada e aprovada pelo Líder** — aguardando merge. (2) T4: **cedo a `agente-operacao`** — reivindicou 18:47:09, ~1 min antes da minha (18:48); protocolo §5: o mais recente cede. (3) Reivindico a próxima LIVRE em ordem de prioridade: T5 (🟠 média-alta).
 
 ---
 
 ## 🗒️ Log de eventos
 
-- **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado.
-- **2026-09-17 15:30 — agente-ci:** Reivindicou T1. PR #68.
-- **2026-09-17 15:40 — agente-ci:** Reivindicou T2. PR #69.
-- **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente).
+- **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
+- **2026-09-17 15:30 — agente-ci:** Entrou no projeto. Leu PROTOCOLO-AGENTES.md, COORDENACAO.md e docs/GOLDEN_RULES.md. Reivindicou T1 (CI de isolamento) com status `iniciando`.
+- **2026-09-17 15:35 — agente-ci:** PR #68 aberto (T1). Status → `aguardando revisão`.
+- **2026-09-17 15:40 — agente-ci:** Reivindicou T2 (matriz de permissões). Status `iniciando`.
+- **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente) — branch `feature/frontend-cliente` (main @ f3402da).
+- **2026-09-17 18:22 — agente-ci:** Novo agente (Trabalhador) no projeto. Protocolo de entrada (seção 4) cumprido: leitura completa de protocolo, coordenação e regras de ouro.
+- **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
+- **2026-09-17 18:38 — agente-ci:** T1 concluída localmente (workflow + fix de portabilidade dos scripts de teste p/ Node 20). Validação: 29/29 testes de isolamento (integração ativa) em Postgres real, banco limpo, migrations 0001–0014. Status: aguardando revisão (PR a seguir).
+- **2026-09-17 18:40 — agente-ci:** Merge da main atualizada e das linhagens desta sessão (PR #67). Workflow final unificado em `ci-isolation.yml`. **ESCALADO ao Líder:** sobreposição de domínio T1 — PR #67 (verde no GitHub Actions) vs. PR #68 de outro agente (vermelho). Aguardando decisão do Líder sobre qual PR mergear.
+- **2026-09-17 18:48 — agente-ci:** T1 revisada e aprovada pelo Líder (PR #67, aguardando merge). Tentei reivindicar T4 — cedei a `agente-operacao` (reivindicou 18:47:09, antes de mim — protocolo §5).
+- **2026-09-17 18:55 — agente-ci:** Reivindiquei T5 (frontend-admin, issue #50/#56) — estava LIVRE. Status: em andamento.
+
