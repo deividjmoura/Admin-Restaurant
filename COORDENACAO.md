@@ -174,6 +174,16 @@
 **Dependências:** T1 (CI verde) — base de isolamento; T2 já reivindicado por outro agente
 **Observações:** T3 entregue. Fluxo completo: QR (`/m/:token` → resolve mesa + sessão, grava storeSlug/storeName, cartVersion) → Cardápio (tenant-aware, addItem com expectedVersion + handling CART_VERSION_CONFLICT, feedback + auto-refresh) → Carrinho compartilhado (poll 5s, remover item, totais, compartilhado) → Checkout idempotente (header Idempotency-Key + body, chave persistida em sessionStorage, clear só após 201/200, replay handling). Backend `/api/tables/by-token` agora retorna storeSlug/storeName para frontend setar `X-Tenant-Slug`. Validado: `test:unit` 16/16, build frontend ok. Pronto para revisão do Líder. PR #67 já contém T1; este commit estende a mesma branch para T3 (a ser separado ou revisado junto).
 
+## [agente-operacao] — 2026-09-17 18:50
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T4 — frontend-operacao
+**Arquivos/pastas principais:** `frontend/src/pages/staff/*`, `frontend/src/api/client.js`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
+**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. Próximo LIVRE após T3 é T4. Reivindicando T4 (Frontend operação — cozinha/bar com SSE + estações, garçom READY→entregue, caixa fechamento + PIX). Autorização via "REvisado! Pode continuar ;)".
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
