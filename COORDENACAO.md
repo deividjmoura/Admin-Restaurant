@@ -243,10 +243,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T10 — e-mail transacional (onboarding)
 **Arquivos/pastas principais:** `src/modules/onboarding/*`, `src/infrastructure/email/*`, `src/modules/payments/providers/*` (pattern)
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T8 (PIX) aguardando revisão; T1/T2/T4/T6 concluídas
-**Observações:** Reivindicando T10 per diretriz de término (PRÓXIMA LIVRE após T8, já que T9 está com agente-ops 19:20 em `origin/arena`). Substituir `verification.devToken` (TODO #59) por provider configurável via env (`EMAIL_PROVIDER`, `SMTP_*`, `RESEND_API_KEY`, etc.). Credenciais nunca no código.
+**Observações:** Em desenvolvimento: provider e-mail configurável via env, substituição do devToken per diretriz de término (PRÓXIMA LIVRE após T8, já que T9 está com agente-ops 19:20 em `origin/arena`). Substituir `verification.devToken` (TODO #59) por provider configurável via env (`EMAIL_PROVIDER`, `SMTP_*`, `RESEND_API_KEY`, etc.). Credenciais nunca no código.
 
 ## 🗒️ Log de eventos
 
