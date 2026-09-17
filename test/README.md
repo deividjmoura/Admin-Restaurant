@@ -11,6 +11,13 @@ npm run test:unit
 npm test
 ```
 
+> **Por que `test/isolation/*.test.js` (e não `**`)?** O `node --test` só
+> interpreta glob a partir do Node 21; o shell (sh) não expande `**` sem
+> globstar. O `*.test.js` simples é expandido pelo shell e funciona no Node
+> 20+ (engines do projeto) — sem `**`, a suíte falhava silenciosamente no
+> Node 20 (issue #53 / T1, CI). Mantenha os arquivos de teste flat em
+> `test/isolation/`.
+
 Os testes de integração (`repository-isolation`, `http-isolation`) são **pulados** automaticamente quando `DATABASE_URL` não está definida.
 
 ### Casos cobertos
