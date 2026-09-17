@@ -7,6 +7,9 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 import authPlugin from './modules/auth/auth-plugin.js';
 import menuRoutes from './modules/menu/menu-routes.js';
@@ -17,6 +20,10 @@ import kitchenRoutes from './modules/kitchen/kitchen-routes.js';
 import cartRoutes from './modules/tables/cart-routes.js';
 import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
+import couponsRoutes from './modules/coupons/coupons-routes.js';
+import walletsRoutes from './modules/wallets/wallets-routes.js';
+import whatsappRoutes from './modules/whatsapp/whatsapp-routes.js';
+import billingRoutes from './modules/billing/billing-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
 import signupRoutes from './modules/onboarding/signup-routes.js';
@@ -88,6 +95,10 @@ export async function buildApp(opts = {}) {
   await app.register(cartRoutes);
   await app.register(deliveryRoutes);
   await app.register(paymentsRoutes);
+  await app.register(couponsRoutes);
+  await app.register(walletsRoutes);
+  await app.register(whatsappRoutes);
+  await app.register(billingRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
   await app.register(signupRoutes);
@@ -97,11 +108,18 @@ export async function buildApp(opts = {}) {
   app.get('/ready', async (_request, reply) => {
     try {
       const { pool } = await import('./infrastructure/db.js');
+      const { getJobQueueMetrics } = await import('./workers/job-queue.js');
       const r = await pool.query('SELECT 1 AS ok');
       if (!r.rows[0]) {
         return reply.code(503).send({ status: 'not_ready', db: false });
       }
-      return { status: 'ready', db: true, ts: new Date().toISOString() };
+      // T9 (issue #52): readiness com check de DB + métricas básicas da fila.
+      return {
+        status: 'ready',
+        db: true,
+        jobs: getJobQueueMetrics(),
+        ts: new Date().toISOString(),
+      };
     } catch (err) {
       return reply.code(503).send({
         status: 'not_ready',
@@ -135,6 +153,46 @@ export async function buildApp(opts = {}) {
       },
     })
   );
+
+  // API serve o front em produção (docs/DEPLOY.md): frontend/dist como SPA
+  // Em dev o Vite faz proxy de /api; em prod o mesmo origin serve tudo com caminhos relativos.
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const distPath = path.resolve(__dirname, '../frontend/dist');
+    if (fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'))) {
+      const fastifyStatic = (await import('@fastify/static')).default;
+      await app.register(fastifyStatic, {
+        root: distPath,
+        prefix: '/',
+        wildcard: false,
+        decorateReply: false,
+      });
+      // Fallback SPA: qualquer GET não-API que não casou com arquivo → index.html
+      app.setNotFoundHandler(async (request, reply) => {
+        const url = request.url.split('?')[0];
+        if (url.startsWith('/api/') || url === '/health' || url === '/ready' || url.startsWith('/api/me')) {
+          return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' } });
+        }
+        // Se for GET e aceitar html, serve SPA
+        if (request.method === 'GET' && request.headers.accept?.includes('text/html')) {
+          return reply.sendFile('index.html');
+        }
+        // Outros métodos ou assets não encontrados
+        if (request.method === 'GET' && url.includes('.')) {
+          return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Asset não encontrado.' } });
+        }
+        // SPA fallback genérico para rotas do front (/m/:token, /kitchen, /admin/*, etc.)
+        if (request.method === 'GET') {
+          return reply.sendFile('index.html');
+        }
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' } });
+      });
+    }
+  } catch (err) {
+    // Não falha o boot se o front ainda não foi buildado (ex.: CI sem build)
+    app.log.warn({ err: err.message }, 'frontend static not served');
+  }
 
   return app;
 }

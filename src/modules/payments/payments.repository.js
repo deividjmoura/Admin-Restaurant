@@ -1,6 +1,7 @@
 import { query, withTransaction } from '../../infrastructure/db.js';
 import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
+import { createPixPayment, getPixProviderName } from './providers/index.js';
 
 export class PaymentError extends Error {
   constructor(code, message) {
@@ -89,31 +90,56 @@ export async function createPayment(
   const store = await findStoreById(storeId);
   if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
 
-  const settings =
-    typeof store.settings === 'object' && store.settings
-      ? store.settings
-      : {};
-
   let resolvedProvider = provider || 'manual';
   let pixCopyPaste = null;
+  let providerPaymentId = null;
+  let providerMeta = {};
 
   if (method === 'PIX') {
-    const pix = resolvePixConfig(settings);
-    if (!pix.configured) {
-      throw new PaymentError(
-        'PIX_NOT_CONFIGURED',
-        'PIX não configurado nesta loja (settings.pix.key ou PIX_CHAVE).'
-      );
+    const pixProvider = getPixProviderName();
+    // Se provider dinâmico/sandbox, tenta gerar PIX dinâmico (mock se sem credenciais)
+    // Caso contrário, usa estático (requer pix key da loja)
+    if (pixProvider === 'mercadopago' || pixProvider === 'mock') {
+      const externalReference = idempotencyKey || `pix_${Date.now()}_${storeId.slice(0, 8)}`;
+      const dynamic = await createPixPayment({
+        store,
+        amount: Number(amount),
+        externalReference,
+        description: `Pedido loja ${store.slug}`,
+      });
+      resolvedProvider = dynamic.provider;
+      pixCopyPaste = dynamic.pixCopyPaste;
+      providerPaymentId = dynamic.providerPaymentId || null;
+      providerMeta = {
+        pixProvider: pixProvider,
+        qrCodeBase64: dynamic.qrCodeBase64 || null,
+        ticketUrl: dynamic.ticketUrl || null,
+        mocked: dynamic.mocked || false,
+        raw: dynamic.raw ? { id: dynamic.raw.id } : null,
+      };
+    } else {
+      // Estático (default)
+      const settings =
+        typeof store.settings === 'object' && store.settings
+          ? store.settings
+          : {};
+      const pix = resolvePixConfig(settings);
+      if (!pix.configured) {
+        throw new PaymentError(
+          'PIX_NOT_CONFIGURED',
+          'PIX não configurado nesta loja (settings.pix.key ou PIX_CHAVE). Defina em stores.settings.pix ou configure PIX_PROVIDER=mercadopago para dinâmico sandbox.'
+        );
+      }
+      resolvedProvider = 'static_pix';
+      const txid = (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';
+      pixCopyPaste = buildStaticPixPayload({
+        key: pix.key,
+        name: pix.name,
+        city: pix.city,
+        amount: Number(amount),
+        txid,
+      });
     }
-    resolvedProvider = 'static_pix';
-    const txid = (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';
-    pixCopyPaste = buildStaticPixPayload({
-      key: pix.key,
-      name: pix.name,
-      city: pix.city,
-      amount: Number(amount),
-      txid,
-    });
   }
 
   if (method === 'CARD') {
@@ -121,12 +147,15 @@ export async function createPayment(
     resolvedProvider = provider || 'provider_pending';
   }
 
+  // Mescla metadata do provider (qrCode, ticketUrl) com metadata do caller
+  const mergedMetadata = { ...(metadata || {}), ...providerMeta };
+
   try {
     const { rows } = await query(
       `INSERT INTO payments
         (store_id, order_id, session_id, method, status, amount, provider,
-         idempotency_key, pix_copy_paste, metadata)
-       VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9::jsonb)
+         provider_payment_id, idempotency_key, pix_copy_paste, metadata)
+       VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9,$10::jsonb)
        RETURNING *`,
       [
         storeId,
@@ -135,9 +164,10 @@ export async function createPayment(
         method,
         Number(amount),
         resolvedProvider,
+        providerPaymentId,
         idempotencyKey,
         pixCopyPaste,
-        JSON.stringify(metadata || {}),
+        JSON.stringify(mergedMetadata),
       ]
     );
     return { payment: mapPayment(rows[0]), replayed: false };
@@ -268,8 +298,15 @@ export async function getPixConfigForStore(storeId) {
   const settings =
     typeof store.settings === 'object' && store.settings ? store.settings : {};
   const pix = resolvePixConfig(settings);
+  const provider = getPixProviderName();
+  const isDynamic = provider === 'mercadopago' || provider === 'mock';
+  // Dinâmico em sandbox/mock é sempre "configured" (gera QR fake sem PIX key da loja)
+  const configured = isDynamic ? true : pix.configured;
   return {
-    configured: pix.configured,
+    configured,
+    provider,
+    mode: isDynamic ? 'dynamic' : 'static',
+    sandbox: isDynamic && (!process.env.MERCADOPAGO_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN.startsWith('TEST-')),
     name: pix.name,
     city: pix.city,
     // nunca expor a chave completa em endpoints públicos se quiser — aqui mascaramos

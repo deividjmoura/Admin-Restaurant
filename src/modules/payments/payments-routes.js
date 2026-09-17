@@ -196,15 +196,49 @@ async function paymentsRoutes(app) {
   app.post('/api/payments/webhooks/:provider', async (request, reply) => {
     const provider = String(request.params.provider || '').toLowerCase();
     const body = request.body || {};
+
+    // Verificação de assinatura para mercadopago (sandbox) — nunca falha se secret não configurado
+    if (provider === 'mercadopago' || provider === 'mercado_pago' || provider === 'mp') {
+      try {
+        const { verifyWebhookSignature } = await import('./providers/mercadopago.js');
+        const ok = verifyWebhookSignature({ headers: request.headers, body });
+        if (!ok) {
+          const err = new AppError('WEBHOOK_SIGNATURE_INVALID', 'Assinatura do webhook inválida.', 401);
+          const { statusCode, body: b } = errorResponse(err);
+          return reply.code(statusCode).send(b);
+        }
+      } catch {}
+    }
+
+    // Normaliza Mercado Pago: { type: 'payment', action: 'payment.updated', data: { id: 123 } }
+    const mpDataId = body.data?.id || body.data?.paymentId || null;
+    const mpExternalId = mpDataId ? `mp_${mpDataId}_${body.action || body.type || 'event'}` : null;
+
     const externalEventId =
-      body.externalEventId || body.id || body.event_id || null;
-    const eventType = body.eventType || body.type || 'unknown';
-    const paymentId = body.paymentId || null;
-    const storeId = body.storeId || request.storeId || null;
+      body.externalEventId || body.id || body.event_id || mpExternalId || null;
+    const eventType = body.eventType || body.type || body.action || 'unknown';
+    let paymentId = body.paymentId || body.payment_id || null;
+    let storeId = body.storeId || request.storeId || null;
+    // Se webhook veio do MP sem paymentId interno, tenta resolver via provider_payment_id
+    if (!paymentId && mpDataId && provider.includes('mercado')) {
+      try {
+        const { query } = await import('../../infrastructure/db.js');
+        const { rows } = await query(
+          `SELECT id, store_id FROM payments WHERE provider_payment_id = $1 LIMIT 1`,
+          [String(mpDataId)]
+        );
+        if (rows[0]) {
+          paymentId = rows[0].id;
+          storeId = rows[0].store_id;
+        }
+      } catch {}
+    }
     const markPaid =
       body.markPaid === true ||
       eventType === 'payment.paid' ||
-      eventType === 'payment.updated';
+      eventType === 'payment.updated' ||
+      body.action === 'payment.updated' ||
+      (provider.includes('mercado') && mpDataId);
 
     if (!externalEventId) {
       const err = new AppError(

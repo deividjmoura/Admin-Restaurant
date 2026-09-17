@@ -14,6 +14,7 @@ import {
 } from './orders.repository.js';
 import { closeSession } from '../tables/tables.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
+import { enqueueJob } from '../../workers/job-queue.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
 const createOrderSchema = z.object({
@@ -145,6 +146,26 @@ async function ordersRoutes(app) {
               quantity: it.quantity,
               station: it.station,
             })),
+          });
+
+          // Impressão do ticket: job na fila, FORA do request path.
+          // enqueueJob nunca lança (fire-and-forget) — falha de impressão
+          // NUNCA bloqueia a criação do pedido (GOLDEN_RULES: resiliência;
+          // aceite da issue #52). O payload leva snapshot do ticket.
+          enqueueJob({
+            type: 'order.print',
+            storeId: request.storeId,
+            payload: {
+              orderId: result.order.id,
+              channel: result.order.channel,
+              items: result.items.map((it) => ({
+                productName: it.product_name,
+                quantity: it.quantity,
+                unitPrice: Number(it.unit_price),
+                notes: it.notes,
+                station: it.station,
+              })),
+            },
           });
         }
 
