@@ -76,10 +76,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T1 — ci-cd
 **Arquivos/pastas principais:** `.github/workflows/ci.yml`, `package.json`, `test/isolation/*`, `scripts/migrate.js`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** nenhuma
-**Observações:** Lido PROTOCOLO-AGENTES.md, COORDENACAO.md e GOLDEN_RULES.md. Reivindicando T1 (CI de isolamento) — prioridade alta, livre. Implementar GitHub Actions com Postgres service para rodar suite de isolamento em todo PR.
+**Observações:** Lido PROTOCOLO-AGENTES.md, COORDENACAO.md e GOLDEN_RULES.md. Reivindicando T1 (CI de isolamento) — prioridade alta, livre. Implementar GitHub Actions com Postgres service para rodar suite de isolamento em todo PR. Em desenvolvimento: workflow + validação local.
 
 ---
 
