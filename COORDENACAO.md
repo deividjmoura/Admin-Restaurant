@@ -254,10 +254,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T11 — cupons (#63)
 **Arquivos/pastas principais:** `src/modules/coupons/*`, `src/modules/orders/*`, `frontend/src/pages/admin/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** Núcleo T7/T8/T9/T10 aguardando revisão; T3/T5 com outros agentes
-**Observações:** Reivindicando Fase 10 — cupons (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
+**Observações:** Em desenvolvimento: cupons (#63) — modelo, validação, aplicação no checkout, idempotência (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
 
 ## 🗒️ Log de eventos
 
