@@ -7,6 +7,9 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 import authPlugin from './modules/auth/auth-plugin.js';
 import menuRoutes from './modules/menu/menu-routes.js';
@@ -135,6 +138,46 @@ export async function buildApp(opts = {}) {
       },
     })
   );
+
+  // API serve o front em produção (docs/DEPLOY.md): frontend/dist como SPA
+  // Em dev o Vite faz proxy de /api; em prod o mesmo origin serve tudo com caminhos relativos.
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const distPath = path.resolve(__dirname, '../frontend/dist');
+    if (fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'))) {
+      const fastifyStatic = (await import('@fastify/static')).default;
+      await app.register(fastifyStatic, {
+        root: distPath,
+        prefix: '/',
+        wildcard: false,
+        decorateReply: false,
+      });
+      // Fallback SPA: qualquer GET não-API que não casou com arquivo → index.html
+      app.setNotFoundHandler(async (request, reply) => {
+        const url = request.url.split('?')[0];
+        if (url.startsWith('/api/') || url === '/health' || url === '/ready' || url.startsWith('/api/me')) {
+          return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' } });
+        }
+        // Se for GET e aceitar html, serve SPA
+        if (request.method === 'GET' && request.headers.accept?.includes('text/html')) {
+          return reply.sendFile('index.html');
+        }
+        // Outros métodos ou assets não encontrados
+        if (request.method === 'GET' && url.includes('.')) {
+          return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Asset não encontrado.' } });
+        }
+        // SPA fallback genérico para rotas do front (/m/:token, /kitchen, /admin/*, etc.)
+        if (request.method === 'GET') {
+          return reply.sendFile('index.html');
+        }
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' } });
+      });
+    }
+  } catch (err) {
+    // Não falha o boot se o front ainda não foi buildado (ex.: CI sem build)
+    app.log.warn({ err: err.message }, 'frontend static not served');
+  }
 
   return app;
 }
