@@ -100,11 +100,18 @@ export async function buildApp(opts = {}) {
   app.get('/ready', async (_request, reply) => {
     try {
       const { pool } = await import('./infrastructure/db.js');
+      const { getJobQueueMetrics } = await import('./workers/job-queue.js');
       const r = await pool.query('SELECT 1 AS ok');
       if (!r.rows[0]) {
         return reply.code(503).send({ status: 'not_ready', db: false });
       }
-      return { status: 'ready', db: true, ts: new Date().toISOString() };
+      // T9 (issue #52): readiness com check de DB + métricas básicas da fila.
+      return {
+        status: 'ready',
+        db: true,
+        jobs: getJobQueueMetrics(),
+        ts: new Date().toISOString(),
+      };
     } catch (err) {
       return reply.code(503).send({
         status: 'not_ready',
