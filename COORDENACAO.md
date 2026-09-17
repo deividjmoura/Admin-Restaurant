@@ -217,6 +217,17 @@
 **Dependências:** T3 (cliente) CONCLUÍDO/reivindicado, T5 (admin) aguardando revisão
 **Observações:** Próxima LIVRE após T4/T5 é T7 per atualização do Líder 19:05. Reivindicando T7 (delivery — zonas/taxas, fluxo pedido delivery, status entregador; epic #7). T8 bloqueada (PIX com Líder) — não pegar. Frontend usará caminhos relativos (`/api/...`) conforme `docs/DEPLOY.md` (API serve o front).
 
+
+## [agente-ci] — 2026-09-17 19:20
+
+**Papel:** Trabalhador  
+**Domínio reivindicado:** `T9 — ops-workers` (Ops Fase 9: fila de jobs, readiness com check de DB, logs estruturados/métricas, backup — issue #52)  
+**Arquivos/pastas principais:** `src/workers/` (novo), `src/modules/orders/orders-routes.js` (hook de print job), `src/app.js` (`/ready` + métricas), `src/server.js` (start workers), `docs/BACKUP.md` (novo), `test/isolation/`  
+**Status:** em andamento  
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
+**Dependências:** nenhuma (APIs já na main). T7 em andamento com `agente-delivery` — sem sobreposição (delivery vs. ops).  
+**Observações:** T7 cede por ordem (reivindicada por `agente-delivery` 19:15). Reivindico T9, próxima LIVRE após T7/T8. Plano: fila in-process tenant-aware (fire-and-forget, retries + dead-letter), print job desacoplado da criação de pedido (aceite: falha de impressão não bloqueia pedido), `/ready` com métricas da fila, docs de backup (Neon), testes unit + integração. Tocar em `orders-routes.js`/`app.js`/`server.js` (fora do domínio `ops-workers`) — comunicação obrigatória por protocolo §5; mudanças mínimas e documentadas.
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
@@ -233,3 +244,4 @@
 - **2026-09-17 18:57 — agente-ci:** Reivindiquei T6 (menu-admin-validacao, issue #49) — próxima LIVRE em ordem de prioridade. Status: em andamento.
 - **2026-09-17 19:05 — agente-lider (atualização):** T1, T2, T6 e T12(base) CONCLUÍDAS — não pegar. T3 confirmada com agente-ci (frontend-cliente). Livres: T4 (operação), T5 (admin), T7 (delivery), T9 (ops), T10 (e-mail). Novidade: API serve o front (`docs/DEPLOY.md`) — frontends devem usar caminhos relativos (`/api/...`). T8 BLOQUEADA (PIX com Líder).
 - **2026-09-17 19:10 — agente-operacao/agente-admin (arena/01a0b09a):** Backlog sincronizado com atualização do Líder: T1/T2/T6/T12 marcados CONCLUÍDO, T3 mantida REIVINDICADA por agente-ci, T8 → BLOQUEADO, T12 adicionada. T4 (operação, 18:50) e T5 (admin, 18:55) já estavam REIVINDICADAS nesta branch (PR #67, aguardando revisão) — portanto não livres nesta sessão. Implementado `docs/DEPLOY.md` + `src/app.js` com `@fastify/static` servindo `frontend/dist` (SPA fallback) para deploy unificado com caminhos relativos; `frontend/src/api/client.js` já usa `/api/...` relativo. Validado `test:unit` 16/16.
+- **2026-09-17 19:20 — agente-ci:** Reivindiquei T9 (ops-workers, issue #52) — T7 com `agente-delivery`, T8 bloqueada. Status: em andamento.
