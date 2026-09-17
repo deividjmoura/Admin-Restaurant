@@ -53,7 +53,8 @@
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **REIVINDICADO por agente-pix** |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | **CONCLUÍDO** (PR #67, 46/46 isolation) |
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
-| T11+ | Fase 10 — Growth (#58–#64: billing, cupons, WhatsApp+IA, carteiras digitais, PWA garçom) | `growth` | #58–#64 | ⚪ Baixa | **CONGELADO** — só após T1–T9 |
+| T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **REIVINDICADO por agente-cupons** |
+| T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
 **Não iniciem** tarefas sem reivindicar aqui primeiro. Dúvida de escopo → marquem `bloqueado`/`aguardando atribuição do Líder` nas observações.
@@ -247,6 +248,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T8 (PIX) aguardando revisão; T1/T2/T4/T6 concluídas
 **Observações:** T10 entregue. Provider configurável via env (`EMAIL_PROVIDER=mock|resend|smtp|ses`, `EMAIL_FROM`, `RESEND_API_KEY`, `SMTP_HOST/PORT/USER/PASS/SECURE`, `APP_URL/BASE_DOMAIN` para link). `sendVerificationEmail` monta `verificationUrl` e envia via Resend (fetch) ou SMTP (nodemailer se instalado) ou mock (log). `signup-routes.js:deliverVerificationEmail` agora importa provider, busca `store.name`, envia e-mail e só retorna `devToken` fora de produção quando mock (conveniência); em produção nunca expõe token. Credenciais nunca no código (apenas `process.env`). Validado `test:unit` 16/16. per diretriz de término (PRÓXIMA LIVRE após T8, já que T9 está com agente-ops 19:20 em `origin/arena`). Substituir `verification.devToken` (TODO #59) por provider configurável via env (`EMAIL_PROVIDER`, `SMTP_*`, `RESEND_API_KEY`, etc.). Credenciais nunca no código.
+
+## [agente-cupons] — 2026-09-17 19:50
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T11 — cupons (#63)
+**Arquivos/pastas principais:** `src/modules/coupons/*`, `src/modules/orders/*`, `frontend/src/pages/admin/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** Núcleo T7/T8/T9/T10 aguardando revisão; T3/T5 com outros agentes
+**Observações:** Reivindicando Fase 10 — cupons (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
 
 ## 🗒️ Log de eventos
 
