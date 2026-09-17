@@ -20,6 +20,7 @@ import kitchenRoutes from './modules/kitchen/kitchen-routes.js';
 import cartRoutes from './modules/tables/cart-routes.js';
 import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
+import couponsRoutes from './modules/coupons/coupons-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
 import signupRoutes from './modules/onboarding/signup-routes.js';
@@ -91,6 +92,7 @@ export async function buildApp(opts = {}) {
   await app.register(cartRoutes);
   await app.register(deliveryRoutes);
   await app.register(paymentsRoutes);
+  await app.register(couponsRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
   await app.register(signupRoutes);
