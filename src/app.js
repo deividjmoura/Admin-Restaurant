@@ -40,22 +40,14 @@ export async function buildApp(opts = {}) {
     contentSecurityPolicy: false,
   });
 
-  // CORS: credentials:true requires an explicit Origin (or reflection).
-  // When CORS_ORIGIN / FRONTEND_ORIGIN is unset in production the previous
-  // fallback (`false`) blocked the browser from reading the login response
-  // and from storing the httpOnly session cookie — login appeared broken.
-  // Reflection (`true`) is safe for SameSite=None cookies and restores login.
-  // Prefer setting CORS_ORIGIN to the exact frontend origin(s) in production.
   const corsOriginEnv = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
   let corsOrigin;
   if (corsOriginEnv) {
     corsOrigin = corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean);
   } else if (isProd) {
-    // Reflect request Origin so credentialed requests work until env is set.
-    // Log once so the operator knows to configure it properly.
     if (!globalThis.__corsOriginWarned) {
       console.warn(
-        '[cors] CORS_ORIGIN / FRONTEND_ORIGIN not set. Reflecting request Origin. Set the env to your frontend URL(s) for production.'
+        '[cors] CORS_ORIGIN / FRONTEND_ORIGIN not set. Reflecting request Origin.'
       );
       globalThis.__corsOriginWarned = true;
     }
@@ -92,8 +84,14 @@ export async function buildApp(opts = {}) {
   await app.register(storeRoutes);
   await app.register(signupRoutes);
 
-  app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    ts: new Date().toISOString(),
+  }));
 
+  /**
+   * Readiness: DB obrigatório; tabela jobs opcional (reportada).
+   */
   app.get('/ready', async (_request, reply) => {
     try {
       const { pool } = await import('./infrastructure/db.js');
@@ -101,12 +99,32 @@ export async function buildApp(opts = {}) {
       if (!r.rows[0]) {
         return reply.code(503).send({ status: 'not_ready', db: false });
       }
-      return { status: 'ready', db: true, ts: new Date().toISOString() };
+
+      let jobs = null;
+      try {
+        const j = await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+             COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+             COUNT(*) FILTER (WHERE status = 'dead')::int AS dead
+           FROM jobs`
+        );
+        jobs = j.rows[0];
+      } catch {
+        jobs = { available: false };
+      }
+
+      return {
+        status: 'ready',
+        db: true,
+        jobs,
+        ts: new Date().toISOString(),
+      };
     } catch (err) {
       return reply.code(503).send({
         status: 'not_ready',
         db: false,
-        error: process.env.NODE_ENV === 'production' ? 'db_unavailable' : String(err.message),
+        error: isProd ? 'db_unavailable' : String(err.message),
       });
     }
   });
