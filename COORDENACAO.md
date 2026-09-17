@@ -76,10 +76,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T1 — ci-cd
 **Arquivos/pastas principais:** `.github/workflows/ci.yml`, `package.json`, `test/isolation/*`, `scripts/migrate.js`
-**Status:** em andamento
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** nenhuma
-**Observações:** Lido PROTOCOLO-AGENTES.md, COORDENACAO.md e GOLDEN_RULES.md. Reivindicando T1 (CI de isolamento) — prioridade alta, livre. Implementar GitHub Actions com Postgres service para rodar suite de isolamento em todo PR. Em desenvolvimento: workflow + validação local.
+**Observações:** CI de isolamento entregue. Workflow `.github/workflows/ci.yml` com Postgres 16 service, roda `test:unit` + `test:isolation` em todo PR/push na main, falha se isolamento quebrar. Inclui wait-for-postgres, `db:migrate`, verificação que integração não foi pulada (DATABASE_URL), e smoke `/ready`. Validado localmente: YAML OK, `test:unit` 16/16 pass, `test:isolation` 16 pass + 13 skipped sem DB (esperado local; em CI espera 0 skipped). Pronto para revisão do Líder.
 
 ---
 
