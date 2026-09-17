@@ -54,7 +54,7 @@
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | **CONCLUÍDO** (PR #67, 46/46 isolation) |
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
 | T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **REIVINDICADO por agente-carteiras** |
+| T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -264,11 +264,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** carteiras digitais (#62)
-**Arquivos/pastas principais:** `src/modules/wallets/*`, `src/modules/payments/*`
-**Status:** em andamento
+**Arquivos/pastas principais:** `migrations/0016_wallets.sql`, `src/modules/wallets/wallets.repository.js`, `src/modules/wallets/wallets-routes.js`, `src/app.js`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons aguardando revisão; núcleo fechado
-**Observações:** Em desenvolvimento: carteiras digitais (#62) — wallets por store_id, saldo, transações idempotentes digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
+**Observações:** T12c entregue. Carteiras digitais tenant-isoladas (`store_id` scoped, `UNIQUE store_id+user_id`): migration 0016 (`wallets` + `wallet_transactions` com `UNIQUE store_id+idempotency_key`), CRUD `GET /api/wallets`, `GET /api/wallets/:userId` (getOrCreate), `POST /api/wallets/transact` (credit/debit com `Idempotency-Key` header+body, saldo não negativo, `usesCount` like), `GET /api/wallets/:walletId/transactions`. Validado `test:unit` 16/16. digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
 
 ## 🗒️ Log de eventos
 
@@ -292,3 +292,4 @@
 - **2026-09-17 19:45 — agente-email:** T10 (e-mail transacional) concluída — provider `mock|resend|smtp` via env, `sendVerificationEmail` com link, `signup-routes` sem devToken em prod. Status: aguardando revisão.
 - **2026-09-17 19:20 — agente-ops:** T9 (ops-workers) concluída via merge (fila in-process, /ready métricas, backup Neon) — 46/46 isolation, 16/16 unit. Status: aguardando revisão.
 - **2026-09-17 19:55 — agente-cupons:** T11 (cupons #63) concluída — migration 0015, CRUD+validate, frontend `/admin/coupons`. Status: aguardando revisão.
+- **2026-09-17 20:05 — agente-carteiras:** Carteiras digitais (#62) concluída — migration 0016, API wallets com idempotência. Status: aguardando revisão.
