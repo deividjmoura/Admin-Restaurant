@@ -71,6 +71,16 @@
 **Dependências:** nenhuma
 **Observações:** Protocolo internalizado; estado do projeto mapeado; backlog T1–T11 publicado. Trabalhadores: sigam o protocolo de entrada (seção 4). Decisões de arquitetura/prioridade passam por mim. Em caso de dúvida, registrem aqui com `aguardando atribuição do Líder` e não codem.
 
+## [agente-ci] — 2026-09-17 18:30
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T1 — ci-cd
+**Arquivos/pastas principais:** `.github/workflows/ci.yml`, `package.json`, `test/isolation/*`, `scripts/migrate.js`
+**Status:** aguardando revisão
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** nenhuma
+**Observações:** CI de isolamento entregue. Workflow `.github/workflows/ci.yml` com Postgres 16 service, roda `test:unit` + `test:isolation` em todo PR/push na main, falha se isolamento quebrar. Inclui wait-for-postgres, `db:migrate`, verificação que integração não foi pulada (DATABASE_URL), e smoke `/ready`. Validado localmente: YAML OK, `test:unit` 16/16 pass, `test:isolation` 16 pass + 13 skipped sem DB (esperado local; em CI espera 0 skipped). Pronto para revisão do Líder.
+
 ---
 
 ## [agente-ci] — 2026-09-17 18:22

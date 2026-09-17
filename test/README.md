@@ -17,6 +17,10 @@ npm test
 > 20+ (engines do projeto) — sem `**`, a suíte falhava silenciosamente no
 > Node 20 (issue #53 / T1, CI). Mantenha os arquivos de teste flat em
 > `test/isolation/`.
+>
+> `npm test` equivale a `npm run test:isolation` (todos os testes do
+> repositório estão em `test/isolation/`); a diferença prática é o banco:
+> os unitários rodam sem `DATABASE_URL`, os de integração pulam sem ele.
 
 Os testes de integração (`repository-isolation`, `http-isolation`) são **pulados** automaticamente quando `DATABASE_URL` não está definida.
 
