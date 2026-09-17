@@ -1,0 +1,75 @@
+# =============================================================================
+# T1 (issue #53) — CI de isolamento multi-tenant
+#
+# Roda a suíte de isolamento (test/isolation) em todo PR para a main e em todo
+# push na main, com um PostgreSQL real (service) para que os testes de
+# integração (repository/HTTP/onboarding) NÃO fiquem pulados.
+#
+# Se o isolamento por store_id quebrar, o CI falha e bloqueia o merge.
+# =============================================================================
+name: CI — Isolamento multi-tenant
+
+on:
+  pull_request: # todo PR (o gate real é o PR para main, que só o Líder mergeia)
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolation:
+    name: isolamento (Node ${{ matrix.node }}, Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # engines do package.json: >=20 — valida os dois LTS atuais.
+        node: [20, 22]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: admin_restaurant
+        ports:
+          - 5432:5432
+        # Aguarda o Postgres aceitar conexões antes dos testes.
+        options: >-
+          --health-cmd "pg_isready -U ci -d admin_restaurant"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Banco do service acima (apenas CI — não é credencial real).
+      DATABASE_URL: postgres://ci:ci@localhost:5432/admin_restaurant
+      # Valores fixos de teste — seguros apenas para CI.
+      NODE_ENV: development
+      BASE_DOMAIN: localhost
+      JWT_SECRET: ci-only-not-a-real-secret-0000000000000000
+      COOKIE_SECRET: ci-only-not-a-real-secret-0000000000000001
+      APP_TIMEZONE: America/Sao_Paulo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Instala dependências
+        run: npm ci
+
+      - name: Aplica migrations
+        run: npm run db:migrate
+
+      - name: Roda testes de isolamento
+        run: npm run test:isolation
