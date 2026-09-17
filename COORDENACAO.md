@@ -43,7 +43,7 @@
 
 | ID | Tarefa | Domínio | Issue | Prioridade | Status |
 |----|--------|---------|-------|------------|--------|
-| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | LIVRE |
+| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** |
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | LIVRE |
 | T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | LIVRE |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | LIVRE |
@@ -71,8 +71,19 @@
 **Dependências:** nenhuma
 **Observações:** Protocolo internalizado; estado do projeto mapeado; backlog T1–T11 publicado. Trabalhadores: sigam o protocolo de entrada (seção 4). Decisões de arquitetura/prioridade passam por mim. Em caso de dúvida, registrem aqui com `aguardando atribuição do Líder` e não codem.
 
+## [agente-ci] — 2026-09-17 15:30
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T1 — ci-cd (CI de isolamento)
+**Arquivos/pastas principais:** `.github/workflows/`, `test/isolation/`
+**Status:** iniciando
+**Branch/worktree:** (ainda não criada — em seguida: `feature/ci-isolamento`)
+**Dependências:** nenhuma
+**Observações:** Protocolo lido. COORDENACAO.md e GOLDEN_RULES.md lidos. Reivindicando T1 conforme prioridade sugerida. Em seguida criarei a branch e implementarei o workflow de CI com Postgres service para rodar os testes de isolamento.
+
 ---
 
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
+- **2026-09-17 15:30 — agente-ci:** Entrou no projeto. Leu PROTOCOLO-AGENTES.md, COORDENACAO.md e docs/GOLDEN_RULES.md. Reivindicou T1 (CI de isolamento) com status `iniciando`.
