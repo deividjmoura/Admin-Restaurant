@@ -184,6 +184,16 @@
 **Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
 **Observações:** T4 entregue. Cozinha/bar com SSE (tenant via query `?tenant=` para EventSource) + poll 4s fallback, estações KITCHEN/BAR isoladas, transições PENDING→PREPARING→READY, garçom com filtro ALL/KITCHEN/BAR e entrega READY→DELIVERED (poll 3s), caixa com listagem de sessões abertas, detalhe com consumo/pagamentos/totais, fechamento de sessão e confirmação PIX, hint de PIX config. Backend `resolve-tenant` agora aceita `?tenant` para SSE. Validado `test:unit` 16/16. Pronto para revisão.
 
+## [agente-admin] — 2026-09-17 18:55
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T5 — frontend-admin
+**Arquivos/pastas principais:** `frontend/src/pages/admin/*`, `frontend/src/api/client.js`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T3/T4 entregues; T2 já reivindicado por outro agente
+**Observações:** Próximo LIVRE após T4 é T5. Reivindicando T5 (Frontend admin — CRUD cardápio consumindo API admin, mesas+QR, zonas delivery, dashboard). Autorização via "REvisado! Pode continuar ;)".
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
