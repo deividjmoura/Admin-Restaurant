@@ -1,6 +1,10 @@
 import { query, withTransaction } from '../../infrastructure/db.js';
 import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
+import {
+  isMercadoPagoConfigured,
+  createMercadoPagoPix,
+} from './providers/mercadopago.js';
 
 export class PaymentError extends Error {
   constructor(code, message) {
@@ -22,6 +26,28 @@ export async function findPaymentByIdempotency(storeId, key) {
   const { rows } = await query(
     `SELECT * FROM payments WHERE store_id = $1 AND idempotency_key = $2`,
     [storeId, key]
+  );
+  return rows[0] ? mapPayment(rows[0]) : null;
+}
+
+export async function findPaymentByProviderId(storeId, provider, providerPaymentId) {
+  if (!providerPaymentId) return null;
+  const { rows } = await query(
+    `SELECT * FROM payments
+     WHERE store_id = $1 AND provider = $2 AND provider_payment_id = $3`,
+    [storeId, provider, providerPaymentId]
+  );
+  return rows[0] ? mapPayment(rows[0]) : null;
+}
+
+/** Busca global por provider_payment_id (webhook sem store no path). */
+export async function findPaymentByProviderIdGlobal(provider, providerPaymentId) {
+  if (!providerPaymentId) return null;
+  const { rows } = await query(
+    `SELECT * FROM payments
+     WHERE provider = $1 AND provider_payment_id = $2
+     LIMIT 1`,
+    [provider, providerPaymentId]
   );
   return rows[0] ? mapPayment(rows[0]) : null;
 }
@@ -60,7 +86,7 @@ export async function listPayments(
 
 /**
  * Cria pagamento PENDING.
- * PIX estático: gera copia-e-cola imediatamente.
+ * PIX: usa Mercado Pago se MP_ACCESS_TOKEN; senão PIX estático EMV.
  */
 export async function createPayment(
   storeId,
@@ -96,28 +122,67 @@ export async function createPayment(
 
   let resolvedProvider = provider || 'manual';
   let pixCopyPaste = null;
+  let providerPaymentId = null;
+  const meta = { ...(metadata || {}) };
 
   if (method === 'PIX') {
-    const pix = resolvePixConfig(settings);
-    if (!pix.configured) {
-      throw new PaymentError(
-        'PIX_NOT_CONFIGURED',
-        'PIX não configurado nesta loja (settings.pix.key ou PIX_CHAVE).'
-      );
+    if (isMercadoPagoConfigured()) {
+      try {
+        const mp = await createMercadoPagoPix({
+          amount: Number(amount),
+          description: `Loja ${store.slug || storeId} · ${orderId || sessionId}`,
+          externalReference: idempotencyKey || `${storeId}:${orderId || sessionId}:${Date.now()}`,
+        });
+        resolvedProvider = 'mercadopago';
+        pixCopyPaste = mp.pixCopyPaste;
+        providerPaymentId = mp.providerPaymentId;
+        if (mp.pixQrBase64) meta.pixQrBase64 = mp.pixQrBase64;
+        meta.mpStatus = mp.status;
+      } catch (err) {
+        // Fallback para estático se MP falhar e houver chave local
+        const pix = resolvePixConfig(settings);
+        if (!pix.configured) {
+          throw new PaymentError(
+            err.code === 'MP_CREATE_FAILED' ? 'MP_CREATE_FAILED' : 'PIX_NOT_CONFIGURED',
+            err.message || 'Falha ao criar PIX dinâmico e PIX estático não configurado.'
+          );
+        }
+        resolvedProvider = 'static_pix';
+        const txid =
+          (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) ||
+          'PEDIDO';
+        pixCopyPaste = buildStaticPixPayload({
+          key: pix.key,
+          name: pix.name,
+          city: pix.city,
+          amount: Number(amount),
+          txid,
+        });
+        meta.mpFallback = true;
+      }
+    } else {
+      const pix = resolvePixConfig(settings);
+      if (!pix.configured) {
+        throw new PaymentError(
+          'PIX_NOT_CONFIGURED',
+          'PIX não configurado (MP_ACCESS_TOKEN ou settings.pix.key / PIX_CHAVE).'
+        );
+      }
+      resolvedProvider = 'static_pix';
+      const txid =
+        (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) ||
+        'PEDIDO';
+      pixCopyPaste = buildStaticPixPayload({
+        key: pix.key,
+        name: pix.name,
+        city: pix.city,
+        amount: Number(amount),
+        txid,
+      });
     }
-    resolvedProvider = 'static_pix';
-    const txid = (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';
-    pixCopyPaste = buildStaticPixPayload({
-      key: pix.key,
-      name: pix.name,
-      city: pix.city,
-      amount: Number(amount),
-      txid,
-    });
   }
 
   if (method === 'CARD') {
-    // Nunca armazenamos dados de cartão. CARD só via provider futuro.
     resolvedProvider = provider || 'provider_pending';
   }
 
@@ -125,8 +190,8 @@ export async function createPayment(
     const { rows } = await query(
       `INSERT INTO payments
         (store_id, order_id, session_id, method, status, amount, provider,
-         idempotency_key, pix_copy_paste, metadata)
-       VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9::jsonb)
+         provider_payment_id, idempotency_key, pix_copy_paste, metadata)
+       VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9,$10::jsonb)
        RETURNING *`,
       [
         storeId,
@@ -135,9 +200,10 @@ export async function createPayment(
         method,
         Number(amount),
         resolvedProvider,
+        providerPaymentId,
         idempotencyKey,
         pixCopyPaste,
-        JSON.stringify(metadata || {}),
+        JSON.stringify(meta),
       ]
     );
     return { payment: mapPayment(rows[0]), replayed: false };
@@ -150,9 +216,6 @@ export async function createPayment(
   }
 }
 
-/**
- * Confirma pagamento (caixa / webhook). Idempotente se já PAID.
- */
 export async function confirmPayment(storeId, paymentId, { metadata = {} } = {}) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
@@ -186,10 +249,6 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
   });
 }
 
-/**
- * Processa evento de webhook de forma idempotente.
- * Retorna { duplicate, event, payment? }
- */
 export async function processWebhookEvent({
   storeId = null,
   provider,
@@ -198,13 +257,13 @@ export async function processWebhookEvent({
   payload = {},
   paymentId = null,
   markPaid = false,
+  providerPaymentId = null,
 }) {
   if (!provider || !externalEventId) {
     throw new PaymentError('WEBHOOK_INVALID', 'provider e externalEventId obrigatórios.');
   }
 
   return withTransaction(async (client) => {
-    // insert-or-detect duplicate
     try {
       const { rows } = await client.query(
         `INSERT INTO payment_events
@@ -223,10 +282,26 @@ export async function processWebhookEvent({
       const event = rows[0];
 
       let payment = null;
-      if (markPaid && paymentId && storeId) {
+      let resolvedPaymentId = paymentId;
+      let resolvedStoreId = storeId;
+
+      if (!resolvedPaymentId && providerPaymentId) {
+        const { rows: byProv } = await client.query(
+          `SELECT * FROM payments
+           WHERE provider = $1 AND provider_payment_id = $2
+           LIMIT 1`,
+          [provider, String(providerPaymentId)]
+        );
+        if (byProv[0]) {
+          resolvedPaymentId = byProv[0].id;
+          resolvedStoreId = byProv[0].store_id;
+        }
+      }
+
+      if (markPaid && resolvedPaymentId && resolvedStoreId) {
         const { rows: payRows } = await client.query(
           `SELECT * FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
-          [paymentId, storeId]
+          [resolvedPaymentId, resolvedStoreId]
         );
         if (payRows[0] && payRows[0].status === 'PENDING') {
           const { rows: updated } = await client.query(
@@ -235,7 +310,11 @@ export async function processWebhookEvent({
                  provider_payment_id = COALESCE(provider_payment_id, $3)
              WHERE id = $1 AND store_id = $2
              RETURNING *`,
-            [paymentId, storeId, payload.providerPaymentId || null]
+            [
+              resolvedPaymentId,
+              resolvedStoreId,
+              providerPaymentId || payload.providerPaymentId || null,
+            ]
           );
           payment = mapPayment(updated[0]);
         } else if (payRows[0]) {
@@ -264,15 +343,16 @@ export async function processWebhookEvent({
 
 export async function getPixConfigForStore(storeId) {
   const store = await findStoreById(storeId);
-  if (!store) return { configured: false };
+  if (!store) return { configured: false, mode: null };
   const settings =
     typeof store.settings === 'object' && store.settings ? store.settings : {};
   const pix = resolvePixConfig(settings);
+  const mp = isMercadoPagoConfigured();
   return {
-    configured: pix.configured,
+    configured: mp || pix.configured,
+    mode: mp ? 'mercadopago' : pix.configured ? 'static' : null,
     name: pix.name,
     city: pix.city,
-    // nunca expor a chave completa em endpoints públicos se quiser — aqui mascaramos
     keyHint: pix.key
       ? pix.key.length > 4
         ? `${pix.key.slice(0, 2)}***${pix.key.slice(-2)}`
