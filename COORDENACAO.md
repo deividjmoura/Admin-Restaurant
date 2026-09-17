@@ -287,10 +287,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** WhatsApp IA (#59)
 **Arquivos/pastas principais:** `src/modules/whatsapp/*`, `src/infrastructure/ai/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** PWA aguardando revisão; núcleo fechado
-**Observações:** Reivindicando Fase 10 — WhatsApp + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
+**Observações:** Em desenvolvimento: WhatsApp IA (#59) — webhook, parser IA mock, idempotência + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
 
 ## 🗒️ Log de eventos
 
