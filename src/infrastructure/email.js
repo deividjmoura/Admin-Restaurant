@@ -2,13 +2,18 @@
  * Provider de e-mail transacional configurável via env.
  * Credenciais nunca no código.
  *
- * EMAIL_PROVIDER=console|resend|none  (default: console em non-prod, none em prod sem chave)
+ * EMAIL_PROVIDER=console|resend|none
  * EMAIL_FROM=noreply@seudominio.com
  * RESEND_API_KEY=re_...
- * APP_PUBLIC_URL=https://app.example.com  (links de verificação)
+ * APP_PUBLIC_URL=https://app.example.com
  */
 
-import { log } from './logger.js';
+function elog(level, msg, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
+}
 
 export function getEmailProviderName() {
   if (process.env.EMAIL_PROVIDER) return process.env.EMAIL_PROVIDER.toLowerCase();
@@ -24,21 +29,17 @@ export function isEmailConfigured() {
   return false;
 }
 
-/**
- * @param {{ to: string, subject: string, text: string, html?: string }}
- * @returns {Promise<{ ok: boolean, provider: string, id?: string, error?: string }>}
- */
 export async function sendEmail({ to, subject, text, html }) {
   const provider = getEmailProviderName();
   const from = process.env.EMAIL_FROM || 'noreply@admin-restaurant.local';
 
   if (provider === 'none') {
-    log.warn('email.skipped_no_provider', { to, subject });
+    elog('warn', 'email.skipped_no_provider', { to, subject });
     return { ok: false, provider, error: 'EMAIL_NOT_CONFIGURED' };
   }
 
   if (provider === 'console') {
-    log.info('email.console', { from, to, subject, text: text?.slice(0, 500) });
+    elog('info', 'email.console', { from, to, subject, text: text?.slice(0, 500) });
     return { ok: true, provider: 'console', id: `console-${Date.now()}` };
   }
 
@@ -64,18 +65,18 @@ export async function sendEmail({ to, subject, text, html }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        log.error('email.resend_failed', { status: res.status, data });
+        elog('error', 'email.resend_failed', { status: res.status, data });
         return { ok: false, provider, error: data?.message || res.statusText };
       }
-      log.info('email.sent', { provider, to, id: data.id });
+      elog('info', 'email.sent', { provider, to, id: data.id });
       return { ok: true, provider, id: data.id };
     } catch (err) {
-      log.error('email.resend_error', { error: err.message });
+      elog('error', 'email.resend_error', { error: err.message });
       return { ok: false, provider, error: err.message };
     }
   }
 
-  log.warn('email.unknown_provider', { provider });
+  elog('warn', 'email.unknown_provider', { provider });
   return { ok: false, provider, error: 'UNKNOWN_PROVIDER' };
 }
 
