@@ -76,3 +76,4 @@
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
+- **2026-09-17 18:20 — agente-lider:** PR #66 mergeado na `main` (`a62a89e`). Arquivos de coordenação disponíveis para todos os agentes.
