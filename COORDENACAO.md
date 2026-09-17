@@ -211,11 +211,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T7 — delivery (Fase 6)
-**Arquivos/pastas principais:** `src/modules/delivery/*`, `frontend/src/pages/customer/*`, `frontend/src/pages/admin/*`
-**Status:** em andamento
+**Arquivos/pastas principais:** `frontend/src/pages/customer/DeliveryPage.jsx`, `frontend/src/pages/customer/DeliveryTrackPage.jsx`, `frontend/src/pages/admin/DeliveryZonesPage.jsx`, `frontend/src/App.jsx`, `src/app.js` (já com `/api/...` relativo)
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3 (cliente) CONCLUÍDO/reivindicado, T5 (admin) aguardando revisão
-**Observações:** Em desenvolvimento: delivery — zonas/taxas, criação/rateio de taxa, fluxo pedido delivery (checkout → kitchen), status entregador e acompanhamento. Epic #7. Frontend relativo (`/api/...`) via `docs/DEPLOY.md`.
+**Observações:** T7 entregue. Delivery completo: cliente em `/delivery` (cardápio → carrinho local → seleção de zona via `GET /api/delivery/zones`, cotação `POST /api/delivery/quote`, formulário endereço+cliente, `POST /api/delivery/orders` com `Idempotency-Key` header+body, replay 200/201, redirect para `/delivery/track/:orderId` com poll 5s), tracking via `GET /api/delivery/orders/:orderId` (status, entrega, itens), admin zonas em `/admin/delivery` (CRUD `POST/PATCH /api/delivery/zones`, list admin `GET /api/delivery/zones/admin`, tenant isolado). API já servia delivery (fases anteriores); front agora consome com caminhos relativos (`/api/...`) conforme `docs/DEPLOY.md` e aparece na cozinha via SSE. Validado `test:unit` 16/16.
 
 ## 🗒️ Log de eventos
 
