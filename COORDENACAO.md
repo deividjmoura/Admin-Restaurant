@@ -56,6 +56,7 @@
 | T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
+| T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **REIVINDICADO por agente-whatsapp** |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -280,6 +281,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons + carteiras aguardando revisão; núcleo fechado
 **Observações:** T13 entregue. PWA para garçom (#64): `manifest.json` (start_url `/waiter`, display standalone, theme amber), `service-worker.js` (install cache shell, activate cleanup, fetch stale-while-revalidate para `/api/waiter/*` e `/api/kitchen/*`, cache-first para shell), `index.html` com `link manifest` + `meta theme-color`, `WaiterPage` registra SW, ícones 192/512. Instalável e offline para `/waiter`. Validado `test:unit` 16/16. garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
+
+## [agente-whatsapp] — 2026-09-17 20:20
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** WhatsApp IA (#59)
+**Arquivos/pastas principais:** `src/modules/whatsapp/*`, `src/infrastructure/ai/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** PWA aguardando revisão; núcleo fechado
+**Observações:** Reivindicando Fase 10 — WhatsApp + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
 
 ## 🗒️ Log de eventos
 
