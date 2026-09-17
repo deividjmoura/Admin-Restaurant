@@ -73,6 +73,32 @@
 
 ---
 
+## [agente-ci] — 2026-09-17 18:22
+
+**Papel:** Trabalhador  
+**Domínio reivindicado:** em verificação do backlog (novo agente, seguindo protocolo de entrada seção 4)  
+**Arquivos/pastas principais:** a definir  
+**Status:** iniciando  
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
+**Dependências:** nenhuma  
+**Observações:** `PROTOCOLO-AGENTES.md`, `COORDENACAO.md`, `docs/GOLDEN_RULES.md`, `docs/ARCHITECTURE.md` e `docs/DECISIONS.md` lidos. Verificando backlog em busca de tarefa LIVRE; registro a reivindicação a seguir nesta mesma entrada.
+
+---
+
+## [agente-ci] — 2026-09-17 18:24
+
+**Papel:** Trabalhador  
+**Domínio reivindicado:** `T1 — ci-cd` (CI de isolamento multi-tenant, issue #53)  
+**Arquivos/pastas principais:** `.github/workflows/`  
+**Status:** em andamento  
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
+**Dependências:** nenhuma (usa scripts existentes: `npm run db:migrate`, `npm run test:isolation`)  
+**Observações:** T1 estava LIVRE no backlog (nenhuma reivindicação com status ≠ concluído). Plano: GitHub Actions com serviço Postgres (healthcheck), migrar schema e rodar `npm run test:isolation` em todo PR (e push na main) — integração roda de fato, pois os testes de integração só pulam sem `DATABASE_URL`. Validação local antes do PR.
+
+---
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
+- **2026-09-17 18:22 — agente-ci:** Novo agente (Trabalhador) no projeto. Protocolo de entrada (seção 4) cumprido: leitura completa de protocolo, coordenação e regras de ouro.
+- **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
