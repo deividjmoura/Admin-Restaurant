@@ -178,11 +178,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T4 — frontend-operacao
-**Arquivos/pastas principais:** `frontend/src/pages/staff/*`, `frontend/src/api/client.js`
-**Status:** em andamento
+**Arquivos/pastas principais:** `frontend/src/pages/staff/*`, `frontend/src/api/client.js`, `src/modules/tenancy/resolve-tenant.js`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
-**Observações:** Em desenvolvimento: cozinha/bar com SSE (poll fallback) + estações, garçom READY→entregue, caixa fechamento + PIX. Lido PROTOCOLO e GOLDEN_RULES.
+**Observações:** T4 entregue. Cozinha/bar com SSE (tenant via query `?tenant=` para EventSource) + poll 4s fallback, estações KITCHEN/BAR isoladas, transições PENDING→PREPARING→READY, garçom com filtro ALL/KITCHEN/BAR e entrega READY→DELIVERED (poll 3s), caixa com listagem de sessões abertas, detalhe com consumo/pagamentos/totais, fechamento de sessão e confirmação PIX, hint de PIX config. Backend `resolve-tenant` agora aceita `?tenant` para SSE. Validado `test:unit` 16/16. Pronto para revisão.
 
 ## 🗒️ Log de eventos
 
