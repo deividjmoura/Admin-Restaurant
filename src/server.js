@@ -9,6 +9,11 @@ const app = await buildApp({
   },
 });
 
+// T9 (issue #52): inicia a fila de jobs (impressão/notificações)
+// desacoplada do request path; encerra junto com o app (hook onClose).
+const { initWorkers } = await import('./workers/index.js');
+await initWorkers(app);
+
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
   console.log(`Server listening on http://localhost:${PORT}`);

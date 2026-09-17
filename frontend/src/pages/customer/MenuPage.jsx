@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api } from '../../api/client';
+import { api, setTenantSlug } from '../../api/client';
 import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
 
 export default function MenuPage() {
@@ -8,6 +8,7 @@ export default function MenuPage() {
   const [menu, setMenu] = useState(null);
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState('');
+  const [adding, setAdding] = useState(null); // productId being added
 
   useEffect(() => {
     (async () => {
@@ -16,10 +17,16 @@ export default function MenuPage() {
         if (!sessionId) {
           const table = await api(`/api/tables/by-token/${token}`);
           sessionStorage.setItem('sessionId', table.session.id);
-          sessionStorage.setItem(
-            'cartVersion',
-            String(table.session.cartVersion ?? 0)
-          );
+          sessionStorage.setItem('cartVersion', String(table.session.cartVersion ?? 0));
+          if (table.storeSlug) {
+            setTenantSlug(table.storeSlug);
+            sessionStorage.setItem('storeSlug', table.storeSlug);
+          }
+          if (table.storeName) sessionStorage.setItem('storeName', table.storeName);
+        } else {
+          // Ensure tenant slug is set for menu fetch if we already have session
+          const storedSlug = sessionStorage.getItem('storeSlug');
+          if (storedSlug) setTenantSlug(storedSlug);
         }
         const data = await api('/api/menu');
         setMenu(data);
@@ -32,7 +39,13 @@ export default function MenuPage() {
   async function addItem(product) {
     setMsg('');
     setError(null);
+    setAdding(product.id);
     const sid = sessionStorage.getItem('sessionId');
+    if (!sid) {
+      setError(new Error('Sessão não encontrada — escaneie o QR novamente.'));
+      setAdding(null);
+      return;
+    }
     const version = Number(sessionStorage.getItem('cartVersion') || 0);
     try {
       const res = await api(`/api/sessions/${sid}/cart/items`, {
@@ -43,19 +56,26 @@ export default function MenuPage() {
           expectedVersion: version,
         }),
       });
-      sessionStorage.setItem(
-        'cartVersion',
-        String(res.version ?? res.cart?.version ?? version + 1)
-      );
-      setMsg(`${product.name} adicionado`);
+      const nextVersion = res.version ?? res.cart?.version ?? version + 1;
+      sessionStorage.setItem('cartVersion', String(nextVersion));
+      setMsg(`${product.name} adicionado ✓`);
+      setTimeout(() => setMsg(''), 2500);
     } catch (err) {
       if (err.code === 'CART_VERSION_CONFLICT' || err.status === 409) {
         const current = err.data?.error?.details?.currentVersion;
         if (current != null) sessionStorage.setItem('cartVersion', String(current));
         setError(new Error('Carrinho atualizado por outra pessoa — tente de novo'));
+        // Optionally refresh cart version in background
+        try {
+          const sid2 = sessionStorage.getItem('sessionId');
+          const cart = await api(`/api/sessions/${sid2}/cart`);
+          sessionStorage.setItem('cartVersion', String(cart.version ?? 0));
+        } catch {}
       } else {
         setError(err);
       }
+    } finally {
+      setAdding(null);
     }
   }
 
@@ -63,17 +83,43 @@ export default function MenuPage() {
     return (
       <div className="p-6">
         <ErrorBox error={error} />
+        <div className="mt-4">
+          <Link to={`/m/${token}`}>
+            <Button variant="secondary">Voltar</Button>
+          </Link>
+        </div>
       </div>
     );
   }
   if (!menu) return <Spinner />;
 
   const categories = menu.categories || menu.menu?.categories || [];
+  const storeName = sessionStorage.getItem('storeName') || menu.store?.name || null;
+
+  if (categories.length === 0) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-4 space-y-4">
+        <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10">
+          <h1 className="text-xl font-bold">Cardápio</h1>
+          <Link to={`/m/${token}/cart`}>
+            <Button variant="secondary">Carrinho</Button>
+          </Link>
+        </div>
+        <Card>
+          <p className="text-stone-600 text-sm">Cardápio vazio ou indisponível no momento.</p>
+          {storeName && <p className="text-xs text-stone-400 mt-1">{storeName}</p>}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg px-4 py-4 space-y-4 pb-24">
-      <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10">
-        <h1 className="text-xl font-bold">Cardápio</h1>
+      <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10 border-b border-stone-200 -mx-4 px-4">
+        <div>
+          <h1 className="text-xl font-bold">Cardápio</h1>
+          {storeName && <p className="text-xs text-stone-500">{storeName}</p>}
+        </div>
         <Link to={`/m/${token}/cart`}>
           <Button variant="secondary">Carrinho</Button>
         </Link>
@@ -89,12 +135,15 @@ export default function MenuPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
             {cat.name}
           </h2>
+          {(cat.products || []).length === 0 && (
+            <p className="text-xs text-stone-400">Nenhum produto nesta categoria.</p>
+          )}
           {(cat.products || []).map((p) => (
             <Card key={p.id} className="flex gap-3 items-start">
-              <div className="flex-1">
-                <p className="font-medium">{p.name}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{p.name}</p>
                 {p.description && (
-                  <p className="text-sm text-stone-500 mt-0.5">{p.description}</p>
+                  <p className="text-sm text-stone-500 mt-0.5 line-clamp-2">{p.description}</p>
                 )}
                 <p className="text-amber-700 font-semibold mt-1">
                   R$ {Number(p.price).toFixed(2)}
@@ -102,14 +151,27 @@ export default function MenuPage() {
                 {!p.isAvailable && (
                   <p className="text-xs text-red-600 mt-1">Indisponível</p>
                 )}
+                {p.station === 'BAR' && p.isAvailable && (
+                  <p className="text-[10px] uppercase tracking-wide text-stone-400 mt-1">Bebidas • BAR</p>
+                )}
               </div>
-              <Button disabled={!p.isAvailable} onClick={() => addItem(p)}>
-                +
+              <Button
+                disabled={!p.isAvailable || adding === p.id}
+                onClick={() => addItem(p)}
+                className="shrink-0"
+                title={p.isAvailable ? 'Adicionar ao carrinho' : 'Indisponível'}
+              >
+                {adding === p.id ? '…' : '+'}
               </Button>
             </Card>
           ))}
         </section>
       ))}
+      <div className="pt-4 flex justify-center">
+        <Link to={`/m/${token}/cart`} className="text-sm text-amber-700 underline">
+          Ver carrinho compartilhado →
+        </Link>
+      </div>
     </div>
   );
 }

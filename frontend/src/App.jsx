@@ -10,6 +10,10 @@ import CashierPage from './pages/staff/CashierPage';
 import DashboardPage from './pages/admin/DashboardPage';
 import MenuAdminPage from './pages/admin/MenuAdminPage';
 import TablesAdminPage from './pages/admin/TablesAdminPage';
+import DeliveryZonesPage from './pages/admin/DeliveryZonesPage';
+import CouponsPage from './pages/admin/CouponsPage';
+import DeliveryPage from './pages/customer/DeliveryPage';
+import DeliveryTrackPage from './pages/customer/DeliveryTrackPage';
 
 export default function App() {
   return (
@@ -26,6 +30,10 @@ export default function App() {
       <Route path="/admin" element={<DashboardPage />} />
       <Route path="/admin/menu" element={<MenuAdminPage />} />
       <Route path="/admin/tables" element={<TablesAdminPage />} />
+      <Route path="/admin/delivery" element={<DeliveryZonesPage />} />
+      <Route path="/admin/coupons" element={<CouponsPage />} />
+      <Route path="/delivery" element={<DeliveryPage />} />
+      <Route path="/delivery/track/:orderId" element={<DeliveryTrackPage />} />
     </Routes>
   );
 }

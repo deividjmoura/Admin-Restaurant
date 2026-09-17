@@ -18,7 +18,8 @@ export default function HomePage() {
 
       <div className="grid gap-3">
         {[
-          { to: '/m/demo', label: 'Cliente (demo token)', hint: 'Use /m/:token do QR real' },
+          { to: '/delivery', label: 'Delivery (cliente)' },
+          { to: '/m/demo', label: 'Cliente mesa (demo token)', hint: 'Use /m/:token do QR real' },
           { to: '/kitchen', label: 'Cozinha' },
           { to: '/bar', label: 'Bar' },
           { to: '/waiter', label: 'Garçom' },

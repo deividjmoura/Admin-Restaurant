@@ -42,10 +42,9 @@ const resendSchema = z.object({
 });
 
 /**
- * Envia o e-mail de verificação.
- * Não há provider de e-mail integrado ainda (ver issue #59/backlog de infra):
- * por ora, registramos via audit log. Em desenvolvimento, o token também
- * volta na resposta HTTP para permitir testar o fluxo sem inbox real.
+ * Envia o e-mail de verificação via provider configurável (T10).
+ * Provider via env: EMAIL_PROVIDER=mock|resend|smtp|ses (mock em CI/dev sem credenciais).
+ * O token volta na resposta apenas fora de produção e quando o provider é mock (conveniência de teste).
  */
 async function deliverVerificationEmail({ storeId, userId, email, rawToken, request }) {
   writeAuditLog({
@@ -61,11 +60,32 @@ async function deliverVerificationEmail({ storeId, userId, email, rawToken, requ
     request.log?.warn({ err }, 'audit log failed on signup verification');
   });
 
-  // TODO(#59-infra): substituir por provider real (ex.: Resend, SES) quando
-  // o módulo de notificações transacionais existir.
-  request.log?.info({ email }, '[onboarding] verification email queued (no provider configured)');
+  // Tenta enviar via provider transacional (mock em dev/CI se sem credenciais)
+  let emailResult = null;
+  try {
+    const { sendVerificationEmail } = await import('../../infrastructure/email/email-provider.js');
+    // Busca nome da loja para personalizar e-mail
+    let storeName = '';
+    try {
+      const s = await storeRepo.findById(storeId);
+      storeName = s?.name || '';
+    } catch {}
+    emailResult = await sendVerificationEmail({
+      to: email,
+      storeName,
+      verificationToken: rawToken,
+    });
+    request.log?.info({ email, provider: emailResult?.provider, mocked: emailResult?.mocked }, '[onboarding] verification email sent');
+  } catch (err) {
+    request.log?.warn({ err, email }, '[onboarding] verification email failed, fallback to devToken if allowed');
+  }
 
-  return process.env.NODE_ENV === 'production' ? undefined : rawToken;
+  // Em produção, nunca retorna devToken (inbox real). Fora de produção, retorna apenas se provider foi mock (conveniência) ou se envio falhou.
+  if (process.env.NODE_ENV === 'production') return undefined;
+  if (emailResult?.mocked) return rawToken;
+  // Se provider real enviou, não precisa expor token; mas em dev sem provider real ainda retornamos para testes locais
+  if (!emailResult || emailResult.provider === 'mock') return rawToken;
+  return undefined;
 }
 
 async function signupRoutes(app) {
