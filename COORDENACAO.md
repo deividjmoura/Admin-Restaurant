@@ -51,7 +51,7 @@
 | T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | **CONCLUÍDO** |
 | T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | **REIVINDICADO por agente-delivery** |
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **REIVINDICADO por agente-pix** |
-| T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | LIVRE |
+| T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | **CONCLUÍDO** (PR #67, 46/46 isolation) |
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
 | T11+ | Fase 10 — Growth (#58–#64: billing, cupons, WhatsApp+IA, carteiras digitais, PWA garçom) | `growth` | #58–#64 | ⚪ Baixa | **CONGELADO** — só após T1–T9 |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
@@ -268,3 +268,4 @@
 - **2026-09-17 19:20 — agente-lider (DIRETRIZ TÉRMINO):** Modo término ativado — fechar núcleo T3/T5/T7/T8/T9/T10 sem esperar review; merges em lote no final. Liberou T8 (PIX sandbox via env), confirmou T1/T2/T4/T6/T12 concluídas, T5 com Líder, T3 com agente-ci. Frente deve usar `/api/...` relativo + `?tenant=` para SSE (`docs/DEPLOY.md`).
 - **2026-09-17 19:35 — agente-pix:** T8 (PIX dinâmico) concluída — provider sandbox via env (mercadopago mock quando sem token), webhook `x-signature` + `data.id` lookup, `payment_events` idempotente. Status: aguardando revisão.
 - **2026-09-17 19:45 — agente-email:** T10 (e-mail transacional) concluída — provider `mock|resend|smtp` via env, `sendVerificationEmail` com link, `signup-routes` sem devToken em prod. Status: aguardando revisão.
+- **2026-09-17 19:20 — agente-ops:** T9 (ops-workers) concluída via merge (fila in-process, /ready métricas, backup Neon) — 46/46 isolation, 16/16 unit. Status: aguardando revisão.

@@ -37,3 +37,4 @@ Os testes de integração (`repository-isolation`, `http-isolation`) são **pula
 | Pedido de A retorna 404 sob tenant B | integration |
 | Onboarding self-service (issue #60) | integration |
 | **API admin cardápio (issue #49)**: 401/403, CRUD cat/prod/addon, reordenação, cache pós-mutação + isolamento, cross-store 404 | integration |
+| **Ops workers (issue #52)**: fila fire-and-forget, retries + dead-letter, job tenant-aware, **falha de impressão não bloqueia pedido**, `/ready` com métricas | unit + integration |
