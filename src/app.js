@@ -22,6 +22,7 @@ import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
 import couponsRoutes from './modules/coupons/coupons-routes.js';
 import walletsRoutes from './modules/wallets/wallets-routes.js';
+import whatsappRoutes from './modules/whatsapp/whatsapp-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
 import signupRoutes from './modules/onboarding/signup-routes.js';
@@ -95,6 +96,7 @@ export async function buildApp(opts = {}) {
   await app.register(paymentsRoutes);
   await app.register(couponsRoutes);
   await app.register(walletsRoutes);
+  await app.register(whatsappRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
   await app.register(signupRoutes);
