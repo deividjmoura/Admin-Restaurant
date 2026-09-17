@@ -169,10 +169,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T3 — frontend-cliente
 **Arquivos/pastas principais:** `frontend/src/pages/customer/*`, `frontend/src/api/client.js`, `frontend/src/components/*`
-**Status:** em andamento
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T1 (CI verde) — base de isolamento; T2 já reivindicado por outro agente
-**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. T1 e T2 já reivindicados, próximo LIVRE é T3. Reivindicando T3 (Frontend cliente — QR → cardápio → carrinho compartilhado → checkout com idempotency-key). Autorização via "Pode seguir!". Em desenvolvimento: polindo fluxo QR → menu → cart → checkout idempotente.
+**Observações:** T3 entregue. Fluxo completo: QR (`/m/:token` → resolve mesa + sessão, grava storeSlug/storeName, cartVersion) → Cardápio (tenant-aware, addItem com expectedVersion + handling CART_VERSION_CONFLICT, feedback + auto-refresh) → Carrinho compartilhado (poll 5s, remover item, totais, compartilhado) → Checkout idempotente (header Idempotency-Key + body, chave persistida em sessionStorage, clear só após 201/200, replay handling). Backend `/api/tables/by-token` agora retorna storeSlug/storeName para frontend setar `X-Tenant-Slug`. Validado: `test:unit` 16/16, build frontend ok. Pronto para revisão do Líder. PR #67 já contém T1; este commit estende a mesma branch para T3 (a ser separado ou revisado junto).
 
 ## 🗒️ Log de eventos
 
