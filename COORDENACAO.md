@@ -53,7 +53,8 @@
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **REIVINDICADO por agente-pix** |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | **CONCLUÍDO** (PR #67, 46/46 isolation) |
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
-| T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **REIVINDICADO por agente-cupons** |
+| T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
+| T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **REIVINDICADO por agente-carteiras** |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -258,6 +259,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** Núcleo T7/T8/T9/T10 aguardando revisão; T3/T5 com outros agentes
 **Observações:** T11 entregue. Cupons tenant-isolados (`store_id` scoped, `UNIQUE lower(code)`): migration 0015, CRUD `POST/GET/PATCH /api/coupons` (admin), validação `POST /api/coupons/validate` (público, tenant), `validateCoupon` checa `isActive/validFrom/validUntil/maxUses/minOrder` e calcula `discount/total` (percentage/fixed, cap em orderAmount). Frontend `/admin/coupons` com criação e toggle. Validado `test:unit` 16/16, registro em `src/app.js`. (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
+
+## [agente-carteiras] — 2026-09-17 20:00
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** carteiras digitais (#62)
+**Arquivos/pastas principais:** `src/modules/wallets/*`, `src/modules/payments/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T11 cupons aguardando revisão; núcleo fechado
+**Observações:** Reivindicando Fase 10 — carteiras digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
 
 ## 🗒️ Log de eventos
 
