@@ -179,10 +179,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T4 — frontend-operacao
 **Arquivos/pastas principais:** `frontend/src/pages/staff/*`, `frontend/src/api/client.js`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
-**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. Próximo LIVRE após T3 é T4. Reivindicando T4 (Frontend operação — cozinha/bar com SSE + estações, garçom READY→entregue, caixa fechamento + PIX). Autorização via "REvisado! Pode continuar ;)".
+**Observações:** Em desenvolvimento: cozinha/bar com SSE (poll fallback) + estações, garçom READY→entregue, caixa fechamento + PIX. Lido PROTOCOLO e GOLDEN_RULES.
 
 ## 🗒️ Log de eventos
 
