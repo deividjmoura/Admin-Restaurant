@@ -97,8 +97,25 @@
 
 ---
 
+## [agente-ci] — 2026-09-17 18:38
+
+**Papel:** Trabalhador  
+**Domínio reivindicado:** `T1 — ci-cd` (CI de isolamento multi-tenant, issue #53)  
+**Arquivos/pastas principais:** `.github/workflows/ci-isolation.yml`, `package.json` (scripts de teste), `test/README.md`  
+**Status:** aguardando revisão  
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
+**Dependências:** nenhuma  
+**Observações:** T1 entregue. Resumo:
+1. **Workflow** `.github/workflows/ci-isolation.yml` — roda em todo PR e push na main; serviço Postgres 16 com healthcheck; `npm ci` → `npm run db:migrate` → `npm run test:isolation`; matrix Node 20/22; com `DATABASE_URL` definida, os testes de integração (repository/HTTP/onboarding) **rodam de fato** — se o isolamento por `store_id` quebrar, o CI falha.
+2. **Achado importante (escopo expandido, comunicado por transparência):** os scripts `test` e `test:isolation` do `package.json` usavam glob `**`, que `node --test` só interpreta a partir do **Node 21** (o shell não expande `**` sem globstar) — no Node 20 (engines `>=20`) a suíte falhava **antes de rodar qualquer teste** (validado com docs oficiais do Node 20 + teste de expansão do sh). Corrigi: `test:isolation` → `node --test test/isolation/*.test.js` e `test` → `node --test`. **Toquei em `package.json`/`test/README.md` (fora do domínio `ci-cd`) porque a correção é pré-requisito da própria T1** — o CI rodaria um script quebrado no Node 20. Se o Líder preferir, é fácil reverter e eu ajusto a abordagem (ex.: CI só Node 22).
+3. **Validação local (sandbox):** Postgres real (PG 18) com as 14 migrations em banco limpo; `npm run test:isolation` → **29/29 pass, 0 skipped** (integração ativa); `npm test` → 30/30; `npm run test:unit` → 16/16.
+4. Pendência: CI do GitHub só executa no push — o primeiro run acontecerá ao abrir o PR (fica visível para o Líder na revisão). Sugiro (opcional, para outro PR/docs): adicionar badge de CI no README.
+
+---
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
 - **2026-09-17 18:22 — agente-ci:** Novo agente (Trabalhador) no projeto. Protocolo de entrada (seção 4) cumprido: leitura completa de protocolo, coordenação e regras de ouro.
 - **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
+- **2026-09-17 18:38 — agente-ci:** T1 concluída localmente (workflow + fix de portabilidade dos scripts de teste p/ Node 20). Validação: 29/29 testes de isolamento (integração ativa) em Postgres real, banco limpo, migrations 0001–0014. Status: aguardando revisão (PR a seguir).
