@@ -16,6 +16,26 @@ import {
 import { writeAuditLog } from '../audit/index.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
+/** Papéis válidos em store_users (exceto SUPER_ADMIN, que é flag global). */
+export const STORE_ROLES = Object.freeze(['OWNER', 'MANAGER', 'KITCHEN', 'STAFF']);
+
+/**
+ * Matriz de acesso por área (documentação + referência para rotas).
+ * SUPER_ADMIN bypassa membership e role checks.
+ */
+export const ROLE_MATRIX = Object.freeze({
+  // Admin / configuração da loja
+  'admin.menu': ['OWNER', 'MANAGER'],
+  'admin.tables': ['OWNER', 'MANAGER'],
+  'admin.reports': ['OWNER', 'MANAGER'],
+  // Operação
+  'kitchen.board': ['OWNER', 'MANAGER', 'KITCHEN', 'STAFF'],
+  'waiter.ops': ['OWNER', 'MANAGER', 'STAFF'],
+  'cashier.ops': ['OWNER', 'MANAGER', 'STAFF'],
+  'orders.staff': ['OWNER', 'MANAGER', 'KITCHEN', 'STAFF'],
+  'tables.list': ['OWNER', 'MANAGER', 'KITCHEN', 'STAFF'],
+});
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6).max(200),
@@ -23,6 +43,7 @@ const loginSchema = z.object({
 
 async function authPlugin(app) {
   app.decorateRequest('user', null);
+  app.decorateRequest('storeRole', null);
 
   /** Load user from session cookie (optional). */
   app.addHook('onRequest', async (request) => {
@@ -60,7 +81,10 @@ async function authPlugin(app) {
       return reply.code(statusCode).send(body);
     }
 
-    if (request.user.isSuperAdmin) return;
+    if (request.user.isSuperAdmin) {
+      request.storeRole = 'SUPER_ADMIN';
+      return;
+    }
 
     if (!request.storeId) {
       const err = new AppError(
@@ -81,6 +105,39 @@ async function authPlugin(app) {
     }
 
     request.storeRole = membership.role;
+  });
+
+  /**
+   * Restringe a papéis específicos da loja.
+   * Deve ser usado DEPOIS de requireStoreAccess (que preenche request.storeRole).
+   * SUPER_ADMIN sempre passa.
+   *
+   * Uso: { preHandler: [app.requireTenant, app.requireStoreAccess, app.requireRole('OWNER', 'MANAGER')] }
+   */
+  app.decorate('requireRole', function requireRole(...allowedRoles) {
+    const allowed = allowedRoles.flat().map((r) => String(r).toUpperCase());
+
+    return async function requireRoleHandler(request, reply) {
+      if (!request.user) {
+        const err = new AppError('UNAUTHORIZED', 'Authentication required.', 401);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      if (request.user.isSuperAdmin) return;
+
+      const role = request.storeRole;
+      if (!role || !allowed.includes(String(role).toUpperCase())) {
+        const err = new AppError(
+          'FORBIDDEN',
+          'Insufficient role for this action.',
+          403,
+          { required: allowed, actual: role || null }
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+    };
   });
 
   app.post('/api/auth/login', async (request, reply) => {
