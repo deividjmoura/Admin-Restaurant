@@ -23,6 +23,13 @@ export default function WaiterPage() {
     return () => clearInterval(id);
   }, [user, load]);
 
+  // PWA: registra service-worker para /waiter (offline cache)
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    }
+  }, []);
+
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace state={{ from: '/waiter' }} />;
 
