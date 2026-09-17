@@ -265,10 +265,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** carteiras digitais (#62)
 **Arquivos/pastas principais:** `src/modules/wallets/*`, `src/modules/payments/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons aguardando revisão; núcleo fechado
-**Observações:** Reivindicando Fase 10 — carteiras digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
+**Observações:** Em desenvolvimento: carteiras digitais (#62) — wallets por store_id, saldo, transações idempotentes digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
 
 ## 🗒️ Log de eventos
 
