@@ -56,7 +56,7 @@
 | T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **REIVINDICADO por agente-whatsapp** |
+| T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -286,11 +286,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** WhatsApp IA (#59)
-**Arquivos/pastas principais:** `src/modules/whatsapp/*`, `src/infrastructure/ai/*`
-**Status:** em andamento
+**Arquivos/pastas principais:** `migrations/0017_whatsapp.sql`, `src/modules/whatsapp/whatsapp.repository.js`, `src/modules/whatsapp/whatsapp-routes.js`, `src/app.js`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** PWA aguardando revisão; núcleo fechado
-**Observações:** Em desenvolvimento: WhatsApp IA (#59) — webhook, parser IA mock, idempotência + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
+**Observações:** T14 entregue. WhatsApp IA (#59): migration 0017 (`whatsapp_messages` com `UNIQUE store_id+external_id`), webhook `POST /api/whatsapp/webhook` (tenant via header/?tenant, idempotente, `?tenant` fallback para EventSource), parser IA mock (`parseOrderFromText` com keyword matching + `menuProducts`, `OPENAI_API_KEY` opcional para provider real), auto-criação de pedido delivery via primeira zona ativa, `GET /api/whatsapp/messages` (staff). Credenciais nunca no código (apenas `process.env`). Validado `test:unit` 16/16. + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
 
 ## 🗒️ Log de eventos
 
@@ -316,3 +316,4 @@
 - **2026-09-17 19:55 — agente-cupons:** T11 (cupons #63) concluída — migration 0015, CRUD+validate, frontend `/admin/coupons`. Status: aguardando revisão.
 - **2026-09-17 20:05 — agente-carteiras:** Carteiras digitais (#62) concluída — migration 0016, API wallets com idempotência. Status: aguardando revisão.
 - **2026-09-17 20:15 — agente-pwa:** PWA garçom (#64) concluída — manifest, SW, offline cache para `/waiter`. Status: aguardando revisão.
+- **2026-09-17 20:25 — agente-whatsapp:** WhatsApp IA (#59) concluída — migration 0017, webhook + parser mock, idempotência. Status: aguardando revisão.
