@@ -4,11 +4,13 @@ import {
   listZones,
   createZone,
   updateZone,
-  findZoneById,
   quoteDelivery,
   createDeliveryOrder,
   getDeliveryByOrderId,
+  listDeliveryOrders,
+  updateCourierStatus,
   DeliveryError,
+  COURIER_TRANSITIONS,
 } from './delivery.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
@@ -60,9 +62,18 @@ const createDeliverySchema = z.object({
     .max(50),
 });
 
+const courierStatusSchema = z.object({
+  courierStatus: z.enum([
+    'PENDING',
+    'CONFIRMED',
+    'OUT_FOR_DELIVERY',
+    'DELIVERED',
+    'CANCELLED',
+  ]),
+});
+
 function mapDeliveryError(err) {
   if (!(err instanceof DeliveryError) && err?.code) {
-    // erros de createOrder
     const code = err.code || err.message;
     if (code === 'PRODUCT_NOT_FOUND') {
       return new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.', 404);
@@ -76,9 +87,11 @@ function mapDeliveryError(err) {
   }
   if (err instanceof DeliveryError) {
     const status =
-      err.code === 'ZONE_NOT_FOUND'
+      err.code === 'ZONE_NOT_FOUND' || err.code === 'ORDER_NOT_FOUND'
         ? 404
-        : err.code === 'MIN_ORDER_NOT_MET' || err.code === 'PRODUCT_UNAVAILABLE'
+        : err.code === 'MIN_ORDER_NOT_MET' ||
+            err.code === 'PRODUCT_UNAVAILABLE' ||
+            err.code === 'INVALID_COURIER_TRANSITION'
           ? 409
           : 400;
     return new AppError(err.code, err.message, status);
@@ -87,7 +100,6 @@ function mapDeliveryError(err) {
 }
 
 async function deliveryRoutes(app) {
-  /** Público: listar zonas ativas da loja (tenant obrigatório) */
   app.get(
     '/api/delivery/zones',
     { preHandler: [app.requireTenant] },
@@ -97,7 +109,6 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Staff: listar todas as zonas (inclui inativas) */
   app.get(
     '/api/delivery/zones/admin',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -107,7 +118,6 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Staff: criar zona */
   app.post(
     '/api/delivery/zones',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -134,7 +144,6 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Staff: atualizar zona */
   app.patch(
     '/api/delivery/zones/:id',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -164,7 +173,6 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Público: cotação de taxa */
   app.post(
     '/api/delivery/quote',
     { preHandler: [app.requireTenant] },
@@ -176,8 +184,7 @@ async function deliveryRoutes(app) {
         return reply.code(statusCode).send(body);
       }
       try {
-        const quote = await quoteDelivery(request.storeId, parsed.data);
-        return quote;
+        return await quoteDelivery(request.storeId, parsed.data);
       } catch (err) {
         const mapped = mapDeliveryError(err);
         if (mapped) {
@@ -189,7 +196,6 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Público: criar pedido delivery */
   app.post(
     '/api/delivery/orders',
     { preHandler: [app.requireTenant] },
@@ -231,6 +237,7 @@ async function deliveryRoutes(app) {
                   neighborhood: result.delivery.address?.neighborhood,
                   city: result.delivery.address?.city,
                   fee: result.delivery.deliveryFee,
+                  courierStatus: result.delivery.courierStatus,
                 }
               : null,
           });
@@ -266,7 +273,19 @@ async function deliveryRoutes(app) {
     }
   );
 
-  /** Público/staff: tracking — status do pedido + dados de entrega */
+  /** Staff: listar pedidos delivery ativos */
+  app.get(
+    '/api/delivery/orders',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request) => {
+      const orders = await listDeliveryOrders(request.storeId, {
+        courierStatus: request.query?.courierStatus || null,
+        limit: request.query?.limit,
+      });
+      return { storeId: request.storeId, orders };
+    }
+  );
+
   app.get(
     '/api/delivery/orders/:orderId',
     { preHandler: [app.requireTenant] },
@@ -299,7 +318,44 @@ async function deliveryRoutes(app) {
           status: it.status,
           station: it.station,
         })),
+        courierTransitions: delivery
+          ? COURIER_TRANSITIONS[delivery.courierStatus] || []
+          : [],
       };
+    }
+  );
+
+  /** Staff: avançar status do entregador */
+  app.patch(
+    '/api/delivery/orders/:orderId/courier-status',
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    async (request, reply) => {
+      const parsed = courierStatusSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+      try {
+        const delivery = await updateCourierStatus(
+          request.storeId,
+          request.params.orderId,
+          parsed.data.courierStatus
+        );
+        publishStoreOrderEvent(request.storeId, {
+          type: 'delivery.courier_status_changed',
+          orderId: request.params.orderId,
+          courierStatus: delivery.courierStatus,
+        });
+        return { delivery };
+      } catch (err) {
+        const mapped = mapDeliveryError(err);
+        if (mapped) {
+          const { statusCode, body } = errorResponse(mapped);
+          return reply.code(statusCode).send(body);
+        }
+        throw err;
+      }
     }
   );
 }
