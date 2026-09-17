@@ -298,10 +298,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** billing (#61)
 **Arquivos/pastas principais:** `src/modules/billing/*`, `src/modules/tenancy/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** WhatsApp aguardando revisão; núcleo + Growth inicial fechado
-**Observações:** Reivindicando Fase 10 — billing (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
+**Observações:** Em desenvolvimento: billing (#61) — planos, assinatura, limites por store (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
 
 ## 🗒️ Log de eventos
 
