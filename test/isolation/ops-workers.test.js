@@ -142,10 +142,14 @@ describe('ops workers — integração (aceite issue #52)', () => {
 
     const { buildApp } = await import('../../src/app.js');
     app = await buildApp({ logger: false });
-    await app.ready();
 
+    // initWorkers ANTES do ready(): addHook é inválido depois que o
+    // bootstrap do fastify (avvio 'start') começa — a flag `started` é
+    // setada assincronamente, então addHook após ready() é racy
+    // (passa no Node 22, quebra no Node 20 — CI matrix).
     const { initWorkers } = await import('../../src/workers/index.js');
     await initWorkers(app);
+    await app.ready();
 
     const { create: createStore } = await import(
       '../../src/modules/tenancy/store.repository.js'
