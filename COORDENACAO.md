@@ -276,10 +276,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** PWA garçom (#64)
 **Arquivos/pastas principais:** `frontend/public/manifest.json`, `frontend/src/pages/staff/WaiterPage.jsx`, `frontend/vite.config.js`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons + carteiras aguardando revisão; núcleo fechado
-**Observações:** Reivindicando Fase 10 — PWA garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
+**Observações:** Em desenvolvimento: PWA garçom (#64) — manifest, service worker, cache offline garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
 
 ## 🗒️ Log de eventos
 
