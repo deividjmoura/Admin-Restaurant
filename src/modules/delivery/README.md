@@ -4,7 +4,8 @@
 
 - **Zonas** por loja: taxa fixa, pedido mínimo, ETA min/max
 - **Pedido delivery**: `orders.channel = DELIVERY` + linha em `delivery_orders` (endereço + fee snapshot)
-- Tracking: status do pedido + SSE já existente (`order.created`, `order.status_changed`)
+- **Courier status** (independente da cozinha): `PENDING → CONFIRMED → OUT_FOR_DELIVERY → DELIVERED | CANCELLED`
+- Tracking: status do pedido + SSE (`order.created`, `order.status_changed`, `delivery.courier_status_changed`)
 
 ## Rotas
 
@@ -15,9 +16,11 @@
 | POST | `/api/delivery/zones` | staff |
 | PATCH | `/api/delivery/zones/:id` | staff |
 | POST | `/api/delivery/quote` | tenant |
-| POST | `/api/delivery/orders` | tenant |
+| POST | `/api/delivery/orders` | tenant (+ Idempotency-Key) |
+| GET | `/api/delivery/orders` | staff (lista ativos) |
 | GET | `/api/delivery/orders/:orderId` | tenant (tracking) |
+| PATCH | `/api/delivery/orders/:orderId/courier-status` | staff |
 
 ## Isolamento
 
-Tudo filtrado por `store_id`. Zona de outra loja → 404.
+Tudo filtrado por `store_id`. Zona/pedido de outra loja → 404.
