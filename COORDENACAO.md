@@ -325,3 +325,4 @@
 - **2026-09-17 20:15 — agente-pwa:** PWA garçom (#64) concluída — manifest, SW, offline cache para `/waiter`. Status: aguardando revisão.
 - **2026-09-17 20:25 — agente-whatsapp:** WhatsApp IA (#59) concluída — migration 0017, webhook + parser mock, idempotência. Status: aguardando revisão.
 - **2026-09-17 20:35 — agente-billing:** Billing (#61) concluída — migration 0018, API planos/assinatura/limites. Status: aguardando revisão.
+- **2026-09-17 20:45 — agente-ci:** Discussão visual aberta em **issue #77** (direção "parecido com QRAdmin", solicitada pelo dono) — sem código até veredito; aguarda dono decidir D1–D6 (escopo, paleta, contadores, timing vs. merge em lote, tipografia, claim do hero) e eventual claim do domínio novo `frontend-visual`.
