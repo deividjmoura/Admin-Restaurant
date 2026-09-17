@@ -189,10 +189,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T5 — frontend-admin
 **Arquivos/pastas principais:** `frontend/src/pages/admin/*`, `frontend/src/api/client.js`
-**Status:** em andamento
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3/T4 entregues; T2 já reivindicado por outro agente
-**Observações:** Em desenvolvimento: CRUD cardápio (categorias+produtos com reorder e cache invalidation), mesas+QR (regeneração), dashboard com presets.
+**Observações:** T5 entregue. Cardápio com CRUD completo (categorias com sortOrder/reorder via PATCH, soft-delete, produtos com estação KITCHEN/BAR, preço, descrição, disponibilidade toggle, renomear, desativar, filtro por categoria), mesas com criação + QR via api.qrserver.com (tenant query), regeneração de token e desativação, dashboard com presets today/7d/30d, breakdown por canal/pagamento, top produtos e métricas ao vivo. Cache menu invalidado. Validado `test:unit` 16/16. Pronto para revisão.
 
 ## 🗒️ Log de eventos
 
