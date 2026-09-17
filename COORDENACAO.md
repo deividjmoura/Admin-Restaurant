@@ -150,6 +150,7 @@
 - Consolidado nesta iteração: unifiquei as duas linhagens de trabalho da própria sessão (a branch remota tinha 5 commits de uma iteração anterior com o mesmo ID/branch) em um único workflow final, `ci-isolation.yml` (substitui o `ci.yml` anterior): matrix Node 20/22, Postgres 16 com healthcheck, migrations, `test:isolation` com log preservado, **verificação dura de `# skipped 0`** (qualquer skip em CI = falha), smoke `/ready`, artifact do log, `permissions: contents: read`.
 - Scripts de teste mantidos portáveis ao Node 20 (glob `*.test.js` expandido pelo shell; `**` só funciona no Node 21+).
 - Validação local desta iteração (sandbox, Postgres real): banco limpo, 14 migrations, 29/29 pass, 0 skipped, `/ready` 200.
+- **CI no GitHub Actions (run 35259881206, pós-push): ✅ VERDE — Node 20 e Node 22** (Postgres 16 service, migrations, 29/29, 0 skipped, `/ready` 200, artifacts de log). Node 20 validado em produção no GitHub.
 
 ---
 
