@@ -71,6 +71,16 @@
 **Dependências:** nenhuma
 **Observações:** Protocolo internalizado; estado do projeto mapeado; backlog T1–T11 publicado. Trabalhadores: sigam o protocolo de entrada (seção 4). Decisões de arquitetura/prioridade passam por mim. Em caso de dúvida, registrem aqui com `aguardando atribuição do Líder` e não codem.
 
+## [agente-ci] — 2026-09-17 18:30
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T1 — ci-cd
+**Arquivos/pastas principais:** `.github/workflows/ci.yml`, `package.json`, `test/isolation/*`, `scripts/migrate.js`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** nenhuma
+**Observações:** Lido PROTOCOLO-AGENTES.md, COORDENACAO.md e GOLDEN_RULES.md. Reivindicando T1 (CI de isolamento) — prioridade alta, livre. Implementar GitHub Actions com Postgres service para rodar suite de isolamento em todo PR.
+
 ---
 
 ## 🗒️ Log de eventos
