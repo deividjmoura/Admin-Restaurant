@@ -212,10 +212,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T7 — delivery (Fase 6)
 **Arquivos/pastas principais:** `src/modules/delivery/*`, `frontend/src/pages/customer/*`, `frontend/src/pages/admin/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3 (cliente) CONCLUÍDO/reivindicado, T5 (admin) aguardando revisão
-**Observações:** Próxima LIVRE após T4/T5 é T7 per atualização do Líder 19:05. Reivindicando T7 (delivery — zonas/taxas, fluxo pedido delivery, status entregador; epic #7). T8 bloqueada (PIX com Líder) — não pegar. Frontend usará caminhos relativos (`/api/...`) conforme `docs/DEPLOY.md` (API serve o front).
+**Observações:** Em desenvolvimento: delivery — zonas/taxas, criação/rateio de taxa, fluxo pedido delivery (checkout → kitchen), status entregador e acompanhamento. Epic #7. Frontend relativo (`/api/...`) via `docs/DEPLOY.md`.
 
 ## 🗒️ Log de eventos
 
