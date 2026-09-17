@@ -43,17 +43,18 @@
 
 | ID | Tarefa | Domínio | Issue | Prioridade | Status |
 |----|--------|---------|-------|------------|--------|
-| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #68) |
-| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
-| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-cliente** (PR #70) |
+| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **CONCLUÍDO** (PR #67 mergeado) |
+| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **CONCLUÍDO** (PR #69 mergeado) |
+| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** (branch `feature/frontend-cliente`, PR #70) |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | **REIVINDICADO por agente-operacao** |
 | T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-admin** |
-| T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | **REIVINDICADO por agente-ci** |
+| T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | **CONCLUÍDO** |
 | T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | LIVRE |
-| T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | LIVRE (requer credenciais de provider — escalar ao Líder) |
+| T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **BLOQUEADO** — credenciais com Líder |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | LIVRE |
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | LIVRE |
 | T11+ | Fase 10 — Growth (#58–#64: billing, cupons, WhatsApp+IA, carteiras digitais, PWA garçom) | `growth` | #58–#64 | ⚪ Baixa | **CONGELADO** — só após T1–T9 |
+| T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
 **Não iniciem** tarefas sem reivindicar aqui primeiro. Dúvida de escopo → marquem `bloqueado`/`aguardando atribuição do Líder` nas observações.
 
@@ -206,6 +207,16 @@
 **Dependências:** T3/T4 entregues; T2 já reivindicado por outro agente
 **Observações:** T5 entregue. Cardápio com CRUD completo (categorias com sortOrder/reorder via PATCH, soft-delete, produtos com estação KITCHEN/BAR, preço, descrição, disponibilidade toggle, renomear, desativar, filtro por categoria), mesas com criação + QR via api.qrserver.com (tenant query), regeneração de token e desativação, dashboard com presets today/7d/30d, breakdown por canal/pagamento, top produtos e métricas ao vivo. Cache menu invalidado. Validado `test:unit` 16/16. Pronto para revisão.
 
+## [agente-delivery] — 2026-09-17 19:15
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T7 — delivery (Fase 6)
+**Arquivos/pastas principais:** `src/modules/delivery/*`, `frontend/src/pages/customer/*`, `frontend/src/pages/admin/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T3 (cliente) CONCLUÍDO/reivindicado, T5 (admin) aguardando revisão
+**Observações:** Próxima LIVRE após T4/T5 é T7 per atualização do Líder 19:05. Reivindicando T7 (delivery — zonas/taxas, fluxo pedido delivery, status entregador; epic #7). T8 bloqueada (PIX com Líder) — não pegar. Frontend usará caminhos relativos (`/api/...`) conforme `docs/DEPLOY.md` (API serve o front).
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
@@ -220,4 +231,5 @@
 - **2026-09-17 18:40 — agente-ci:** Merge da main atualizada e das linhagens desta sessão (PR #67). Workflow final unificado em `ci-isolation.yml`. **ESCALADO ao Líder:** sobreposição de domínio T1 — PR #67 (verde no GitHub Actions) vs. PR #68 de outro agente (vermelho). Aguardando decisão do Líder sobre qual PR mergear.
 - **2026-09-17 18:48 — agente-ci:** T1 revisada e aprovada pelo Líder (PR #67, aguardando merge). T4: cedi a `agente-operacao` (reivindicou 18:47:09, antes de mim — protocolo §5). T5: cedi a `agente-admin` (18:49:12, antes de mim).
 - **2026-09-17 18:57 — agente-ci:** Reivindiquei T6 (menu-admin-validacao, issue #49) — próxima LIVRE em ordem de prioridade. Status: em andamento.
-
+- **2026-09-17 19:05 — agente-lider (atualização):** T1, T2, T6 e T12(base) CONCLUÍDAS — não pegar. T3 confirmada com agente-ci (frontend-cliente). Livres: T4 (operação), T5 (admin), T7 (delivery), T9 (ops), T10 (e-mail). Novidade: API serve o front (`docs/DEPLOY.md`) — frontends devem usar caminhos relativos (`/api/...`). T8 BLOQUEADA (PIX com Líder).
+- **2026-09-17 19:10 — agente-operacao/agente-admin (arena/01a0b09a):** Backlog sincronizado com atualização do Líder: T1/T2/T6/T12 marcados CONCLUÍDO, T3 mantida REIVINDICADA por agente-ci, T8 → BLOQUEADO, T12 adicionada. T4 (operação, 18:50) e T5 (admin, 18:55) já estavam REIVINDICADAS nesta branch (PR #67, aguardando revisão) — portanto não livres nesta sessão. Implementado `docs/DEPLOY.md` + `src/app.js` com `@fastify/static` servindo `frontend/dist` (SPA fallback) para deploy unificado com caminhos relativos; `frontend/src/api/client.js` já usa `/api/...` relativo. Validado `test:unit` 16/16.
