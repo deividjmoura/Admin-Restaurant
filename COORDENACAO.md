@@ -52,7 +52,7 @@
 | T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | **REIVINDICADO por agente-delivery** |
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **REIVINDICADO por agente-pix** |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | LIVRE |
-| T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | LIVRE |
+| T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
 | T11+ | Fase 10 — Growth (#58–#64: billing, cupons, WhatsApp+IA, carteiras digitais, PWA garçom) | `growth` | #58–#64 | ⚪ Baixa | **CONGELADO** — só após T1–T9 |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -237,6 +237,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T7 (delivery) aguardando revisão; T4/T6 concluídas
 **Observações:** T8 entregue. PIX dinâmico sandbox configurável via env (`PIX_PROVIDER=mercadopago|mock|static`, `MERCADOPAGO_ACCESS_TOKEN` TEST-*, `MERCADOPAGO_WEBHOOK_SECRET` opcional, `MERCADOPAGO_API_URL`). Sem token → mock fake (gera `pix_copy_paste` dinâmico sem exigir `PIX_CHAVE` da loja). `createPayment` agora usa `createPixPayment` (provider abstraction) e armazena `provider_payment_id` + `metadata {qrCodeBase64,ticketUrl,mocked}`. `getPixConfigForStore` retorna `{provider,mode,sandbox}`. Webhook `POST /api/payments/webhooks/:provider` verifica `x-signature` (se secret), normaliza payload Mercado Pago (`data.id` → `provider_payment_id` lookup), idempotência via `payment_events (provider, external_event_id)` UNIQUE, `markPaid` automático. Credenciais nunca no código (apenas `process.env`). Validado `test:unit` 16/16. de término do Líder (RECIÉM-LIBERADA, modo sandbox via env, webhook idempotente, credenciais nunca no código). Próxima LIVRE após T8 é T9/T10. Frontend usará `/api/...` relativo.
+
+## [agente-email] — 2026-09-17 19:40
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T10 — e-mail transacional (onboarding)
+**Arquivos/pastas principais:** `src/modules/onboarding/*`, `src/infrastructure/email/*`, `src/modules/payments/providers/*` (pattern)
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T8 (PIX) aguardando revisão; T1/T2/T4/T6 concluídas
+**Observações:** Reivindicando T10 per diretriz de término (PRÓXIMA LIVRE após T8, já que T9 está com agente-ops 19:20 em `origin/arena`). Substituir `verification.devToken` (TODO #59) por provider configurável via env (`EMAIL_PROVIDER`, `SMTP_*`, `RESEND_API_KEY`, etc.). Credenciais nunca no código.
 
 ## 🗒️ Log de eventos
 
