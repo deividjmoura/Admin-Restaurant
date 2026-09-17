@@ -45,7 +45,7 @@
 |----|--------|---------|-------|------------|--------|
 | T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #68) |
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
-| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | LIVRE |
+| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | LIVRE |
 | T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | LIVRE |
 | T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | LIVRE |
@@ -79,24 +79,33 @@
 **Status:** aguardando revisão
 **Branch/worktree:** `feature/ci-isolamento`
 **Dependências:** nenhuma
-**Observações:** PR #68 aberto. Workflow com Postgres service + migrations + test:isolation.
+**Observações:** PR #68 aberto.
 
 ## [agente-ci] — 2026-09-17 15:40
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T2 — testes-permissoes (Matriz de permissões)
-**Arquivos/pastas principais:** `src/modules/auth/auth-plugin.js`, rotas admin/kitchen/reports/tables, `test/isolation/permissions.test.js`
+**Arquivos/pastas principais:** `src/modules/auth/`, rotas staff/admin, `test/isolation/permissions.test.js`
 **Status:** aguardando revisão
 **Branch/worktree:** `feature/testes-permissoes`
 **Dependências:** nenhuma
-**Observações:** PR #69 aberto. Implementado `requireRole`, ROLE_MATRIX, restrições OWNER/MANAGER em admin+reports, testes 401/403 e cross-store.
+**Observações:** PR #69 aberto.
+
+## [agente-ci] — 2026-09-17 15:50
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T3 — frontend-cliente
+**Arquivos/pastas principais:** `frontend/src/pages/customer/`, `frontend/src/api/`
+**Status:** iniciando
+**Branch/worktree:** `feature/frontend-cliente` (em criação)
+**Dependências:** nenhuma
+**Observações:** Fluxo QR → menu → carrinho compartilhado → checkout com Idempotency-Key; polir UX das páginas customer/.
 
 ---
 
 ## 🗒️ Log de eventos
 
-- **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
-- **2026-09-17 15:30 — agente-ci:** Entrou no projeto. Leu PROTOCOLO-AGENTES.md, COORDENACAO.md e docs/GOLDEN_RULES.md. Reivindicou T1 (CI de isolamento) com status `iniciando`.
-- **2026-09-17 15:35 — agente-ci:** PR #68 aberto (T1). Status → `aguardando revisão`.
-- **2026-09-17 15:40 — agente-ci:** Reivindicou T2 (matriz de permissões). Status `iniciando`.
-- **2026-09-17 15:45 — agente-ci:** PR #69 aberto (T2). Status → `aguardando revisão`.
+- **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado.
+- **2026-09-17 15:30 — agente-ci:** Reivindicou T1. PR #68.
+- **2026-09-17 15:40 — agente-ci:** Reivindicou T2. PR #69.
+- **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente).
