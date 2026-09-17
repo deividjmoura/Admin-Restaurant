@@ -8,6 +8,7 @@ import {
   getLiveOps,
 } from './reports.repository.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { ROLE_MATRIX } from '../auth/auth-plugin.js';
 
 const periodQuery = z.object({
   preset: z
@@ -42,80 +43,72 @@ function parsePeriod(query) {
 }
 
 async function reportsRoutes(app) {
+  const adminReports = {
+    preHandler: [
+      app.requireTenant,
+      app.requireStoreAccess,
+      app.requireRole(...ROLE_MATRIX['admin.reports']),
+    ],
+  };
+
   /**
    * Dashboard completo do dono.
    * GET /api/reports/dashboard?preset=today|yesterday|week|month|custom&from=&to=
    */
-  app.get(
-    '/api/reports/dashboard',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
-    async (request, reply) => {
-      const { period, error } = parsePeriod(request.query);
-      if (error) {
-        const { statusCode, body } = errorResponse(error);
-        return reply.code(statusCode).send(body);
-      }
-
-      const [summary, topProducts, series, prep, live] = await Promise.all([
-        getDashboardSummary(request.storeId, period),
-        getTopProducts(request.storeId, period, { limit: 10 }),
-        getDailySeries(request.storeId, period),
-        getAveragePrepMinutes(request.storeId, period),
-        getLiveOps(request.storeId),
-      ]);
-
-      return {
-        storeId: request.storeId,
-        summary,
-        topProducts,
-        dailySeries: series,
-        prep,
-        live,
-      };
+  app.get('/api/reports/dashboard', adminReports, async (request, reply) => {
+    const { period, error } = parsePeriod(request.query);
+    if (error) {
+      const { statusCode, body } = errorResponse(error);
+      return reply.code(statusCode).send(body);
     }
-  );
+
+    const [summary, topProducts, series, prep, live] = await Promise.all([
+      getDashboardSummary(request.storeId, period),
+      getTopProducts(request.storeId, period, { limit: 10 }),
+      getDailySeries(request.storeId, period),
+      getAveragePrepMinutes(request.storeId, period),
+      getLiveOps(request.storeId),
+    ]);
+
+    return {
+      storeId: request.storeId,
+      summary,
+      topProducts,
+      dailySeries: series,
+      prep,
+      live,
+    };
+  });
 
   /** Só resumo */
-  app.get(
-    '/api/reports/summary',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
-    async (request, reply) => {
-      const { period, error } = parsePeriod(request.query);
-      if (error) {
-        const { statusCode, body } = errorResponse(error);
-        return reply.code(statusCode).send(body);
-      }
-      const summary = await getDashboardSummary(request.storeId, period);
-      return { storeId: request.storeId, summary };
+  app.get('/api/reports/summary', adminReports, async (request, reply) => {
+    const { period, error } = parsePeriod(request.query);
+    if (error) {
+      const { statusCode, body } = errorResponse(error);
+      return reply.code(statusCode).send(body);
     }
-  );
+    const summary = await getDashboardSummary(request.storeId, period);
+    return { storeId: request.storeId, summary };
+  });
 
   /** Top produtos */
-  app.get(
-    '/api/reports/top-products',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
-    async (request, reply) => {
-      const { period, limit, error } = parsePeriod(request.query);
-      if (error) {
-        const { statusCode, body } = errorResponse(error);
-        return reply.code(statusCode).send(body);
-      }
-      const products = await getTopProducts(request.storeId, period, {
-        limit: limit || 10,
-      });
-      return { storeId: request.storeId, products };
+  app.get('/api/reports/top-products', adminReports, async (request, reply) => {
+    const { period, limit, error } = parsePeriod(request.query);
+    if (error) {
+      const { statusCode, body } = errorResponse(error);
+      return reply.code(statusCode).send(body);
     }
-  );
+    const products = await getTopProducts(request.storeId, period, {
+      limit: limit || 10,
+    });
+    return { storeId: request.storeId, products };
+  });
 
   /** Operação ao vivo */
-  app.get(
-    '/api/reports/live',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
-    async (request) => {
-      const live = await getLiveOps(request.storeId);
-      return { storeId: request.storeId, live };
-    }
-  );
+  app.get('/api/reports/live', adminReports, async (request) => {
+    const live = await getLiveOps(request.storeId);
+    return { storeId: request.storeId, live };
+  });
 }
 
 export default fp(reportsRoutes, {
