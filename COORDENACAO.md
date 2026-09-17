@@ -55,6 +55,7 @@
 | T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
 | T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
+| T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **REIVINDICADO por agente-pwa** |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -269,6 +270,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T11 cupons aguardando revisão; núcleo fechado
 **Observações:** T12c entregue. Carteiras digitais tenant-isoladas (`store_id` scoped, `UNIQUE store_id+user_id`): migration 0016 (`wallets` + `wallet_transactions` com `UNIQUE store_id+idempotency_key`), CRUD `GET /api/wallets`, `GET /api/wallets/:userId` (getOrCreate), `POST /api/wallets/transact` (credit/debit com `Idempotency-Key` header+body, saldo não negativo, `usesCount` like), `GET /api/wallets/:walletId/transactions`. Validado `test:unit` 16/16. digitais (#62) per ordem do Líder (após cupons). Implementar wallets por store_id (saldo, transações) com idempotência.
+
+## [agente-pwa] — 2026-09-17 20:10
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** PWA garçom (#64)
+**Arquivos/pastas principais:** `frontend/public/manifest.json`, `frontend/src/pages/staff/WaiterPage.jsx`, `frontend/vite.config.js`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T11 cupons + carteiras aguardando revisão; núcleo fechado
+**Observações:** Reivindicando Fase 10 — PWA garçom (#64) per ordem do Líder (após carteiras). Implementar manifest, service worker, instalação e offline cache para `/waiter`.
 
 ## 🗒️ Log de eventos
 
