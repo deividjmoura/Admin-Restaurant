@@ -43,7 +43,7 @@
 
 | ID | Tarefa | Domínio | Issue | Prioridade | Status |
 |----|--------|---------|-------|------------|--------|
-| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** |
+| T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR aberto) |
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | LIVRE |
 | T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | LIVRE |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | LIVRE |
@@ -75,11 +75,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T1 — ci-cd (CI de isolamento)
-**Arquivos/pastas principais:** `.github/workflows/`, `test/isolation/`
-**Status:** iniciando
-**Branch/worktree:** (ainda não criada — em seguida: `feature/ci-isolamento`)
+**Arquivos/pastas principais:** `.github/workflows/isolation-ci.yml`, `test/isolation/`
+**Status:** aguardando revisão
+**Branch/worktree:** `feature/ci-isolamento`
 **Dependências:** nenhuma
-**Observações:** Protocolo lido. COORDENACAO.md e GOLDEN_RULES.md lidos. Reivindicando T1 conforme prioridade sugerida. Em seguida criarei a branch e implementarei o workflow de CI com Postgres service para rodar os testes de isolamento.
+**Observações:** Workflow criado. Roda em todo PR e push para main. Usa Postgres 16 service, aplica migrations, executa `test:unit` + `test:isolation`. Se qualquer teste de isolamento falhar, o job falha (bloqueia merge). Arquivo principal: `.github/workflows/isolation-ci.yml`. Pronto para revisão do Líder.
 
 ---
 
@@ -87,3 +87,4 @@
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
 - **2026-09-17 15:30 — agente-ci:** Entrou no projeto. Leu PROTOCOLO-AGENTES.md, COORDENACAO.md e docs/GOLDEN_RULES.md. Reivindicou T1 (CI de isolamento) com status `iniciando`.
+- **2026-09-17 15:35 — agente-ci:** Criou branch `feature/ci-isolamento`, adicionou `.github/workflows/isolation-ci.yml` (Postgres service + migrations + test:unit + test:isolation). Status → `aguardando revisão`.
