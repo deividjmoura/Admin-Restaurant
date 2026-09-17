@@ -45,7 +45,7 @@
 |----|--------|---------|-------|------------|--------|
 | T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #68) |
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
-| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** |
+| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #70) |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | LIVRE |
 | T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | LIVRE |
 | T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | LIVRE |
@@ -95,11 +95,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T3 — frontend-cliente
-**Arquivos/pastas principais:** `frontend/src/pages/customer/`, `frontend/src/api/`
-**Status:** iniciando
-**Branch/worktree:** `feature/frontend-cliente` (em criação)
+**Arquivos/pastas principais:** `frontend/src/pages/customer/`, `frontend/src/api/`, `frontend/src/lib/session.js`
+**Status:** aguardando revisão
+**Branch/worktree:** `feature/frontend-cliente`
 **Dependências:** nenhuma
-**Observações:** Fluxo QR → menu → carrinho compartilhado → checkout com Idempotency-Key; polir UX das páginas customer/.
+**Observações:** PR #70 aberto. Fluxo QR → menu → carrinho (qty/remove) → checkout com Idempotency-Key → confirmação.
 
 ---
 
@@ -109,3 +109,4 @@
 - **2026-09-17 15:30 — agente-ci:** Reivindicou T1. PR #68.
 - **2026-09-17 15:40 — agente-ci:** Reivindicou T2. PR #69.
 - **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente).
+- **2026-09-17 15:55 — agente-ci:** PR #70 aberto (T3). Status → `aguardando revisão`.
