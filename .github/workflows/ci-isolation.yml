@@ -1,22 +1,27 @@
 # =============================================================================
 # T1 (issue #53) — CI de isolamento multi-tenant
 #
-# Roda a suíte de isolamento (test/isolation) em todo PR para a main e em todo
-# push na main, com um PostgreSQL real (service) para que os testes de
-# integração (repository/HTTP/onboarding) NÃO fiquem pulados.
+# Roda a suíte de isolamento (test/isolation) em todo PR e em push na main,
+# com um PostgreSQL real (service) para que os testes de integração
+# (repository/HTTP/onboarding) NÃO fiquem pulados.
 #
-# Se o isolamento por store_id quebrar, o CI falha e bloqueia o merge.
+# Se o isolamento por store_id quebrar — ou se a suíte nem rodar completa —
+# o CI falha e bloqueia o merge.
 # =============================================================================
 name: CI — Isolamento multi-tenant
 
 on:
-  pull_request: # todo PR (o gate real é o PR para main, que só o Líder mergeia)
+  pull_request: # todo PR (gate real: PR para main, que só o Líder mergeia)
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   isolation:
@@ -27,6 +32,9 @@ jobs:
       fail-fast: false
       matrix:
         # engines do package.json: >=20 — valida os dois LTS atuais.
+        # Obs.: a suíte usa 'node --test test/isolation/*.test.js' (glob
+        # expandido pelo shell) justamente por compatibilidade com o Node 20
+        # — globs '**' só são interpretados pelo runner a partir do Node 21.
         node: [20, 22]
 
     services:
@@ -38,7 +46,7 @@ jobs:
           POSTGRES_DB: admin_restaurant
         ports:
           - 5432:5432
-        # Aguarda o Postgres aceitar conexões antes dos testes.
+        # O job só começa quando o Postgres aceita conexões (healthcheck).
         options: >-
           --health-cmd "pg_isready -U ci -d admin_restaurant"
           --health-interval 5s
@@ -54,6 +62,7 @@ jobs:
       JWT_SECRET: ci-only-not-a-real-secret-0000000000000000
       COOKIE_SECRET: ci-only-not-a-real-secret-0000000000000001
       APP_TIMEZONE: America/Sao_Paulo
+      CI: true
 
     steps:
       - name: Checkout
@@ -72,4 +81,45 @@ jobs:
         run: npm run db:migrate
 
       - name: Roda testes de isolamento
-        run: npm run test:isolation
+        run: |
+          # Tee guarda o log completo para o passo de verificação e o artifact.
+          npm run test:isolation 2>&1 | tee /tmp/test-isolation.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Verifica que a suíte rodou completa (nada pulado)
+        run: |
+          # Em CI o banco sempre existe: skip algum = a garantia de
+          # isolamento não foi exercitada (ex.: DB inacessível). Falha duro.
+          SKIPPED=$(awk '/^# skipped/ {print $3}' /tmp/test-isolation.log)
+          echo "Resumo da suíte:"
+          grep -E "^(# tests|# suites|# pass|# fail|# skipped)" /tmp/test-isolation.log || true
+          if [ -z "$SKIPPED" ] || [ "$SKIPPED" != "0" ]; then
+            echo "::error::Esperado '# skipped 0' em CI — a suíte de isolamento deve rodar 100% (verifique DATABASE_URL/conexão)."
+            tail -n 100 /tmp/test-isolation.log || true
+            exit 1
+          fi
+          echo "✓ Nenhum teste pulado — isolamento exercitado de fato."
+
+      - name: Smoke — app sobe com banco migrado (/ready)
+        run: |
+          node --input-type=module <<'EOF'
+          import { buildApp } from './src/app.js';
+          const app = await buildApp({ logger: false });
+          await app.ready();
+          const res = await app.inject({ method: 'GET', url: '/ready' });
+          console.log('/ready', res.statusCode, res.body);
+          if (res.statusCode !== 200 || !res.json().db) {
+            console.error('ready check failed');
+            process.exit(1);
+          }
+          await app.close();
+          console.log('✓ /ready ok');
+          EOF
+
+      - name: Upload log de testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-isolation-log-node-${{ matrix.node }}
+          path: /tmp/test-isolation.log
+          retention-days: 7
