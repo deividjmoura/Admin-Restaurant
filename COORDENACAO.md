@@ -57,7 +57,7 @@
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T15 | **Billing** | `billing` | #61 | 🟢 Growth | **REIVINDICADO por agente-billing** |
+| T15 | **Billing** | `billing` | #61 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -297,11 +297,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** billing (#61)
-**Arquivos/pastas principais:** `src/modules/billing/*`, `src/modules/tenancy/*`
-**Status:** em andamento
+**Arquivos/pastas principais:** `migrations/0018_billing.sql`, `src/modules/billing/billing.repository.js`, `src/modules/billing/billing-routes.js`, `src/app.js`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** WhatsApp aguardando revisão; núcleo + Growth inicial fechado
-**Observações:** Em desenvolvimento: billing (#61) — planos, assinatura, limites por store (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
+**Observações:** T15 entregue. Billing (#61): migration 0018 (`billing_plans` + `billing_subscriptions` com `store_id` UNIQUE), CRUD `GET /api/billing/plans`, `GET /api/billing/subscription` + `POST` (upsert), `GET /api/billing/limits` (checa `max_tables/max_products/max_orders_month` vs uso real). Planos `basic/pro/enterprise` seed. Tenant-isolado. Validado `test:unit` 16/16. (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
 
 ## 🗒️ Log de eventos
 
@@ -328,3 +328,4 @@
 - **2026-09-17 20:05 — agente-carteiras:** Carteiras digitais (#62) concluída — migration 0016, API wallets com idempotência. Status: aguardando revisão.
 - **2026-09-17 20:15 — agente-pwa:** PWA garçom (#64) concluída — manifest, SW, offline cache para `/waiter`. Status: aguardando revisão.
 - **2026-09-17 20:25 — agente-whatsapp:** WhatsApp IA (#59) concluída — migration 0017, webhook + parser mock, idempotência. Status: aguardando revisão.
+- **2026-09-17 20:35 — agente-billing:** Billing (#61) concluída — migration 0018, API planos/assinatura/limites. Status: aguardando revisão.
