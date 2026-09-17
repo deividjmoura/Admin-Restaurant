@@ -4,10 +4,13 @@ import { withTransaction } from '../../infrastructure/db.js';
 import * as storeRepo from '../tenancy/store.repository.js';
 import { findUserByEmail, createUser, addStoreUser } from '../auth/user.repository.js';
 import { hashPassword } from '../auth/password.js';
-import { createCategory } from '../menu/menu.repository.js';
-import { createTable } from '../tables/tables.repository.js';
 import { writeAuditLog } from '../audit/index.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import {
+  sendEmail,
+  buildVerificationEmail,
+  isEmailConfigured,
+} from '../../infrastructure/email.js';
 import {
   createEmailVerification,
   findValidVerification,
@@ -42,37 +45,62 @@ const resendSchema = z.object({
 });
 
 /**
- * Envia o e-mail de verificação.
- * Não há provider de e-mail integrado ainda (ver issue #59/backlog de infra):
- * por ora, registramos via audit log. Em desenvolvimento, o token também
- * volta na resposta HTTP para permitir testar o fluxo sem inbox real.
+ * Envia e-mail de verificação via provider configurável.
+ * Em dev (EMAIL_PROVIDER=console ou sem Resend), ainda devolve devToken na resposta.
+ * Em produção com provider real, não devolve o token.
  */
-async function deliverVerificationEmail({ storeId, userId, email, rawToken, request }) {
+async function deliverVerificationEmail({
+  storeId,
+  userId,
+  email,
+  rawToken,
+  request,
+  storeName,
+}) {
+  const mail = buildVerificationEmail({ email, rawToken, storeName });
+
   writeAuditLog({
     storeId,
     actorUserId: userId,
     action: 'onboarding.verification_email_queued',
     resource: 'user',
     resourceId: userId,
-    metadata: { email },
+    metadata: { email, linkHost: process.env.APP_PUBLIC_URL || null },
     ip: request.ip,
     userAgent: request.headers['user-agent'] || null,
   }).catch((err) => {
     request.log?.warn({ err }, 'audit log failed on signup verification');
   });
 
-  // TODO(#59-infra): substituir por provider real (ex.: Resend, SES) quando
-  // o módulo de notificações transacionais existir.
-  request.log?.info({ email }, '[onboarding] verification email queued (no provider configured)');
+  const result = await sendEmail({
+    to: mail.to,
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html,
+  });
 
-  return process.env.NODE_ENV === 'production' ? undefined : rawToken;
+  if (!result.ok) {
+    request.log?.warn(
+      { email, error: result.error, provider: result.provider },
+      '[onboarding] verification email not delivered'
+    );
+  } else {
+    request.log?.info(
+      { email, provider: result.provider, id: result.id },
+      '[onboarding] verification email sent'
+    );
+  }
+
+  // devToken só fora de produção ou quando provider é console
+  const exposeToken =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.EMAIL_EXPOSE_DEV_TOKEN === 'true' ||
+    result.provider === 'console';
+
+  return exposeToken ? rawToken : undefined;
 }
 
 async function signupRoutes(app) {
-  /**
-   * Cadastro público de uma nova loja + owner.
-   * Cria store em status 'pending' — só ativa após verificação de e-mail.
-   */
   app.post('/api/signup', async (request, reply) => {
     const parsed = signupSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -110,8 +138,6 @@ async function signupRoutes(app) {
 
     const passwordHash = await hashPassword(password);
 
-    // Tudo isolado numa transação: store + owner + vínculo + seed mínimo
-    // nascem juntos, ou nada nasce (evita tenant "fantasma" sem owner).
     const result = await withTransaction(async (client) => {
       const storeRes = await client.query(
         `INSERT INTO stores (slug, name, status, settings)
@@ -139,8 +165,6 @@ async function signupRoutes(app) {
         [store.id, user.id]
       );
 
-      // Seed mínimo: uma categoria vazia e uma mesa de exemplo, para o
-      // owner cair num painel já com algo pra editar (não vazio de todo).
       const categoryRes = await client.query(
         `INSERT INTO categories (store_id, name, sort_order)
          VALUES ($1, 'Cardápio', 1)
@@ -168,6 +192,7 @@ async function signupRoutes(app) {
       email: result.user.email,
       rawToken,
       request,
+      storeName: result.store.name,
     });
 
     return reply.code(201).send({
@@ -185,15 +210,12 @@ async function signupRoutes(app) {
       verification: {
         required: true,
         expiresAt,
-        // Só presente fora de produção — conveniência de teste local.
+        emailConfigured: isEmailConfigured(),
         ...(devToken ? { devToken } : {}),
       },
     });
   });
 
-  /**
-   * Confirma o e-mail do owner. Ativa a store se ainda estiver 'pending'.
-   */
   app.post('/api/signup/verify', async (request, reply) => {
     const parsed = verifySchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -241,10 +263,6 @@ async function signupRoutes(app) {
     };
   });
 
-  /**
-   * Reenvia o e-mail de verificação. Resposta genérica sempre que possível
-   * para não revelar se um e-mail existe na base (evita enumeração).
-   */
   app.post('/api/signup/resend', async (request, reply) => {
     const parsed = resendSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -272,12 +290,15 @@ async function signupRoutes(app) {
       userId: user.id,
     });
 
+    const store = await storeRepo.findById(ownerMembership.store_id);
+
     const devToken = await deliverVerificationEmail({
       storeId: ownerMembership.store_id,
       userId: user.id,
       email: user.email,
       rawToken,
       request,
+      storeName: store?.name,
     });
 
     return {
