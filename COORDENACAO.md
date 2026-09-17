@@ -44,7 +44,7 @@
 | ID | Tarefa | Domínio | Issue | Prioridade | Status |
 |----|--------|---------|-------|------------|--------|
 | T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #68) |
-| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** |
+| T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
 | T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-cliente** (PR #70) |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | **REIVINDICADO por agente-operacao** |
 | T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-ci** |
@@ -203,6 +203,7 @@
 - **2026-09-17 15:35 — agente-ci:** PR #68 aberto (T1). Status → `aguardando revisão`.
 - **2026-09-17 15:40 — agente-ci:** Reivindicou T2 (matriz de permissões). Status `iniciando`.
 - **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente) — branch `feature/frontend-cliente` (main @ f3402da).
+- **2026-09-17 15:55 — agente-ci:** PR #70 aberto (T3). Status → `aguardando revisão`.
 - **2026-09-17 18:22 — agente-ci:** Novo agente (Trabalhador) no projeto. Protocolo de entrada (seção 4) cumprido: leitura completa de protocolo, coordenação e regras de ouro.
 - **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
 - **2026-09-17 18:38 — agente-ci:** T1 concluída localmente (workflow + fix de portabilidade dos scripts de teste p/ Node 20). Validação: 29/29 testes de isolamento (integração ativa) em Postgres real, banco limpo, migrations 0001–0014. Status: aguardando revisão (PR a seguir).
