@@ -189,10 +189,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T5 — frontend-admin
 **Arquivos/pastas principais:** `frontend/src/pages/admin/*`, `frontend/src/api/client.js`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T3/T4 entregues; T2 já reivindicado por outro agente
-**Observações:** Próximo LIVRE após T4 é T5. Reivindicando T5 (Frontend admin — CRUD cardápio consumindo API admin, mesas+QR, zonas delivery, dashboard). Autorização via "REvisado! Pode continuar ;)".
+**Observações:** Em desenvolvimento: CRUD cardápio (categorias+produtos com reorder e cache invalidation), mesas+QR (regeneração), dashboard com presets.
 
 ## 🗒️ Log de eventos
 
