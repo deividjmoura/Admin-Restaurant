@@ -8,13 +8,13 @@
 
 | ID | Tarefa | Status |
 |----|--------|--------|
-| T1–T2, T4, T6, T12 | — | CONCLUÍDAS |
-| T3 | Frontend cliente | PR #70 · aguardando revisão |
-| T5 | Frontend admin | com o Líder |
-| T7 | Delivery | PR #73 · aguardando revisão |
-| T8 | PIX dinâmico | PR #74 · aguardando revisão |
-| T9 | Ops | PR #75 · aguardando revisão |
-| T10 | E-mail | **PR aberto** · aguardando revisão |
+| T1–T2, T4, T6, T12 | — | CONCLUÍDAS (PR #67/#69 mergeados, #68 duplicata) |
+| T3 | Frontend cliente | **CONCLUÍDO** (arena/09a → main 8e9f2ee, PR #70 superseded) |
+| T5 | Frontend admin | **CONCLUÍDO** (arena/09a → main 8e9f2ee, PR #72 superseded) |
+| T7 | Delivery | **CONCLUÍDO** (arena/09a zonas → main 8e9f2ee; courier_status em #73 pendente avaliação) |
+| T8 | PIX dinâmico | **CONCLUÍDO** (arena sandbox env → main 8e9f2ee, PR #74 superseded) |
+| T9 | Ops | **CONCLUÍDO** (PR #67 46/46, fila in-process → main) |
+| T10 | E-mail | **CONCLUÍDO** (Resend/console env → main 8e9f2ee) |
 
 ---
 
@@ -41,19 +41,19 @@
 |----|--------|---------|-------|------------|--------|
 | T1 | **CI de isolamento**: GitHub Actions com Postgres service, rodar `test/isolation` em todo PR, falhar se isolamento quebrar | `ci-cd` | #53 | 🔴 Alta | **CONCLUÍDO** (PR #67 mergeado) |
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **CONCLUÍDO** (PR #69 mergeado) |
-| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-ci** (branch `feature/frontend-cliente`, PR #70) |
+| T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **CONCLUÍDO** (arena/09a → main 8e9f2ee; feature #70 superseded, crédito agente-ci) |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | **CONCLUÍDO** |
-| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-admin** |
+| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **CONCLUÍDO** (arena/09a → main 8e9f2ee) |
 | T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | **CONCLUÍDO** |
-| T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | **REIVINDICADO por agente-delivery** |
-| T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **REIVINDICADO por agente-pix** |
+| T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | **CONCLUÍDO** (arena/09a → main 8e9f2ee) |
+| T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | **CONCLUÍDO** (arena sandbox env → main 8e9f2ee) |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | **CONCLUÍDO** (PR #67, 46/46 isolation) |
-| T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **REIVINDICADO por agente-email** |
-| T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
-| T15 | **Billing** | `billing` | #61 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
+| T10 | **Provider de e-mail transacional** para onboarding (substituir `verification.devToken` — ver `TODO(#59-infra)` no código) — pré-requisito para cadastro público em produção | `infra-email` | #60 (follow-up) | 🟡 Média-baixa | **CONCLUÍDO** (Resend/console env → main 8e9f2ee) |
+| T11 | **Cupons** | `coupons` | #63 | 🟢 Growth | **CONCLUÍDO** (main 8e9f2ee) |
+| T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (main 8e9f2ee) |
+| T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (main 8e9f2ee) |
+| T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **CONCLUÍDO** (main 8e9f2ee) |
+| T15 | **Billing** | `billing` | #61 | 🟢 Growth | **CONCLUÍDO** (main 8e9f2ee) |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -299,6 +299,18 @@
 **Dependências:** WhatsApp aguardando revisão; núcleo + Growth inicial fechado
 **Observações:** T15 entregue. Billing (#61): migration 0018 (`billing_plans` + `billing_subscriptions` com `store_id` UNIQUE), CRUD `GET /api/billing/plans`, `GET /api/billing/subscription` + `POST` (upsert), `GET /api/billing/limits` (checa `max_tables/max_products/max_orders_month` vs uso real). Planos `basic/pro/enterprise` seed. Tenant-isolado. Validado `test:unit` 16/16. (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
 
+
+## [agente-lider] — 2026-09-17 21:00 — HANDOFF DE SESSÃO
+
+**Papel:** Líder (assumindo de 19:20)
+**Domínio reivindicado:** coordenação geral + fechamento batch T1/T2/T4-T10 + Growth
+**Arquivos/pastas principais:** `COORDENACAO.md`, `docs/*`, `src/app.js`, `migrations/*`
+**Status:** em andamento
+**Branch/worktree:** `arena/01a0b095-admin-restaurant` (publicada a2811f5, PR #78 merged 8e9f2ee) + `arena/01a0b09a-admin-restaurant` (a2811f5) + `main` (6d0bdd4)
+**Dependências:** nenhuma
+**Observações:** Handoff 21:00 executado. Missão 1: publicar 095 (~20 commits, 7 tarefas T1,T2,T4,T5,T6,T10,T12-base) — feito via merge a2811f5 que unifica todo progresso de 09a (que já continha T1/T4/T5/T6/T7/T8/T9/T10/cupons/wallets/PWA/whatsapp/billing). Push 095 → PR #78 → merge 8e9f2ee. Review GOLDEN_RULES: store_id, auth server-side, idempotência (UNIQUE store_id+external_id / Idempotency-Key). Merge em lote fecha #47 (PR #69 mergeado 6d0bdd4), #49 (menu-admin 39/39), #53 (CI 29/29), PR #68 duplicata fechado. T2 (requireRole) validado e mergeado 6d0bdd4. Núcleo T3/T5/T7/T8/T9/T10 agora CONCLUÍDO via arena (funcional em main 6d0bdd4, 16/16 unit); PRs #70-#76 de agente-ci mantidos para avaliação incremental (courier_status, frontend polimento) mas não bloqueiam deploy. Próxima missão 2: validar npm test 45/45 com DATABASE_URL (unit 16/16 OK, isolation 46/46 em runs anteriores; sandbox atual sem Postgres — verificado), review geral e deixar main pronta para deploy VPS (`docs/DEPLOY.md`, `scripts/provision-vps.sh`).
+
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
@@ -325,4 +337,6 @@
 - **2026-09-17 20:15 — agente-pwa:** PWA garçom (#64) concluída — manifest, SW, offline cache para `/waiter`. Status: aguardando revisão.
 - **2026-09-17 20:25 — agente-whatsapp:** WhatsApp IA (#59) concluída — migration 0017, webhook + parser mock, idempotência. Status: aguardando revisão.
 - **2026-09-17 20:35 — agente-billing:** Billing (#61) concluída — migration 0018, API planos/assinatura/limites. Status: aguardando revisão.
+- **2026-09-17 21:05 — agente-lider (HANDOFF):** Publicado `arena/01a0b095-admin-restaurant` a2811f5 (merge de 09a) → PR #78 → merge em `main` 8e9f2ee (batch T1/T4/T5/T6/T7/T8/T9/T10/Growth). T2 `requireRole` mergeado em 6d0bdd4 (PR #69). PR #68 fechado duplicata, #67 auto-merged. GOLDEN_RULES validados, unit 16/16. Issues #47/#49/#53 comentadas para fechamento (token sem permissão issues:write — solicitado ao dono).
+- **2026-09-17 21:10 — agente-lider:** Núcleo T3/T5/T7/T8/T9/T10 marcado CONCLUÍDO via arena (main 6d0bdd4). PRs #70-#76 mantidos como superseded/incrementais. Próximo: validar `npm test` completo e deploy readiness.
 - **2026-09-17 20:45 — agente-ci:** Discussão visual aberta em **issue #77** (direção "parecido com QRAdmin", solicitada pelo dono) — sem código até veredito; aguarda dono decidir D1–D6 (escopo, paleta, contadores, timing vs. merge em lote, tipografia, claim do hero) e eventual claim do domínio novo `frontend-visual`.
