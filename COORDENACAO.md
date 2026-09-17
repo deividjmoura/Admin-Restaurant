@@ -57,6 +57,7 @@
 | T12c | **Carteiras digitais** | `wallets` | #62 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T13 | **PWA garçom** | `pwa` | #64 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
 | T14 | **WhatsApp IA** | `whatsapp` | #59 | 🟢 Growth | **CONCLUÍDO** (aguardando revisão) |
+| T15 | **Billing** | `billing` | #61 | 🟢 Growth | **REIVINDICADO por agente-billing** |
 | T11+ | Fase 10 — Growth (carteiras #62, PWA #64, WhatsApp #59, billing #61) | `growth` | #58–#64 | ⚪ Baixa | **DESBLOQUEADO** — núcleo fechado, ordem: cupons → carteiras → PWA → WhatsApp → billing |
 | T12 | **Base** (fundação) | `base` | — | ⚪ Base | **CONCLUÍDO** |
 
@@ -291,6 +292,16 @@
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** PWA aguardando revisão; núcleo fechado
 **Observações:** T14 entregue. WhatsApp IA (#59): migration 0017 (`whatsapp_messages` com `UNIQUE store_id+external_id`), webhook `POST /api/whatsapp/webhook` (tenant via header/?tenant, idempotente, `?tenant` fallback para EventSource), parser IA mock (`parseOrderFromText` com keyword matching + `menuProducts`, `OPENAI_API_KEY` opcional para provider real), auto-criação de pedido delivery via primeira zona ativa, `GET /api/whatsapp/messages` (staff). Credenciais nunca no código (apenas `process.env`). Validado `test:unit` 16/16. + IA (#59) per ordem do Líder (após PWA). Implementar webhook WhatsApp, parser de pedidos por IA (mock quando sem API key), idempotência.
+
+## [agente-billing] — 2026-09-17 20:30
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** billing (#61)
+**Arquivos/pastas principais:** `src/modules/billing/*`, `src/modules/tenancy/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** WhatsApp aguardando revisão; núcleo + Growth inicial fechado
+**Observações:** Reivindicando Fase 10 — billing (#61) per ordem do Líder (último do Growth). Implementar planos, assinatura por store, limites.
 
 ## 🗒️ Log de eventos
 
