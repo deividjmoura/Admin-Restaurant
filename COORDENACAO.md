@@ -180,6 +180,7 @@
 - **2026-09-17 15:30 — agente-ci:** Entrou no projeto. Leu PROTOCOLO-AGENTES.md, COORDENACAO.md e docs/GOLDEN_RULES.md. Reivindicou T1 (CI de isolamento) com status `iniciando`.
 - **2026-09-17 15:35 — agente-ci:** PR #68 aberto (T1). Status → `aguardando revisão`.
 - **2026-09-17 15:40 — agente-ci:** Reivindicou T2 (matriz de permissões). Status `iniciando`.
+- **2026-09-17 15:50 — agente-ci:** Reivindicou T3 (frontend-cliente) — branch `feature/frontend-cliente` (main @ f3402da).
 - **2026-09-17 18:22 — agente-ci:** Novo agente (Trabalhador) no projeto. Protocolo de entrada (seção 4) cumprido: leitura completa de protocolo, coordenação e regras de ouro.
 - **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
 - **2026-09-17 18:38 — agente-ci:** T1 concluída localmente (workflow + fix de portabilidade dos scripts de teste p/ Node 20). Validação: 29/29 testes de isolamento (integração ativa) em Postgres real, banco limpo, migrations 0001–0014. Status: aguardando revisão (PR a seguir).
