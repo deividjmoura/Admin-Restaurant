@@ -7,6 +7,19 @@ export class DeliveryError extends Error {
   }
 }
 
+/** Transições do status do entregador */
+export const COURIER_TRANSITIONS = {
+  PENDING: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['OUT_FOR_DELIVERY', 'CANCELLED'],
+  OUT_FOR_DELIVERY: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: [],
+  CANCELLED: [],
+};
+
+export function canTransitionCourier(from, to) {
+  return (COURIER_TRANSITIONS[from] || []).includes(to);
+}
+
 export async function listZones(storeId, { activeOnly = true } = {}) {
   const { rows } = await query(
     `SELECT id, store_id, name, fee, min_order_amount, eta_minutes_min, eta_minutes_max,
@@ -107,9 +120,6 @@ export async function updateZone(storeId, zoneId, patch) {
   return rows[0] ? mapZone(rows[0]) : null;
 }
 
-/**
- * Cotação: valida zona + subtotal vs pedido mínimo.
- */
 export async function quoteDelivery(storeId, { zoneId, subtotal }) {
   const zone = await findZoneById(storeId, zoneId);
   if (!zone || !zone.isActive) {
@@ -132,10 +142,6 @@ export async function quoteDelivery(storeId, { zoneId, subtotal }) {
   };
 }
 
-/**
- * Cria pedido DELIVERY + registro de endereço em transação.
- * items: mesmo formato de createOrder
- */
 export async function createDeliveryOrder(
   storeId,
   {
@@ -217,8 +223,8 @@ export async function createDeliveryOrder(
     `INSERT INTO delivery_orders
       (order_id, store_id, zone_id, customer_name, customer_phone,
        street, number, complement, neighborhood, city, state, postal_code,
-       delivery_fee, eta_minutes_min, eta_minutes_max, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       delivery_fee, eta_minutes_min, eta_minutes_max, notes, courier_status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PENDING')
      RETURNING *`,
     [
       result.order.id,
@@ -261,6 +267,80 @@ export async function getDeliveryByOrderId(storeId, orderId) {
   return rows[0] ? mapDelivery(rows[0]) : null;
 }
 
+/**
+ * Lista pedidos delivery da loja (staff), filtráveis por courier_status.
+ */
+export async function listDeliveryOrders(
+  storeId,
+  { courierStatus = null, limit = 50 } = {}
+) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const params = [storeId];
+  let statusFilter = '';
+  if (courierStatus) {
+    params.push(courierStatus);
+    statusFilter = `AND d.courier_status = $${params.length}`;
+  } else {
+    statusFilter = `AND d.courier_status NOT IN ('DELIVERED', 'CANCELLED')`;
+  }
+  params.push(safeLimit);
+
+  const { rows } = await query(
+    `SELECT d.*, o.status AS order_status, o.channel, o.created_at AS order_created_at,
+            z.name AS zone_name
+     FROM delivery_orders d
+     INNER JOIN orders o ON o.id = d.order_id AND o.store_id = d.store_id
+     LEFT JOIN delivery_zones z ON z.id = d.zone_id AND z.store_id = d.store_id
+     WHERE d.store_id = $1
+       ${statusFilter}
+     ORDER BY d.created_at DESC
+     LIMIT $${params.length}`,
+    params
+  );
+
+  return rows.map((r) => ({
+    ...mapDelivery(r),
+    orderStatus: r.order_status,
+    zoneName: r.zone_name,
+    orderCreatedAt: r.order_created_at,
+  }));
+}
+
+export async function updateCourierStatus(storeId, orderId, nextStatus) {
+  const current = await getDeliveryByOrderId(storeId, orderId);
+  if (!current) {
+    throw new DeliveryError('ORDER_NOT_FOUND', 'Pedido delivery não encontrado.');
+  }
+  if (!canTransitionCourier(current.courierStatus, nextStatus)) {
+    throw new DeliveryError(
+      'INVALID_COURIER_TRANSITION',
+      `Não é possível ir de ${current.courierStatus} para ${nextStatus}.`
+    );
+  }
+
+  const { rows } = await query(
+    `UPDATE delivery_orders
+     SET courier_status = $3,
+         courier_updated_at = now()
+     WHERE order_id = $1 AND store_id = $2
+     RETURNING *`,
+    [orderId, storeId, nextStatus]
+  );
+
+  // Quando entregue, alinhar status do pedido se ainda não estiver DELIVERED
+  if (nextStatus === 'DELIVERED') {
+    await query(
+      `UPDATE orders
+       SET status = 'DELIVERED', updated_at = now()
+       WHERE id = $1 AND store_id = $2
+         AND status IN ('READY', 'PREPARING', 'CONFIRMED', 'PENDING')`,
+      [orderId, storeId]
+    );
+  }
+
+  return rows[0] ? mapDelivery(rows[0]) : null;
+}
+
 function mapZone(z) {
   return {
     id: z.id,
@@ -297,6 +377,8 @@ function mapDelivery(d) {
     etaMinutesMin: d.eta_minutes_min,
     etaMinutesMax: d.eta_minutes_max,
     notes: d.notes,
+    courierStatus: d.courier_status || 'PENDING',
+    courierUpdatedAt: d.courier_updated_at || null,
     createdAt: d.created_at,
   };
 }
