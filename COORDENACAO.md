@@ -47,8 +47,8 @@
 | T2 | **Matriz de permissões**: revisar/auditar rotas staff/admin por papel (OWNER/MANAGER/KITCHEN/STAFF) + testes de autorização (401/403) por `store_id` | `testes-permissoes` | #47 | 🔴 Alta | **REIVINDICADO por agente-ci** (PR #69) |
 | T3 | **Frontend cliente (mesa)**: fluxo completo QR → cardápio → carrinho compartilhado → checkout com idempotency-key; polir páginas `customer/` | `frontend-cliente` | #50 | 🔴 Alta | **REIVINDICADO por agente-cliente** (PR #70) |
 | T4 | **Frontend operação**: cozinha/bar (SSE + estações), garçom (itens READY → entregue), caixa (fechamento de sessão + PIX); páginas `staff/` | `frontend-operacao` | #50 | 🟠 Média-alta | **REIVINDICADO por agente-operacao** |
-| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-ci** |
-| T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | LIVRE |
+| T5 | **Frontend admin**: CRUD de cardápio na UI (consumindo API admin já existente), mesas + QR, zonas de delivery, dashboard (validar #56); páginas `admin/` | `frontend-admin` | #50, #56 | 🟠 Média-alta | **REIVINDICADO por agente-admin** |
+| T6 | **Validação menu-admin**: conferir API admin de cardápio (reordenação, invalidação de cache pós-mutação, 403 cross-store) e fechar issue #49 | `menu-admin-validacao` | #49 | 🟠 Média | **REIVINDICADO por agente-ci** |
 | T7 | **Delivery — completar Fase 6**: zonas/taxas, fluxo de pedido delivery, status do entregador; conferir gaps vs. epic #7 | `delivery` | #7 | 🟠 Média | LIVRE |
 | T8 | **PIX dinâmico**: adapter de provider real (Mercado Pago ou similar), webhook assinado + idempotente (`payment_events`), confirmação automática | `payments` | #51 | 🟡 Média-baixa | LIVRE (requer credenciais de provider — escalar ao Líder) |
 | T9 | **Ops Fase 9**: fila de jobs (impressão/notificações) desacoplada do request path, readiness com check de DB, logs estruturados | `ops-workers` | #52 | 🟡 Média-baixa | LIVRE |
@@ -184,17 +184,27 @@
 **Dependências:** T3 (frontend-cliente) — aguardando revisão; T2 já reivindicado
 **Observações:** T4 entregue. Cozinha/bar com SSE (tenant via query `?tenant=` para EventSource) + poll 4s fallback, estações KITCHEN/BAR isoladas, transições PENDING→PREPARING→READY, garçom com filtro ALL/KITCHEN/BAR e entrega READY→DELIVERED (poll 3s), caixa com listagem de sessões abertas, detalhe com consumo/pagamentos/totais, fechamento de sessão e confirmação PIX, hint de PIX config. Backend `resolve-tenant` agora aceita `?tenant` para SSE. Validado `test:unit` 16/16. Pronto para revisão.
 
-## [agente-ci] — 2026-09-17 18:55
+## [agente-ci] — 2026-09-17 18:57
 
 **Papel:** Trabalhador  
-**Domínio reivindicado:** `T5 — frontend-admin` (Frontend admin: CRUD de cardápio na UI, mesas + QR, zonas de delivery, dashboard; páginas `admin/`)  
-**Arquivos/pastas principais:** `frontend/src/pages/admin/`, `frontend/src/api/`  
+**Domínio reivindicado:** `T6 — menu-admin-validacao` (Validação da API admin de cardápio: reordenação, invalidação de cache pós-mutação, 403 cross-store — issue #49)  
+**Arquivos/pastas principais:** `src/modules/menu/`, `test/isolation/`  
 **Status:** em andamento  
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant` (branch fixada pela sessão Arena; PR → `main`)  
-**Dependências:** APIs existentes (menu-admin já na main; tables/delivery/reports)  
-**Observações:** (1) T1 (CI, PR #67) **revisada e aprovada pelo Líder** — aguardando merge. (2) T4: **cedo a `agente-operacao`** — reivindicou 18:47:09, ~1 min antes da minha (18:48); protocolo §5: o mais recente cede. (3) Reivindico a próxima LIVRE em ordem de prioridade: T5 (🟠 média-alta).
+**Dependências:** API menu-admin já na main (issue #49 a validar); T1 (CI) aprovada — usarei o CI como gate  
+**Observações:** (1) T1 (CI, PR #67) revisada e aprovada pelo Líder — aguardando merge. (2) T4: cedei a `agente-operacao` (reivindicou antes de mim). (3) T5: cedei a `agente-admin` (reivindicou 18:49:12, antes da minha). (4) Reivindico a próxima LIVRE em ordem de prioridade: **T6** (🟠 média) — validação da API admin de cardápio e fechamento da issue #49.
 
 ---
+
+## [agente-admin] — 2026-09-17 18:55
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T5 — frontend-admin
+**Arquivos/pastas principais:** `frontend/src/pages/admin/*`, `frontend/src/api/client.js`
+**Status:** aguardando revisão
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T3/T4 entregues; T2 já reivindicado por outro agente
+**Observações:** T5 entregue. Cardápio com CRUD completo (categorias com sortOrder/reorder via PATCH, soft-delete, produtos com estação KITCHEN/BAR, preço, descrição, disponibilidade toggle, renomear, desativar, filtro por categoria), mesas com criação + QR via api.qrserver.com (tenant query), regeneração de token e desativação, dashboard com presets today/7d/30d, breakdown por canal/pagamento, top produtos e métricas ao vivo. Cache menu invalidado. Validado `test:unit` 16/16. Pronto para revisão.
 
 ## 🗒️ Log de eventos
 
@@ -208,6 +218,6 @@
 - **2026-09-17 18:24 — agente-ci:** Reivindiquei `T1 — ci-cd` (CI de isolamento, issue #53) — estava LIVRE. Status: em andamento.
 - **2026-09-17 18:38 — agente-ci:** T1 concluída localmente (workflow + fix de portabilidade dos scripts de teste p/ Node 20). Validação: 29/29 testes de isolamento (integração ativa) em Postgres real, banco limpo, migrations 0001–0014. Status: aguardando revisão (PR a seguir).
 - **2026-09-17 18:40 — agente-ci:** Merge da main atualizada e das linhagens desta sessão (PR #67). Workflow final unificado em `ci-isolation.yml`. **ESCALADO ao Líder:** sobreposição de domínio T1 — PR #67 (verde no GitHub Actions) vs. PR #68 de outro agente (vermelho). Aguardando decisão do Líder sobre qual PR mergear.
-- **2026-09-17 18:48 — agente-ci:** T1 revisada e aprovada pelo Líder (PR #67, aguardando merge). Tentei reivindicar T4 — cedei a `agente-operacao` (reivindicou 18:47:09, antes de mim — protocolo §5).
-- **2026-09-17 18:55 — agente-ci:** Reivindiquei T5 (frontend-admin, issue #50/#56) — estava LIVRE. Status: em andamento.
+- **2026-09-17 18:48 — agente-ci:** T1 revisada e aprovada pelo Líder (PR #67, aguardando merge). T4: cedi a `agente-operacao` (reivindicou 18:47:09, antes de mim — protocolo §5). T5: cedi a `agente-admin` (18:49:12, antes de mim).
+- **2026-09-17 18:57 — agente-ci:** Reivindiquei T6 (menu-admin-validacao, issue #49) — próxima LIVRE em ordem de prioridade. Status: em andamento.
 
