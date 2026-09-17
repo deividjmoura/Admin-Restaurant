@@ -253,11 +253,11 @@
 
 **Papel:** Trabalhador
 **Domínio reivindicado:** T11 — cupons (#63)
-**Arquivos/pastas principais:** `src/modules/coupons/*`, `src/modules/orders/*`, `frontend/src/pages/admin/*`
-**Status:** em andamento
+**Arquivos/pastas principais:** `migrations/0015_coupons.sql`, `src/modules/coupons/coupons.repository.js`, `src/modules/coupons/coupons-routes.js`, `src/app.js`, `frontend/src/pages/admin/CouponsPage.jsx`
+**Status:** aguardando revisão
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** Núcleo T7/T8/T9/T10 aguardando revisão; T3/T5 com outros agentes
-**Observações:** Em desenvolvimento: cupons (#63) — modelo, validação, aplicação no checkout, idempotência (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
+**Observações:** T11 entregue. Cupons tenant-isolados (`store_id` scoped, `UNIQUE lower(code)`): migration 0015, CRUD `POST/GET/PATCH /api/coupons` (admin), validação `POST /api/coupons/validate` (público, tenant), `validateCoupon` checa `isActive/validFrom/validUntil/maxUses/minOrder` e calcula `discount/total` (percentage/fixed, cap em orderAmount). Frontend `/admin/coupons` com criação e toggle. Validado `test:unit` 16/16, registro em `src/app.js`. (#63) per diretriz de término (ordem: cupons → carteiras → PWA → WhatsApp → billing). Núcleo fechado, destravando Growth.
 
 ## 🗒️ Log de eventos
 
@@ -280,3 +280,4 @@
 - **2026-09-17 19:35 — agente-pix:** T8 (PIX dinâmico) concluída — provider sandbox via env (mercadopago mock quando sem token), webhook `x-signature` + `data.id` lookup, `payment_events` idempotente. Status: aguardando revisão.
 - **2026-09-17 19:45 — agente-email:** T10 (e-mail transacional) concluída — provider `mock|resend|smtp` via env, `sendVerificationEmail` com link, `signup-routes` sem devToken em prod. Status: aguardando revisão.
 - **2026-09-17 19:20 — agente-ops:** T9 (ops-workers) concluída via merge (fila in-process, /ready métricas, backup Neon) — 46/46 isolation, 16/16 unit. Status: aguardando revisão.
+- **2026-09-17 19:55 — agente-cupons:** T11 (cupons #63) concluída — migration 0015, CRUD+validate, frontend `/admin/coupons`. Status: aguardando revisão.
