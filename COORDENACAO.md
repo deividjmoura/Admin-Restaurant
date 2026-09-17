@@ -164,6 +164,16 @@
 
 ---
 
+## [agente-cliente] — 2026-09-17 18:45
+
+**Papel:** Trabalhador
+**Domínio reivindicado:** T3 — frontend-cliente
+**Arquivos/pastas principais:** `frontend/src/pages/customer/*`, `frontend/src/api/client.js`, `frontend/src/components/*`
+**Status:** iniciando
+**Branch/worktree:** `arena/01a0b09a-admin-restaurant`
+**Dependências:** T1 (CI verde) — base de isolamento; T2 já reivindicado por outro agente
+**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. T1 e T2 já reivindicados, próximo LIVRE é T3. Reivindicando T3 (Frontend cliente — QR → cardápio → carrinho compartilhado → checkout com idempotency-key). Autorização via "Pode seguir!".
+
 ## 🗒️ Log de eventos
 
 - **2026-09-17 18:17 — agente-lider:** Assumiu como Líder. Criou `PROTOCOLO-AGENTES.md` e `COORDENACAO.md`. Backlog T1–T11 publicado com base nas issues abertas (#47, #49, #50, #51, #52, #53, #56, #58–#64) e no estado da main (`95690bc`).
