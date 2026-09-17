@@ -35,3 +35,5 @@ Os testes de integração (`repository-isolation`, `http-isolation`) são **pula
 | `listStationOrders` scoped | integration |
 | Menu HTTP não aceita `store_id` manipulado | integration |
 | Pedido de A retorna 404 sob tenant B | integration |
+| Onboarding self-service (issue #60) | integration |
+| **API admin cardápio (issue #49)**: 401/403, CRUD cat/prod/addon, reordenação, cache pós-mutação + isolamento, cross-store 404 | integration |
