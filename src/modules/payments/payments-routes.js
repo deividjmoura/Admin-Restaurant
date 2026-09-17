@@ -9,6 +9,11 @@ import {
   getPixConfigForStore,
   PaymentError,
 } from './payments.repository.js';
+import {
+  verifyMercadoPagoWebhook,
+  normalizeMercadoPagoWebhook,
+  getMercadoPagoPayment,
+} from './providers/mercadopago.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
@@ -24,16 +29,17 @@ const createSchema = z.object({
 function mapPaymentError(err) {
   if (!(err instanceof PaymentError)) return null;
   const status =
-    err.code === 'PIX_NOT_CONFIGURED'
+    err.code === 'PIX_NOT_CONFIGURED' || err.code === 'MP_NOT_CONFIGURED'
       ? 503
       : err.code === 'INVALID_STATUS'
         ? 409
-        : 400;
+        : err.code === 'MP_CREATE_FAILED'
+          ? 502
+          : 400;
   return new AppError(err.code, err.message, status);
 }
 
 async function paymentsRoutes(app) {
-  /** Público (tenant): config PIX mascarada */
   app.get(
     '/api/payments/pix-config',
     { preHandler: [app.requireTenant] },
@@ -43,7 +49,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /** Criar pagamento (cliente ou caixa) */
   app.post(
     '/api/payments',
     { preHandler: [app.requireTenant] },
@@ -79,6 +84,7 @@ async function paymentsRoutes(app) {
               amount: result.payment.amount,
               sessionId: result.payment.sessionId,
               orderId: result.payment.orderId,
+              provider: result.payment.provider,
             },
           });
         }
@@ -98,7 +104,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /** Detalhe */
   app.get(
     '/api/payments/:id',
     { preHandler: [app.requireTenant] },
@@ -113,7 +118,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /** Listar por sessão ou pedido */
   app.get(
     '/api/payments',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -127,10 +131,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /**
-   * Caixa confirma pagamento (PIX informado / dinheiro / card presencial).
-   * PATCH /api/payments/:id/confirm
-   */
   app.post(
     '/api/payments/:id/confirm',
     { preHandler: [app.requireTenant, app.requireStoreAccess] },
@@ -177,25 +177,80 @@ async function paymentsRoutes(app) {
   );
 
   /**
-   * Webhook genérico (provider futuro: mercadopago, stripe, etc.).
+   * Webhook genérico + normalização Mercado Pago.
    * POST /api/payments/webhooks/:provider
-   *
-   * Body esperado (normalizado):
-   * {
-   *   "externalEventId": "evt_xxx",
-   *   "eventType": "payment.paid",
-   *   "paymentId": "uuid-interno-opcional",
-   *   "storeId": "uuid-opcional",
-   *   "markPaid": true,
-   *   "providerPaymentId": "ext_pay_1",
-   *   ...resto no payload
-   * }
-   *
-   * Duplicata do mesmo externalEventId → 200 { duplicate: true } sem reprocessar.
+   * Idempotente via payment_events (provider, external_event_id).
    */
   app.post('/api/payments/webhooks/:provider', async (request, reply) => {
     const provider = String(request.params.provider || '').toLowerCase();
     const body = request.body || {};
+
+    if (provider === 'mercadopago' || provider === 'mp') {
+      const verify = verifyMercadoPagoWebhook(request.headers || {}, body);
+      if (!verify.ok) {
+        const err = new AppError('WEBHOOK_INVALID', 'Assinatura inválida.', 401);
+        const { statusCode, body: b } = errorResponse(err);
+        return reply.code(statusCode).send(b);
+      }
+
+      const norm = normalizeMercadoPagoWebhook(body);
+      let markPaid = false;
+      let providerPaymentId = norm.providerPaymentId;
+
+      // Confirma status real no MP quando possível
+      if (providerPaymentId) {
+        const mpPay = await getMercadoPagoPayment(providerPaymentId);
+        if (mpPay) {
+          markPaid = mpPay.status === 'approved';
+          providerPaymentId = String(mpPay.id);
+        } else {
+          markPaid = norm.markPaid;
+        }
+      }
+
+      try {
+        const result = await processWebhookEvent({
+          storeId: body.storeId || null,
+          provider: 'mercadopago',
+          externalEventId: norm.externalEventId,
+          eventType: norm.eventType,
+          payload: body,
+          paymentId: body.paymentId || null,
+          providerPaymentId,
+          markPaid,
+        });
+
+        if (result.payment && !result.duplicate) {
+          publishStoreOrderEvent(result.payment.storeId, {
+            type: 'payment.paid',
+            payment: {
+              id: result.payment.id,
+              method: result.payment.method,
+              amount: result.payment.amount,
+              status: result.payment.status,
+            },
+          });
+        }
+
+        return {
+          ok: true,
+          duplicate: result.duplicate,
+          eventId: result.event?.id || null,
+          payment: result.payment
+            ? { id: result.payment.id, status: result.payment.status }
+            : null,
+        };
+      } catch (err) {
+        const mapped = mapPaymentError(err);
+        if (mapped) {
+          const { statusCode, body: b } = errorResponse(mapped);
+          return reply.code(statusCode).send(b);
+        }
+        throw err;
+      }
+    }
+
+    // Genérico
     const externalEventId =
       body.externalEventId || body.id || body.event_id || null;
     const eventType = body.eventType || body.type || 'unknown';
@@ -225,6 +280,7 @@ async function paymentsRoutes(app) {
         payload: body,
         paymentId,
         markPaid: Boolean(markPaid && paymentId && storeId),
+        providerPaymentId: body.providerPaymentId || null,
       });
 
       if (result.payment && !result.duplicate) {
