@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import TableSessionPage from './pages/customer/TableSessionPage';
 import MenuPage from './pages/customer/MenuPage';
 import CartPage from './pages/customer/CartPage';
+import OrderConfirmationPage from './pages/customer/OrderConfirmationPage';
 import KitchenPage from './pages/staff/KitchenPage';
 import WaiterPage from './pages/staff/WaiterPage';
 import CashierPage from './pages/staff/CashierPage';
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/m/:token" element={<TableSessionPage />} />
       <Route path="/m/:token/menu" element={<MenuPage />} />
       <Route path="/m/:token/cart" element={<CartPage />} />
+      <Route path="/m/:token/order/:orderId" element={<OrderConfirmationPage />} />
       <Route path="/kitchen" element={<KitchenPage station="KITCHEN" />} />
       <Route path="/bar" element={<KitchenPage station="BAR" />} />
       <Route path="/waiter" element={<WaiterPage />} />
