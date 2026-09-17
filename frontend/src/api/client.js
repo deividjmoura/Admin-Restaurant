@@ -1,3 +1,10 @@
+/**
+ * Client HTTP do frontend.
+ *
+ * A API serve o front no mesmo origin (docs/DEPLOY.md).
+ * Use sempre caminhos relativos (`/api/...`).
+ * VITE_API_URL só se precisar apontar para outro host (dev legado).
+ */
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 const DEFAULT_TENANT = import.meta.env.VITE_TENANT_SLUG || 'demo';
 
@@ -12,6 +19,13 @@ export function setTenantSlug(slug) {
 
 export function getTenant() {
   return getTenantSlug();
+}
+
+/** Monta URL: path já absoluto relativo (`/api/...`) ou com base opcional. */
+function resolveUrl(path) {
+  if (!path.startsWith('/')) path = `/${path}`;
+  if (!API_URL) return path;
+  return `${API_URL}${path}`;
 }
 
 /**
@@ -31,7 +45,7 @@ export async function api(path, options = {}) {
     headers['Idempotency-Key'] = idempotencyKey;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(resolveUrl(path), {
     credentials: 'include',
     ...rest,
     headers,
@@ -55,6 +69,7 @@ export async function api(path, options = {}) {
   return data;
 }
 
+/** URL absoluta ou relativa para EventSource / links. */
 export function apiUrl(path) {
-  return `${API_URL}${path}`;
+  return resolveUrl(path);
 }
