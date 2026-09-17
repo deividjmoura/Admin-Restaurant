@@ -169,10 +169,10 @@
 **Papel:** Trabalhador
 **Domínio reivindicado:** T3 — frontend-cliente
 **Arquivos/pastas principais:** `frontend/src/pages/customer/*`, `frontend/src/api/client.js`, `frontend/src/components/*`
-**Status:** iniciando
+**Status:** em andamento
 **Branch/worktree:** `arena/01a0b09a-admin-restaurant`
 **Dependências:** T1 (CI verde) — base de isolamento; T2 já reivindicado por outro agente
-**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. T1 e T2 já reivindicados, próximo LIVRE é T3. Reivindicando T3 (Frontend cliente — QR → cardápio → carrinho compartilhado → checkout com idempotency-key). Autorização via "Pode seguir!".
+**Observações:** Lido PROTOCOLO, GOLDEN_RULES e ARCHITECTURE. T1 e T2 já reivindicados, próximo LIVRE é T3. Reivindicando T3 (Frontend cliente — QR → cardápio → carrinho compartilhado → checkout com idempotency-key). Autorização via "Pode seguir!". Em desenvolvimento: polindo fluxo QR → menu → cart → checkout idempotente.
 
 ## 🗒️ Log de eventos
 
