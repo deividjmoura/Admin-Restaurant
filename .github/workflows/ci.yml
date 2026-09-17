@@ -55,10 +55,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -91,14 +91,30 @@ jobs:
       - name: Run isolation suite (integration requires DB)
         run: |
           echo "Running full isolation suite (unit + integration)..."
+          # Enable globstar for ** patterns if needed (fallback uses *.test.js)
+          shopt -s globstar || true
+          echo "Test files:"
+          ls -la test/isolation/*.test.js
+          echo "Running: npm run test:isolation"
           npm run test:isolation 2>&1 | tee /tmp/test-isolation.log
           STATUS=${PIPESTATUS[0]}
-          echo "--- test-isolation.log tail ---"
-          tail -n 100 /tmp/test-isolation.log || true
+          echo "--- test-isolation.log tail (200 lines) ---"
+          tail -n 200 /tmp/test-isolation.log || true
+          echo "--- summary ---"
+          grep -E "^(# tests|# pass|# fail|# skipped|not ok|ok )" /tmp/test-isolation.log | tail -n 50 || true
           if [ $STATUS -ne 0 ]; then
             echo "::error::Isolation suite failed (exit $STATUS)"
+            cat /tmp/test-isolation.log || true
             exit $STATUS
           fi
+
+      - name: Upload isolation log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-isolation-log
+          path: /tmp/test-isolation.log
+          retention-days: 7
 
       - name: Verify integration tests were not skipped
         run: |
