@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 function formatBRL(v) {
   return `R$ ${Number(v || 0).toFixed(2)}`;
@@ -46,7 +53,7 @@ export default function CashierPage() {
     return () => clearInterval(id);
   }, [user, load]);
 
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner label="Carregando caixa…" />;
   if (!user) return <Navigate to="/login" replace state={{ from: '/cashier' }} />;
 
   async function closeSession(id) {
@@ -93,7 +100,7 @@ export default function CashierPage() {
         </Button>
       </div>
 
-      <ErrorBox error={error} />
+      <ErrorBox error={error} title="Erro no caixa" />
 
       {pix && (
         <Card className="bg-sky-50 border-sky-200 mb-3">
@@ -110,70 +117,71 @@ export default function CashierPage() {
 
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="space-y-3">
-          {sessions.length === 0 && (
-            <Card>
-              <p className="text-sm text-stone-500">Nenhuma sessão aberta.</p>
-              <p className="text-xs text-stone-400 mt-1">
-                Abra uma mesa pelo QR do cliente para aparecer aqui.
-              </p>
-            </Card>
-          )}
-          {sessions.map((s) => {
-            const table = s.tableNumber || s.table_number || s.table?.number || '—';
-            const id = s.id;
-            const isSelected =
-              selected && (selected.session?.id === id || selected.id === id);
-            return (
-              <Card
-                key={id}
-                className={`flex justify-between items-center gap-3 ${
-                  isSelected ? 'ring-2 ring-amber-400' : ''
-                }`}
-              >
-                <button
-                  type="button"
-                  className="text-left flex-1"
-                  onClick={() => loadSession(id)}
+          {sessions.length === 0 ? (
+            <EmptyState
+              title="Nenhuma sessão aberta"
+              description="Quando o cliente escanear o QR da mesa, a sessão aparece aqui para fechamento e PIX."
+            />
+          ) : (
+            sessions.map((s) => {
+              const table =
+                s.tableNumber || s.table_number || s.table?.number || '—';
+              const id = s.id;
+              const isSelected =
+                selected && (selected.session?.id === id || selected.id === id);
+              return (
+                <Card
+                  key={id}
+                  className={`flex justify-between items-center gap-3 ${
+                    isSelected ? 'ring-2 ring-amber-400' : ''
+                  }`}
                 >
-                  <p className="font-medium">Mesa {table}</p>
-                  <p className="text-xs text-stone-500">
-                    #{String(id).slice(0, 8)} · {s.status}
-                    {s.opened_at || s.openedAt
-                      ? ` · ${new Date(s.opened_at || s.openedAt).toLocaleTimeString()}`
-                      : ''}
-                  </p>
-                </button>
-                <div className="flex gap-2 shrink-0">
-                  <Button
-                    variant="secondary"
-                    className="!px-3 !py-1 text-xs"
+                  <button
+                    type="button"
+                    className="text-left flex-1"
                     onClick={() => loadSession(id)}
                   >
-                    Detalhar
-                  </Button>
-                  {(s.status === 'open' || s.status === 'OPEN') && (
+                    <p className="font-medium">Mesa {table}</p>
+                    <p className="text-xs text-stone-500">
+                      #{String(id).slice(0, 8)} · {s.status}
+                      {s.opened_at || s.openedAt
+                        ? ` · ${new Date(
+                            s.opened_at || s.openedAt
+                          ).toLocaleTimeString()}`
+                        : ''}
+                    </p>
+                  </button>
+                  <div className="flex gap-2 shrink-0">
                     <Button
                       variant="secondary"
-                      className="text-xs"
-                      disabled={busy}
-                      onClick={() => closeSession(id)}
+                      className="!px-3 !py-1 text-xs"
+                      onClick={() => loadSession(id)}
                     >
-                      Fechar
+                      Detalhar
                     </Button>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
+                    {(s.status === 'open' || s.status === 'OPEN') && (
+                      <Button
+                        variant="secondary"
+                        className="text-xs"
+                        disabled={busy}
+                        onClick={() => closeSession(id)}
+                      >
+                        Fechar
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })
+          )}
         </div>
 
         <div className="space-y-3">
-          {!selected && (
-            <Card>
-              <p className="text-sm text-stone-500">
-                Selecione uma sessão para ver consumo e pagamentos.
-              </p>
-            </Card>
+          {!selected && sessions.length > 0 && (
+            <EmptyState
+              title="Nenhuma sessão selecionada"
+              description="Toque em Detalhar para ver consumo, total e pagamentos."
+            />
           )}
           {selected && (
             <>
@@ -181,7 +189,8 @@ export default function CashierPage() {
                 <div className="flex justify-between items-start gap-2">
                   <div>
                     <p className="font-semibold">
-                      Sessão #{String(selected.session?.id || selected.id).slice(0, 8)}
+                      Sessão #
+                      {String(selected.session?.id || selected.id).slice(0, 8)}
                     </p>
                     <p className="text-xs text-stone-500">
                       Mesa{' '}
