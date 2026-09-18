@@ -1,7 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, setTenantSlug } from '../../api/client';
-import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
+import {
+  Button,
+  Card,
+  ErrorBox,
+  Spinner,
+  EmptyState,
+  SuccessBox,
+} from '../../components/Layout';
 
 export default function MenuPage() {
   const { token } = useParams();
@@ -32,7 +39,10 @@ export default function MenuPage() {
         if (!sessionId) {
           const table = await api(`/api/tables/by-token/${token}`);
           sessionStorage.setItem('sessionId', table.session.id);
-          sessionStorage.setItem('cartVersion', String(table.session.cartVersion ?? 0));
+          sessionStorage.setItem(
+            'cartVersion',
+            String(table.session.cartVersion ?? 0)
+          );
           if (table.storeSlug) {
             setTenantSlug(table.storeSlug);
             sessionStorage.setItem('storeSlug', table.storeSlug);
@@ -96,20 +106,19 @@ export default function MenuPage() {
 
   if (error && !menu) {
     return (
-      <div className="p-6">
-        <ErrorBox error={error} />
-        <div className="mt-4">
-          <Link to={`/m/${token}`}>
-            <Button variant="secondary">Voltar</Button>
-          </Link>
-        </div>
+      <div className="p-6 space-y-4 max-w-lg mx-auto">
+        <ErrorBox error={error} title="Não foi possível abrir o cardápio" />
+        <Link to={`/m/${token}`}>
+          <Button variant="secondary">Voltar à mesa</Button>
+        </Link>
       </div>
     );
   }
-  if (!menu) return <Spinner />;
+  if (!menu) return <Spinner label="Carregando cardápio…" />;
 
   const categories = menu.categories || menu.menu?.categories || [];
-  const storeName = sessionStorage.getItem('storeName') || menu.store?.name || null;
+  const storeName =
+    sessionStorage.getItem('storeName') || menu.store?.name || null;
 
   const cartBtn = (
     <Link to={`/m/${token}/cart`} className="relative inline-flex">
@@ -126,13 +135,22 @@ export default function MenuPage() {
     return (
       <div className="mx-auto max-w-lg px-4 py-4 space-y-4">
         <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10">
-          <h1 className="text-xl font-bold">Cardápio</h1>
+          <h1 className="text-xl font-bold text-stone-900">Cardápio</h1>
           {cartBtn}
         </div>
-        <Card>
-          <p className="text-stone-600 text-sm">Cardápio vazio ou indisponível no momento.</p>
-          {storeName && <p className="text-xs text-stone-400 mt-1">{storeName}</p>}
-        </Card>
+        <EmptyState
+          title="Cardápio vazio no momento"
+          description={
+            storeName
+              ? `${storeName} ainda não publicou itens. Peça ajuda ao staff.`
+              : 'Nenhum item disponível. Peça ajuda ao staff da mesa.'
+          }
+          action={
+            <Link to={`/m/${token}`}>
+              <Button variant="secondary">Voltar à mesa</Button>
+            </Link>
+          }
+        />
       </div>
     );
   }
@@ -141,17 +159,13 @@ export default function MenuPage() {
     <div className="mx-auto max-w-lg px-4 py-4 space-y-4 pb-24">
       <div className="flex items-center justify-between sticky top-0 bg-stone-50/95 backdrop-blur py-2 z-10 border-b border-stone-200 -mx-4 px-4">
         <div>
-          <h1 className="text-xl font-bold">Cardápio</h1>
+          <h1 className="text-xl font-bold text-stone-900">Cardápio</h1>
           {storeName && <p className="text-xs text-stone-500">{storeName}</p>}
         </div>
         {cartBtn}
       </div>
-      {msg && (
-        <div className="rounded-xl bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-2">
-          {msg}
-        </div>
-      )}
-      <ErrorBox error={error} />
+      <SuccessBox>{msg}</SuccessBox>
+      <ErrorBox error={error} title="Não deu para adicionar" />
       {categories.map((cat) => (
         <section key={cat.id} className="space-y-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">
@@ -163,9 +177,11 @@ export default function MenuPage() {
           {(cat.products || []).map((p) => (
             <Card key={p.id} className="flex gap-3 items-start">
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{p.name}</p>
+                <p className="font-medium truncate text-stone-900">{p.name}</p>
                 {p.description && (
-                  <p className="text-sm text-stone-500 mt-0.5 line-clamp-2">{p.description}</p>
+                  <p className="text-sm text-stone-500 mt-0.5 line-clamp-2">
+                    {p.description}
+                  </p>
                 )}
                 <p className="text-amber-700 font-semibold mt-1">
                   R$ {Number(p.price).toFixed(2)}
