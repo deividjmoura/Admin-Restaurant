@@ -6,7 +6,10 @@ import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
 function getIdempotencyKey() {
   let key = sessionStorage.getItem('checkoutIdempotencyKey');
   if (!key) {
-    key = (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `chk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    key =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `chk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     sessionStorage.setItem('checkoutIdempotencyKey', key);
   }
   return key;
@@ -46,7 +49,6 @@ export default function CartPage() {
 
   useEffect(() => {
     load().catch(setError);
-    // Poll shared cart every 5s (multi-client concurrency)
     const id = setInterval(() => {
       load().catch(() => {});
     }, 5000);
@@ -85,17 +87,15 @@ export default function CartPage() {
       const idempotencyKey = getIdempotencyKey();
       const res = await api(`/api/sessions/${sid}/cart/checkout`, {
         method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
+        idempotencyKey,
         body: JSON.stringify({ expectedVersion: version, idempotencyKey }),
       });
       clearIdempotencyKey();
       setLastOrder(res.order);
-      // Refresh cart after successful checkout
-      const refreshed = await load();
+      await load();
       if (res.replayed) {
         setError(new Error('Pedido já enviado anteriormente — exibindo novamente.'));
       }
-      // Show success inline instead of alert
       setTimeout(() => setLastOrder(null), 8000);
     } catch (err) {
       if (err.code === 'CART_VERSION_CONFLICT' || err.status === 409) {
@@ -103,13 +103,11 @@ export default function CartPage() {
         if (current != null) sessionStorage.setItem('cartVersion', String(current));
         setError(new Error('Carrinho foi alterado — recarregue e tente novamente'));
         load().catch(() => {});
-        // Keep idempotency key for retry (do not clear)
       } else if (err.code === 'CART_EMPTY') {
         setError(new Error('Carrinho vazio — adicione itens antes de pedir.'));
         clearIdempotencyKey();
       } else {
         setError(err);
-        // For network errors, keep key so retry is idempotent
       }
     } finally {
       setBusy(false);
@@ -133,7 +131,7 @@ export default function CartPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-4 space-y-4 pb-24">
-      <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10 border-b border-stone-200 -mx-4 px-4">
+      <div className="flex items-center justify-between sticky top-0 bg-stone-50/95 backdrop-blur py-2 z-10 border-b border-stone-200 -mx-4 px-4">
         <h1 className="text-xl font-bold">Carrinho</h1>
         <Link to={`/m/${token}/menu`}>
           <Button variant="secondary">Cardápio</Button>
@@ -144,18 +142,25 @@ export default function CartPage() {
 
       {lastOrder && (
         <Card className="border-green-300 bg-green-50">
-          <p className="font-semibold text-green-800">Pedido enviado! ✓</p>
+          <p className="font-semibold text-green-800">Pedido enviado</p>
           <p className="text-sm text-green-700 mt-1">
-            #{lastOrder.id?.slice(0, 8)} — {lastOrder.status || 'PENDING'}
+            #{String(lastOrder.id || '').slice(0, 8)} · {lastOrder.status || 'PENDING'}
           </p>
-          <p className="text-xs text-green-600 mt-1">Acompanhe com o garçom. Obrigado!</p>
+          <p className="text-xs text-green-600 mt-1">A cozinha já pode preparar. Obrigado!</p>
         </Card>
       )}
 
       {isEmpty && !lastOrder && (
         <Card>
-          <p className="text-stone-600 text-sm">Carrinho vazio — compartilhe o QR da mesa e adicionem juntos.</p>
-          <p className="text-xs text-stone-400 mt-2">Dica: o carrinho é compartilhado entre todos na mesa.</p>
+          <p className="text-stone-600 text-sm">
+            Carrinho vazio — compartilhe o QR da mesa e adicionem juntos.
+          </p>
+          <p className="text-xs text-stone-400 mt-2">
+            O carrinho é compartilhado entre todos na mesa.
+          </p>
+          <Link to={`/m/${token}/menu`} className="inline-block mt-3">
+            <Button>Ir ao cardápio</Button>
+          </Link>
         </Card>
       )}
 
@@ -166,13 +171,16 @@ export default function CartPage() {
               {item.quantity}× {item.productName}
             </p>
             {item.notes && <p className="text-xs text-stone-500">{item.notes}</p>}
-            <p className="text-xs text-stone-400">v{cart.version} • {item.station || 'KITCHEN'}</p>
+            <p className="text-xs text-stone-400">
+              v{cart.version} · {item.station || 'KITCHEN'}
+            </p>
           </div>
           <div className="text-right shrink-0">
             <p className="font-semibold text-amber-700">
               R$ {Number(item.lineTotal ?? item.unitPrice * item.quantity).toFixed(2)}
             </p>
             <button
+              type="button"
               onClick={() => removeItem(item.id)}
               className="text-xs text-red-600 underline mt-1"
               disabled={busy}
@@ -193,18 +201,11 @@ export default function CartPage() {
       )}
 
       <div className="space-y-2">
-        <Button
-          className="w-full"
-          disabled={busy || isEmpty}
-          onClick={checkout}
-        >
+        <Button className="w-full" disabled={busy || isEmpty} onClick={checkout}>
           {busy ? 'Enviando…' : isEmpty ? 'Carrinho vazio' : 'Fazer pedido'}
         </Button>
         <p className="text-[11px] text-center text-stone-400">
-          Idempotente • se a rede falhar, toque novamente — não duplica
-        </p>
-        <p className="text-xs text-center text-stone-500">
-          Versão do carrinho: {cart.version ?? 0} • compartilhado
+          Idempotente · se a rede falhar, toque de novo — não duplica
         </p>
       </div>
 

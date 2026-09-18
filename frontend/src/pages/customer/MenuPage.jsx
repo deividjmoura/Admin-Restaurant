@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, setTenantSlug } from '../../api/client';
 import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
@@ -8,7 +8,22 @@ export default function MenuPage() {
   const [menu, setMenu] = useState(null);
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState('');
-  const [adding, setAdding] = useState(null); // productId being added
+  const [adding, setAdding] = useState(null);
+  const [cartCount, setCartCount] = useState(0);
+
+  const refreshCartCount = useCallback(async () => {
+    const sid = sessionStorage.getItem('sessionId');
+    if (!sid) return;
+    try {
+      const data = await api(`/api/sessions/${sid}/cart`);
+      const items = data.items || [];
+      const n = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+      setCartCount(n);
+      sessionStorage.setItem('cartVersion', String(data.version ?? 0));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -24,17 +39,17 @@ export default function MenuPage() {
           }
           if (table.storeName) sessionStorage.setItem('storeName', table.storeName);
         } else {
-          // Ensure tenant slug is set for menu fetch if we already have session
           const storedSlug = sessionStorage.getItem('storeSlug');
           if (storedSlug) setTenantSlug(storedSlug);
         }
         const data = await api('/api/menu');
         setMenu(data);
+        await refreshCartCount();
       } catch (err) {
         setError(err);
       }
     })();
-  }, [token]);
+  }, [token, refreshCartCount]);
 
   async function addItem(product) {
     setMsg('');
@@ -58,19 +73,19 @@ export default function MenuPage() {
       });
       const nextVersion = res.version ?? res.cart?.version ?? version + 1;
       sessionStorage.setItem('cartVersion', String(nextVersion));
-      setMsg(`${product.name} adicionado ✓`);
+      setMsg(`${product.name} adicionado`);
       setTimeout(() => setMsg(''), 2500);
+      await refreshCartCount();
     } catch (err) {
       if (err.code === 'CART_VERSION_CONFLICT' || err.status === 409) {
         const current = err.data?.error?.details?.currentVersion;
         if (current != null) sessionStorage.setItem('cartVersion', String(current));
         setError(new Error('Carrinho atualizado por outra pessoa — tente de novo'));
-        // Optionally refresh cart version in background
         try {
-          const sid2 = sessionStorage.getItem('sessionId');
-          const cart = await api(`/api/sessions/${sid2}/cart`);
-          sessionStorage.setItem('cartVersion', String(cart.version ?? 0));
-        } catch {}
+          await refreshCartCount();
+        } catch {
+          /* ignore */
+        }
       } else {
         setError(err);
       }
@@ -96,14 +111,23 @@ export default function MenuPage() {
   const categories = menu.categories || menu.menu?.categories || [];
   const storeName = sessionStorage.getItem('storeName') || menu.store?.name || null;
 
+  const cartBtn = (
+    <Link to={`/m/${token}/cart`} className="relative inline-flex">
+      <Button variant="secondary">Carrinho</Button>
+      {cartCount > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">
+          {cartCount > 99 ? '99+' : cartCount}
+        </span>
+      )}
+    </Link>
+  );
+
   if (categories.length === 0) {
     return (
       <div className="mx-auto max-w-lg px-4 py-4 space-y-4">
         <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10">
           <h1 className="text-xl font-bold">Cardápio</h1>
-          <Link to={`/m/${token}/cart`}>
-            <Button variant="secondary">Carrinho</Button>
-          </Link>
+          {cartBtn}
         </div>
         <Card>
           <p className="text-stone-600 text-sm">Cardápio vazio ou indisponível no momento.</p>
@@ -115,14 +139,12 @@ export default function MenuPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-4 space-y-4 pb-24">
-      <div className="flex items-center justify-between sticky top-0 bg-stone-50 py-2 z-10 border-b border-stone-200 -mx-4 px-4">
+      <div className="flex items-center justify-between sticky top-0 bg-stone-50/95 backdrop-blur py-2 z-10 border-b border-stone-200 -mx-4 px-4">
         <div>
           <h1 className="text-xl font-bold">Cardápio</h1>
           {storeName && <p className="text-xs text-stone-500">{storeName}</p>}
         </div>
-        <Link to={`/m/${token}/cart`}>
-          <Button variant="secondary">Carrinho</Button>
-        </Link>
+        {cartBtn}
       </div>
       {msg && (
         <div className="rounded-xl bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-2">
@@ -152,7 +174,9 @@ export default function MenuPage() {
                   <p className="text-xs text-red-600 mt-1">Indisponível</p>
                 )}
                 {p.station === 'BAR' && p.isAvailable && (
-                  <p className="text-[10px] uppercase tracking-wide text-stone-400 mt-1">Bebidas • BAR</p>
+                  <p className="text-[10px] uppercase tracking-wide text-stone-400 mt-1">
+                    Bebidas · BAR
+                  </p>
                 )}
               </div>
               <Button
@@ -167,9 +191,12 @@ export default function MenuPage() {
           ))}
         </section>
       ))}
-      <div className="pt-4 flex justify-center">
-        <Link to={`/m/${token}/cart`} className="text-sm text-amber-700 underline">
-          Ver carrinho compartilhado →
+      <div className="fixed bottom-4 left-0 right-0 flex justify-center pointer-events-none px-4">
+        <Link
+          to={`/m/${token}/cart`}
+          className="pointer-events-auto shadow-lg rounded-full bg-amber-600 text-white text-sm font-semibold px-6 py-3"
+        >
+          {cartCount > 0 ? `Ver carrinho (${cartCount})` : 'Ver carrinho'}
         </Link>
       </div>
     </div>
