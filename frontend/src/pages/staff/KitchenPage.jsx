@@ -2,7 +2,14 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api, apiUrl, getTenant } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -65,7 +72,7 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
     };
   }, [user, load, station]);
 
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner label="Carregando estação…" />;
   if (!user) {
     return (
       <Navigate
@@ -100,7 +107,8 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs text-stone-500">
           Estação <span className={`font-semibold ${stationColor}`}>{station}</span>{' '}
-          · {connected ? (
+          ·{' '}
+          {connected ? (
             <span className="text-green-600">● realtime</span>
           ) : (
             <span>○ polling 4s</span>
@@ -115,95 +123,92 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
         </Button>
       </div>
 
-      <ErrorBox error={error} />
+      <ErrorBox error={error} title="Não foi possível atualizar a estação" />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {orders.length === 0 && (
-          <Card>
-            <p className="text-stone-500 text-sm">
-              Nenhum pedido ativo para {station}.
-            </p>
-            <p className="text-xs text-stone-400 mt-1">
-              Novos pedidos aparecem aqui automaticamente.
-            </p>
-          </Card>
-        )}
-        {orders.map((o) => (
-          <Card key={o.id} className="flex flex-col gap-2">
-            <div className="flex justify-between items-start gap-2">
-              <div>
-                <p className="text-xs text-stone-500">
-                  #{String(o.id).slice(0, 8)} · {o.channel || 'TABLE'}{' '}
-                  {o.tableNumber || o.table_number
-                    ? `· Mesa ${o.tableNumber || o.table_number}`
-                    : ''}
-                </p>
-                <p className="text-xs text-stone-400">
-                  {timeAgo(o.createdAt || o.created_at)} atrás · {o.status}
-                </p>
+      {orders.length === 0 ? (
+        <EmptyState
+          title={`Nenhum pedido ativo na ${title.toLowerCase()}`}
+          description="Quando o cliente enviar o pedido, ele aparece aqui (SSE ou poll 4s). A chapa está quieta por enquanto."
+        />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {orders.map((o) => (
+            <Card key={o.id} className="flex flex-col gap-2">
+              <div className="flex justify-between items-start gap-2">
+                <div>
+                  <p className="text-xs text-stone-500">
+                    #{String(o.id).slice(0, 8)} · {o.channel || 'TABLE'}{' '}
+                    {o.tableNumber || o.table_number
+                      ? `· Mesa ${o.tableNumber || o.table_number}`
+                      : ''}
+                  </p>
+                  <p className="text-xs text-stone-400">
+                    {timeAgo(o.createdAt || o.created_at)} atrás · {o.status}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {o.notes && (
-              <p className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                Obs: {o.notes}
-              </p>
-            )}
+              {o.notes && (
+                <p className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                  Obs: {o.notes}
+                </p>
+              )}
 
-            <ul className="space-y-2 mt-1">
-              {(o.items || [])
-                .filter((it) => {
-                  const s = it.station || o.station;
-                  return !s || s === station || s === o.station;
-                })
-                .map((it) => (
-                  <li
-                    key={it.id}
-                    className="flex justify-between gap-2 items-center border border-stone-100 rounded-xl px-2 py-2"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        <span className="text-stone-500">{it.quantity}×</span>{' '}
-                        {it.productName || it.product_name}
-                      </p>
-                      {it.notes && (
-                        <p className="text-xs text-stone-500 truncate">
-                          + {it.notes}
+              <ul className="space-y-2 mt-1">
+                {(o.items || [])
+                  .filter((it) => {
+                    const s = it.station || o.station;
+                    return !s || s === station || s === o.station;
+                  })
+                  .map((it) => (
+                    <li
+                      key={it.id}
+                      className="flex justify-between gap-2 items-center border border-stone-100 rounded-xl px-2 py-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          <span className="text-stone-500">{it.quantity}×</span>{' '}
+                          {it.productName || it.product_name}
                         </p>
-                      )}
-                      <p className="text-[11px] text-stone-400">{it.status}</p>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      {(it.status === 'PENDING' || it.status === 'CONFIRMED') && (
-                        <Button
-                          className="!px-2 !py-1 text-xs"
-                          disabled={busyItem === it.id}
-                          onClick={() => advanceItem(it.id, 'PREPARING')}
-                        >
-                          {busyItem === it.id ? '…' : 'Iniciar'}
-                        </Button>
-                      )}
-                      {it.status === 'PREPARING' && (
-                        <Button
-                          className="!px-2 !py-1 text-xs bg-green-600 hover:bg-green-700"
-                          disabled={busyItem === it.id}
-                          onClick={() => advanceItem(it.id, 'READY')}
-                        >
-                          {busyItem === it.id ? '…' : 'Pronto'}
-                        </Button>
-                      )}
-                      {it.status === 'READY' && (
-                        <span className="text-[11px] px-2 py-1 rounded-full bg-green-50 border border-green-200 text-green-700">
-                          aguardando garçom
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          </Card>
-        ))}
-      </div>
+                        {it.notes && (
+                          <p className="text-xs text-stone-500 truncate">
+                            + {it.notes}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-stone-400">{it.status}</p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        {(it.status === 'PENDING' || it.status === 'CONFIRMED') && (
+                          <Button
+                            className="!px-2 !py-1 text-xs"
+                            disabled={busyItem === it.id}
+                            onClick={() => advanceItem(it.id, 'PREPARING')}
+                          >
+                            {busyItem === it.id ? '…' : 'Iniciar'}
+                          </Button>
+                        )}
+                        {it.status === 'PREPARING' && (
+                          <Button
+                            className="!px-2 !py-1 text-xs bg-green-600 hover:bg-green-700"
+                            disabled={busyItem === it.id}
+                            onClick={() => advanceItem(it.id, 'READY')}
+                          >
+                            {busyItem === it.id ? '…' : 'Pronto'}
+                          </Button>
+                        )}
+                        {it.status === 'READY' && (
+                          <span className="text-[11px] px-2 py-1 rounded-full bg-green-50 border border-green-200 text-green-700">
+                            aguardando garçom
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <p className="text-center text-xs text-stone-400 mt-6">
         PENDING → PREPARING → READY → DELIVERED · estações isoladas
