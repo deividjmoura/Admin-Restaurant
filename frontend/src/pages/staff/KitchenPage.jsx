@@ -2,7 +2,14 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api, apiUrl, getTenant } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -65,7 +72,7 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
     };
   }, [user, load, station]);
 
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner label="Carregando estação…" />;
   if (!user) {
     return (
       <Navigate
@@ -115,18 +122,16 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
         </Button>
       </div>
 
-      <ErrorBox error={error} />
+      <ErrorBox error={error} title="Falha na estação" />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {orders.length === 0 && (
-          <Card>
-            <p className="text-stone-500 text-sm">
-              Nenhum pedido ativo para {station}.
-            </p>
-            <p className="text-xs text-stone-400 mt-1">
-              Novos pedidos aparecem aqui automaticamente.
-            </p>
-          </Card>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <EmptyState
+              title={`Nenhum pedido ativo na ${title.toLowerCase()}`}
+              description="Novos pedidos do salão aparecem aqui automaticamente (SSE ou poll 4s)."
+            />
+          </div>
         )}
         {orders.map((o) => (
           <Card key={o.id} className="flex flex-col gap-2">
