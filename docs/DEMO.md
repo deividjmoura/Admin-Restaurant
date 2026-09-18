@@ -1,29 +1,29 @@
-# Demo — caminho ponta a ponta
+# Demo — caminho ponta a ponta (smoke)
 
-**S4 (estabilização)** · documentado pelo Líder  
-Objetivo: qualquer pessoa conseguir demonstrar o sistema em poucos minutos.
+**S5** · qualquer pessoa demonstra o sistema em ~5 minutos.
 
-Relacionados: `docs/DEPLOY.md`, `docs/DEPLOY-TESTE-GRATIS.md`, `.env.example`.
+Relacionados: `docs/DEPLOY.md`, `docs/GOLDEN_RULES.md`, `.env.example`.
 
 ---
 
 ## 1. Pré-requisitos
 
-- Node.js ≥ 20
-- PostgreSQL (local ou Neon)
-- Repo clonado na `main`
+- Node.js ≥ 20 + PostgreSQL
+- Repo na `main`
 
 ```bash
 cp .env.example .env
-# preencha no mínimo:
-# DATABASE_URL=postgres://...
-# JWT_SECRET=<48 bytes hex>
-# COOKIE_SECRET=<outro segredo>
-# BASE_DOMAIN=localhost
-# STAFF_SEED_PASSWORD=demo-senha-local
 ```
 
-Gerar secrets:
+Mínimo no `.env`:
+
+```text
+DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
+JWT_SECRET=<48 bytes hex>
+COOKIE_SECRET=<outro segredo>
+BASE_DOMAIN=localhost
+STAFF_SEED_PASSWORD=demo-senha-local
+```
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
@@ -31,7 +31,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 ---
 
-## 2. Subir o backend + seed
+## 2. Backend + seed (leia o output)
 
 ```bash
 npm ci
@@ -40,186 +40,147 @@ npm run db:seed
 npm run dev
 ```
 
+### O que o seed imprime (anote)
+
+```text
+  ✓ Table 1 token=<UUID-ou-token>
+  ✓ Table 2 token=...
+  ...
+Seed credentials (change in production):
+  SUPER_ADMIN  admin@plataforma.local / demo-senha-local
+  OWNER(demo)  owner@demo.local / demo-senha-local
+```
+
+Se as mesas **já existiam**, o seed lista de novo:
+
+```text
+  Demo tables already seeded
+    Mesa 1 token=...
+    Mesa 2 token=...
+```
+
+**Copie um `token=`** — é o `public_token` da mesa. URL do cliente:
+
+```text
+http://localhost:5173/m/<public_token>
+# ou, se API serve o SPA:
+http://localhost:3000/m/<public_token>
+```
+
 Health:
 
 ```bash
 curl -s http://localhost:3000/ready
-# esperado: db true
+# → {"db":true,...}  status 200
 ```
 
-### Credenciais do seed (`scripts/seed.js`)
+### Credenciais seed
 
 | Papel | E-mail | Senha |
 |-------|--------|--------|
-| SUPER_ADMIN | `admin@plataforma.local` (ou `SUPER_ADMIN_EMAIL`) | `STAFF_SEED_PASSWORD` |
-| OWNER (loja `demo`) | `owner@demo.local` | `STAFF_SEED_PASSWORD` |
+| SUPER_ADMIN | `admin@plataforma.local` | `STAFF_SEED_PASSWORD` |
+| OWNER loja `demo` | `owner@demo.local` | `STAFF_SEED_PASSWORD` |
 
-Stores criadas: **`demo`** (Lanchonete Demo) e **`loja2`** (Burger House).  
-Mesas 1–5 na `demo` — o seed imprime os `public_token` no terminal.
+Stores: **`demo`**, **`loja2`**. Mesas 1–5 só na `demo`.
 
-Tenant em local:
-
-- Header: `X-Tenant-Slug: demo`
-- Ou query (SSE): `?tenant=demo`
+Tenant local: header `X-Tenant-Slug: demo` ou query `?tenant=demo` (SSE).
 
 ---
 
-## 3. Frontend (dev)
+## 3. Frontend
 
 ```bash
 npm run web
-# Vite em outra porta; use proxy / VITE_API_URL=http://localhost:3000 se necessário
+# Vite (ex.: :5173). Em prod a API serve frontend/dist — paths relativos /api/...
 ```
 
-Em **produção** a API serve o SPA (`frontend/dist`) — ver `docs/DEPLOY.md`.  
-**Nunca** setar `VITE_API_URL` em produção (caminhos relativos `/api/...`).
+Não use `VITE_API_URL` em produção.
 
 ---
 
-## 4. Fluxo A — Seed rápido (recomendado para demo ao vivo)
+## 4. Checklist smoke (5 minutos) — execute nesta ordem
 
-1. **Login staff**  
-   Abrir `/login` → `owner@demo.local` + senha do seed → tenant `demo`.
+| # | Ação | Esperado |
+|---|------|----------|
+| 1 | `curl -s localhost:3000/ready` | `db: true` |
+| 2 | Anotar **1** `token=` do seed | valor não vazio |
+| 3 | Abrir `/m/<token>` | nome da mesa + botão cardápio |
+| 4 | Cardápio → **+** em um item | feedback “adicionado” / badge |
+| 5 | Carrinho → **Fazer pedido** | “Pedido enviado” sem erro de console |
+| 6 | Login `/login` com `owner@demo.local` | entra no app staff |
+| 7 | `/kitchen` | pedido da mesa aparece (SSE ou ≤4s) |
+| 8 | **Iniciar** → **Pronto** | status READY |
+| 9 | `/waiter` → **Entregar** | some da fila |
+| 10 | `/cashier` → sessão → Fechar | mesa liberada |
 
-2. **Cliente (mesa)**  
-   Pegar um token impresso pelo seed e abrir:
-   ```text
-   /m/<public_token>
-   ```
-   Cardápio → adicionar item → carrinho → enviar pedido  
-   (checkout deve enviar `Idempotency-Key`).
-
-3. **Cozinha / Bar**  
-   `/kitchen` ou `/bar` (com sessão staff + `?tenant=demo` no SSE).  
-   Pedido aparece → PREPARING → READY.
-
-4. **Garçom**  
-   `/waiter` → item READY → Entregar (DELIVERED).
-
-5. **Caixa**  
-   `/cashier` → sessão aberta → ver totais → gerar/confirmar PIX → fechar mesa.
-
-6. **Admin**  
-   `/admin` → cardápio, mesas/QR, zonas delivery, dashboard.
+Opcional: PIX em `/cashier` se `stores.settings.pix` ou env `PIX_*` configurados.
 
 ---
 
-## 5. Fluxo B — Onboarding self-service (signup)
+## 5. Fluxo A — roteiro falado (demo ao vivo)
 
-API (sem provider de e-mail real ainda):
+1. **Cliente:** `/m/<token>` → cardápio → carrinho compartilhado → pedido (Idempotency-Key).
+2. **Cozinha/Bar:** `/kitchen` ou `/bar` → PREPARING → READY.
+3. **Garçom:** `/waiter` → DELIVERED.
+4. **Caixa:** `/cashier` → totais → PIX (se houver) → fechar sessão.
+5. **Admin:** `/admin` → cardápio, mesas/QR, delivery, dashboard.
 
-| Passo | Método | Path |
-|-------|--------|------|
-| 1 | `POST` | `/api/signup` |
-| 2 | `POST` | `/api/signup/verify` |
-| 3 | `POST` | `/api/signup/resend` |
+---
 
-### Signup
+## 6. Fluxo B — Signup (opcional)
 
 ```bash
 curl -s -X POST http://localhost:3000/api/signup \
   -H 'Content-Type: application/json' \
-  -d '{
-    "storeName": "Minha Lanchonete",
-    "slug": "minha-loja",
-    "ownerName": "Ana",
-    "ownerEmail": "ana@example.com",
-    "password": "senha-forte-123"
-  }'
+  -d '{"storeName":"Minha Loja","slug":"minha-loja","ownerName":"Ana","ownerEmail":"ana@example.com","password":"senha-forte-123"}'
 ```
 
-- Store nasce `status = pending`.
-- Fora de `production`, a resposta pode incluir `verification.devToken` para testar sem inbox.
-- Em `production`, o token **não** deve ser exposto; use `EMAIL_PROVIDER=resend` (ou equivalente) + `RESEND_API_KEY` / `EMAIL_FROM` quando configurado.
-
-### Verify
+Fora de `production` a resposta pode trazer `verification.devToken`.
 
 ```bash
 curl -s -X POST http://localhost:3000/api/signup/verify \
   -H 'Content-Type: application/json' \
-  -d '{"token": "<devToken ou token do e-mail>"}'
+  -d '{"token":"<devToken>"}'
 ```
 
-Store passa a `active`; e-mail do owner fica verificado. Depois faça login normal.
-
-**Nota:** slugs reservados (`www`, `api`, `admin`, …) são rejeitados.
+Em produção: `EMAIL_PROVIDER=resend` + chaves via env — **nunca** no código.
 
 ---
 
-## 6. PIX
+## 7. PIX (resumo)
 
-### Config por loja
+| Método | Path |
+|--------|------|
+| GET | `/api/payments/pix-config` |
+| POST | `/api/payments` |
+| POST | `/api/payments/:id/confirm` |
+| POST | `/api/payments/webhooks/:provider` (idempotente) |
 
-Em `stores.settings.pix`:
-
-```json
-{ "key": "email-ou-cpf-da-loja", "name": "NOME NA LOJA", "city": "CIDADE" }
-```
-
-Ou env global (fallback): `PIX_CHAVE`, `PIX_NOME`, `PIX_CIDADE`.
-
-### Rotas úteis
-
-| Método | Path | Quem |
-|--------|------|------|
-| `GET` | `/api/payments/pix-config` | tenant |
-| `POST` | `/api/payments` | tenant |
-| `POST` | `/api/payments/:id/confirm` | staff (caixa) |
-| `POST` | `/api/payments/webhooks/:provider` | público (idempotente) |
-
-### Sandbox / providers
-
-Conforme deploy de teste:
-
-```text
-EMAIL_PROVIDER=mock          # ou console / resend
-PIX_PROVIDER=mock            # demo sem MP
-# ou:
-PIX_PROVIDER=mercadopago
-MERCADOPAGO_ACCESS_TOKEN=TEST-...
-```
-
-Webhook Mercado Pago (quando ativo): path sob `/api/payments/webhooks/...`  
-Eventos gravados em `payment_events` com unicidade `(provider, external_event_id)` — **reprocessar o mesmo evento não duplica pagamento**.
-
-**Nunca** commitar tokens reais. **Nunca** armazenar dados de cartão.
+Sandbox: `PIX_PROVIDER=mock` ou Mercado Pago com `MERCADOPAGO_ACCESS_TOKEN=TEST-...`.
 
 ---
 
-## 7. Checklist rápido de demo (5 minutos)
+## 8. Isolamento
 
-- [ ] `/ready` → `db: true`
-- [ ] Seed rodou; anotei um `public_token` de mesa
-- [ ] `/m/<token>` carrega cardápio da loja `demo`
-- [ ] Pedido enviado sem erro de console
-- [ ] Cozinha vê o pedido (SSE ou poll)
-- [ ] Status chega a READY → garçom entrega
-- [ ] Caixa vê a sessão e consegue fechar / confirmar PIX
-- [ ] (Opcional) Signup + verify com `devToken` fora de production
+```bash
+npm run test:isolation   # com DATABASE_URL
+```
 
----
-
-## 8. Isolamento (lembrete)
-
-- Toda query de negócio filtra por `store_id`
-- Não confiar em `store_id` enviado pelo cliente
-- Suite: `npm run test:isolation` (com `DATABASE_URL`)
-- CI: workflow `CI — Isolamento multi-tenant`
+CI: workflow **CI — Isolamento multi-tenant**. `store_id` só no servidor.
 
 ---
 
 ## 9. Problemas comuns
 
-| Sintoma | O que checar |
-|---------|----------------|
-| 401 em tudo no staff | Cookie de sessão / login / `COOKIE_SECRET` |
-| Menu vazio na mesa | Token inválido ou store `pending` / errada |
-| SSE não atualiza | `?tenant=demo` na URL do EventSource |
-| CORS no browser | Em prod API deve servir o front na mesma origem |
-| PIX sem QR | `pix-config` / settings da loja / env `PIX_*` |
-| Signup sem e-mail | Fora de prod use `devToken`; em prod configure provider |
+| Sintoma | Checar |
+|---------|--------|
+| 401 staff | Login, cookie, `COOKIE_SECRET` |
+| Menu vazio | Token / store `demo` ativa |
+| SSE morto | `?tenant=demo` no EventSource |
+| CORS | Mesma origem em prod |
+| PIX sem QR | `pix-config` / `PIX_*` |
+| Seed sem token | Rode `npm run db:seed` de novo e leia o stdout |
 
 ---
 
-**Fim do guia de demo.**  
-Dúvida de arquitetura → `docs/ARCHITECTURE.md` + `docs/GOLDEN_RULES.md`.
+Dúvidas de arquitetura → `docs/ARCHITECTURE.md` · `docs/GOLDEN_RULES.md`.
