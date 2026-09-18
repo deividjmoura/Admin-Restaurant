@@ -4,26 +4,20 @@
 
 ---
 
-## 🎯 Frentes — 4 agentes
+## 🎯 Frentes
 
 | Agente | ID | Frente | Status |
 |--------|-----|--------|--------|
-| **agente-ci** | S1 | CI + isolamento | aguardando revisão PR #79 |
-| **agente-ci** | S2 | Frontend cliente polimento | **EM ANDAMENTO** |
-| **agente-3** | S3 | Frontend operação | **LIVRE** |
-| **agente-4** | S4 | Demo E2E e-mail+PIX | **LIVRE** |
+| **agente-ci** | S1 | CI + isolamento | PR #79 aguardando revisão |
+| **agente-ci** | S2 | Frontend cliente | **PR #80** aguardando revisão |
+| — | S3 | Frontend operação | **LIVRE** |
+| — | S4 | Demo E2E e-mail+PIX | **LIVRE** |
 
 ---
 
 ## 👥 Registro
 
-## [agente-lider] — estabilização · ativo
+## [agente-ci] — S1 · PR #79 · delivery zones isolation + CI pass>0
+## [agente-ci] — S2 · PR #80 · badge carrinho, /api relativo, checkout Idempotency-Key
 
-## [agente-ci] — S1 · PR #79 · aguardando revisão
-
-## [agente-ci] — 2026-09-18 07:35 · S2 frontend-cliente
-**Status:** em andamento  
-**Branch:** `feature/s2-frontend-cliente`  
-**Observações:** Polir QR→menu→carrinho→checkout; client relative `/api`; UX demo.
-
-## [agente-3] [agente-4] — S3 e S4 ainda LIVRES
+**S3 e S4** livres para agente-3 / agente-4.
