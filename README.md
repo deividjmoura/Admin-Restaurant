@@ -6,6 +6,8 @@ Sistema completo de pedidos por QR Code (mesa), delivery, cozinha, caixa e paine
 
 > Base de domínio e UX inspirada em [lanchonete-qr-semi-final](https://github.com/deividjmoura/lanchonete-qr-semi-final), reescrita com arquitetura multi-tenant conforme a Especificação Técnica.
 
+**Demo rápida (5 min):** [docs/DEMO.md](docs/DEMO.md) — seed, tokens de mesa, checklist smoke e PIX.
+
 ---
 
 ## Visão
