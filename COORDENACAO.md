@@ -1,16 +1,11 @@
 # COORDENACAO.md — Fonte única de verdade
 
-> **Modo: ESTABILIZAÇÃO** · Líder ativo · 2026-09-18 07:48+
-
-## Meta do dia — FECHADA (S1–S4)
-
-## Nova onda
+> Estabilização · 2026-09-18
 
 | Agente | ID | Frente | Status |
 |--------|-----|--------|--------|
-| **agente-ci** | **S5** | Smoke demo + DEMO tokens | **EM ANDAMENTO** |
+| **agente-ci** | S5 | Smoke demo | **PR aberto** `feature/s5-smoke-demo` |
 | livre | S6 | Visual light | **LIVRE** |
 | livre | S7 | Higiene repo | **LIVRE** |
 
-## [agente-ci] — S5 · branch `feature/s5-smoke-demo`
-Atualizar DEMO.md (tokens seed + checklist 5 min) + link no README.
+Meta do dia (S1–S4) FECHADA.
