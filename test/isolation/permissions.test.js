@@ -50,11 +50,12 @@ describe('permissions matrix (integration)', () => {
     const passwordHash = await hashPassword('test-password-123');
 
     async function makeActor(role, store) {
-      const email = `${role.toLowerCase()}-${suffix}@perm.test`;
+      // E-mail único por (role + store) — evita uq_users_email ao criar OWNER A e OWNER B
+      const email = `${role.toLowerCase()}-${store.slug}-${suffix}@perm.test`;
       const user = await createUser({
         email,
         passwordHash,
-        name: `Test ${role}`,
+        name: `Test ${role} ${store.slug}`,
         isSuperAdmin: false,
       });
       await addStoreUser({ storeId: store.id, userId: user.id, role });
