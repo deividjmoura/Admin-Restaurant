@@ -88,19 +88,22 @@ jobs:
           npm run test:isolation 2>&1 | tee /tmp/test-isolation.log
           exit "${PIPESTATUS[0]}"
 
-      - name: Verifica que a suíte rodou completa (nada pulado)
+      - name: Verifica que a suíte rodou completa (nada pulado nem cancelado)
         run: |
-          # Em CI o banco sempre existe: skip algum = a garantia de
-          # isolamento não foi exercitada (ex.: DB inacessível). Falha duro.
+          # Em CI o banco sempre existe:
+          # - skip algum = a garantia de isolamento não foi exercitada (ex.: DB inacessível)
+          # - cancelado algum = hook de setup falhou e a suíte não rodou de fato
+          # Ambos falham duro.
           SKIPPED=$(awk '/^# skipped/ {print $3}' /tmp/test-isolation.log)
+          CANCELLED=$(awk '/^# cancelled/ {print $3}' /tmp/test-isolation.log)
           echo "Resumo da suíte:"
-          grep -E "^(# tests|# suites|# pass|# fail|# skipped)" /tmp/test-isolation.log || true
-          if [ -z "$SKIPPED" ] || [ "$SKIPPED" != "0" ]; then
-            echo "::error::Esperado '# skipped 0' em CI — a suíte de isolamento deve rodar 100% (verifique DATABASE_URL/conexão)."
+          grep -E "^(# tests|# suites|# pass|# fail|# skipped|# cancelled)" /tmp/test-isolation.log || true
+          if [ -z "$SKIPPED" ] || [ "$SKIPPED" != "0" ] || [ -z "$CANCELLED" ] || [ "$CANCELLED" != "0" ]; then
+            echo "::error::Esperado '# skipped 0' e '# cancelled 0' em CI — a suíte de isolamento deve rodar 100% (verifique DATABASE_URL/conexão e hooks de setup)."
             tail -n 100 /tmp/test-isolation.log || true
             exit 1
           fi
-          echo "✓ Nenhum teste pulado — isolamento exercitado de fato."
+          echo "✓ Nenhum teste pulado ou cancelado — isolamento exercitado de fato."
 
       - name: Smoke — app sobe com banco migrado (/ready)
         run: |

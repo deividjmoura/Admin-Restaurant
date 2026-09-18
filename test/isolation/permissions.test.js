@@ -18,6 +18,9 @@ describe('permissions matrix (integration)', () => {
   /** @type {Record<string, { user: object, cookie: string }>} */
   const actors = {};
 
+  /** UUIDs criados neste arquivo — removidos no `after()` para não poluir o banco. */
+  const createdUserIds = [];
+
   before(async () => {
     if (!hasDatabase()) return;
 
@@ -49,14 +52,20 @@ describe('permissions matrix (integration)', () => {
 
     const passwordHash = await hashPassword('test-password-123');
 
-    async function makeActor(role, store) {
-      const email = `${role.toLowerCase()}-${suffix}@perm.test`;
+    /**
+     * Cria um actor (usuário + membership) para a matriz.
+     * O e-mail precisa ser único por (role, store): o OWNER de A e o OWNER de B
+     * têm o MESMO papel, então o tag da store entra no e-mail (uq_users_email).
+     */
+    async function makeActor(role, store, storeTag) {
+      const email = `${role.toLowerCase()}-${storeTag}-${suffix}@perm.test`;
       const user = await createUser({
         email,
         passwordHash,
-        name: `Test ${role}`,
+        name: `Test ${role} ${storeTag}`,
         isSuperAdmin: false,
       });
+      createdUserIds.push(user.id);
       await addStoreUser({ storeId: store.id, userId: user.id, role });
       const token = await signSessionToken(user);
       return {
@@ -65,18 +74,22 @@ describe('permissions matrix (integration)', () => {
       };
     }
 
-    actors.OWNER = await makeActor('OWNER', storeA);
-    actors.MANAGER = await makeActor('MANAGER', storeA);
-    actors.KITCHEN = await makeActor('KITCHEN', storeA);
-    actors.STAFF = await makeActor('STAFF', storeA);
+    actors.OWNER = await makeActor('OWNER', storeA, 'a');
+    actors.MANAGER = await makeActor('MANAGER', storeA, 'a');
+    actors.KITCHEN = await makeActor('KITCHEN', storeA, 'a');
+    actors.STAFF = await makeActor('STAFF', storeA, 'a');
     // Usuário só da store B — para testar cross-store
-    actors.OWNER_B = await makeActor('OWNER', storeB);
+    actors.OWNER_B = await makeActor('OWNER', storeB, 'b');
   });
 
   after(async () => {
     if (app) await app.close();
     if (!hasDatabase() || !storeA) return;
     const { query } = await import('../../src/infrastructure/db.js');
+    if (createdUserIds.length > 0) {
+      // store_users referencia users com ON DELETE CASCADE — basta remover o user.
+      await query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [createdUserIds]);
+    }
     await query(`DELETE FROM stores WHERE id = ANY($1::uuid[])`, [
       [storeA.id, storeB.id],
     ]);
