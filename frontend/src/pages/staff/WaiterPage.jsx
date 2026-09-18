@@ -4,11 +4,20 @@ import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
 
+const STAFF_NAV = [
+  { to: '/kitchen', label: 'Cozinha' },
+  { to: '/bar', label: 'Bar' },
+  { to: '/waiter', label: 'Garçom' },
+  { to: '/cashier', label: 'Caixa' },
+];
+
 export default function WaiterPage() {
   const { user, loading } = useAuth();
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
-  const [filter, setFilter] = useState('ALL'); // ALL | KITCHEN | BAR
+  const [filter, setFilter] = useState('ALL');
+  const [delivering, setDelivering] = useState(null);
+  const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
     const qs = filter === 'ALL' ? '' : `?station=${filter}`;
@@ -23,7 +32,6 @@ export default function WaiterPage() {
     return () => clearInterval(id);
   }, [user, load]);
 
-  // PWA: registra service-worker para /waiter (offline cache)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/service-worker.js').catch(() => {});
@@ -35,53 +43,60 @@ export default function WaiterPage() {
 
   async function deliver(itemId) {
     setError(null);
+    setDelivering(itemId);
     try {
       await api(`/api/waiter/items/${itemId}/deliver`, { method: 'PATCH' });
+      setMsg('Item entregue');
+      setTimeout(() => setMsg(''), 2000);
       await load();
     } catch (err) {
-      setError(err);
-    }
-  }
-
-  async function deliverViaGeneric(itemId) {
-    // Fallback via generic item status route
-    try {
-      await api(`/api/orders/items/${itemId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'DELIVERED' }),
-      });
-      await load();
-    } catch (err) {
-      setError(err);
+      try {
+        await api(`/api/orders/items/${itemId}/status`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'DELIVERED' }),
+        });
+        setMsg('Item entregue');
+        setTimeout(() => setMsg(''), 2000);
+        await load();
+      } catch (err2) {
+        setError(err2);
+      }
+    } finally {
+      setDelivering(null);
     }
   }
 
   return (
-    <Shell
-      title="Garçom"
-      nav={[
-        { to: '/kitchen', label: 'Cozinha' },
-        { to: '/bar', label: 'Bar' },
-        { to: '/waiter', label: 'Garçom' },
-        { to: '/cashier', label: 'Caixa' },
-      ]}
-    >
-      <div className="flex gap-2 mb-3">
+    <Shell title="Garçom" nav={STAFF_NAV}>
+      <div className="flex gap-2 mb-3 flex-wrap items-center">
         {['ALL', 'KITCHEN', 'BAR'].map((s) => (
           <button
             key={s}
+            type="button"
             onClick={() => setFilter(s)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-              filter === s ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-stone-600 border-stone-200'
+              filter === s
+                ? 'bg-amber-500 text-white border-amber-500'
+                : 'bg-white text-stone-600 border-stone-200'
             }`}
           >
             {s === 'ALL' ? 'Todos' : s}
           </button>
         ))}
-        <Button variant="secondary" className="!py-1 !px-3 text-xs ml-auto" onClick={() => load().catch(setError)}>
+        <Button
+          variant="secondary"
+          className="!py-1 !px-3 text-xs ml-auto"
+          onClick={() => load().catch(setError)}
+        >
           Atualizar
         </Button>
       </div>
+
+      {msg && (
+        <div className="mb-3 rounded-xl bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-2">
+          {msg}
+        </div>
+      )}
 
       <ErrorBox error={error} />
 
@@ -89,34 +104,47 @@ export default function WaiterPage() {
         {items.length === 0 && (
           <Card>
             <p className="text-sm text-stone-500">Nenhum item pronto para entrega.</p>
-            <p className="text-xs text-stone-400 mt-1">Itens ficam READY na cozinha/bar e aparecem aqui.</p>
+            <p className="text-xs text-stone-400 mt-1">
+              Itens ficam READY na cozinha/bar e aparecem aqui (poll 3s).
+            </p>
           </Card>
         )}
-        {items.map((it) => (
-          <Card key={it.id} className="flex justify-between items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">
-                {it.quantity}× {it.productName || it.product_name}
-              </p>
-              <p className="text-xs text-stone-500 truncate">
-                Pedido #{String(it.orderId || it.order_id || '').slice(0, 8)} • {it.station || '—'} • READY
-              </p>
-              {it.notes && <p className="text-xs text-stone-400">Obs: {it.notes}</p>}
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <Button onClick={() => deliver(it.id)} className="bg-green-600 hover:bg-green-700">
-                Entregar
+        {items.map((it) => {
+          const table =
+            it.tableNumber ||
+            it.table_number ||
+            it.tableLabel ||
+            it.table_label ||
+            null;
+          return (
+            <Card key={it.id} className="flex justify-between items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">
+                  {it.quantity}× {it.productName || it.product_name}
+                </p>
+                <p className="text-xs text-stone-500 truncate">
+                  {table ? `Mesa ${table} · ` : ''}
+                  Pedido #{String(it.orderId || it.order_id || '').slice(0, 8)} ·{' '}
+                  {it.station || '—'} · READY
+                </p>
+                {it.notes && (
+                  <p className="text-xs text-stone-400">Obs: {it.notes}</p>
+                )}
+              </div>
+              <Button
+                onClick={() => deliver(it.id)}
+                disabled={delivering === it.id}
+                className="bg-green-600 hover:bg-green-700 shrink-0"
+              >
+                {delivering === it.id ? '…' : 'Entregar'}
               </Button>
-              <Button variant="secondary" className="!px-2 text-xs" onClick={() => deliverViaGeneric(it.id)} title="Fallback genérico">
-                ✓
-              </Button>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </div>
 
       <p className="text-center text-xs text-stone-400 mt-6">
-        Garçom consome fila READY → DELIVERED. Poll a cada 3s + realtime da cozinha.
+        Fila READY → DELIVERED · atualização automática a cada 3s
       </p>
     </Shell>
   );
