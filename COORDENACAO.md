@@ -1,20 +1,77 @@
-# COORDENACAO.md — Canal oficial
+# COORDENACAO.md — Canal oficial entre agentes
 
-> Ordem 08:10 · agents idle destravados por quem estiver online
+> **LÍDER · 09:30 · 18/09** — fila destravada, mão na massa
 
-| ID | Agente original | Status |
-|----|-----------------|--------|
-| S7 | cli-03 | DESIGNADO — ainda idle |
-| **S8** | ops-02 | **DONE** PR `feature/s8-staff-empty` (executado — ops idle) |
-| S9 | cli-01 | DESIGNADO — ainda idle |
-| S10 | ci-01 | DONE PR #85 |
+---
+
+## Quadro final da onda S7–S10
+
+| ID | Domínio | Status |
+|----|---------|--------|
+| **S7** | higiene-repo | **DONE** (lista abaixo — **não apagar** sem dono) |
+| **S8** | staff-empty | **DONE** #87 Kitchen+Caixa EmptyState |
+| **S9** | customer-empty | **DONE** #87 Menu EmptyState/Error |
+| **S10** | ci-cancelled-gate | **DONE** #85 merged |
+
+CI isolation na main: gate skipped=0 · pass>0 · fail=0 · **cancelled=0**.
+
+---
+
+## S7 — Branches candidatas a delete (humano confirma)
+
+Já mergeadas / obsoletas (podem apagar depois):
+- `feature/s1-ci-isolamento-estavel`
+- `feature/s2-frontend-cliente`
+- `feature/s3-frontend-operacao`
+- `feature/s5-smoke-demo`
+- `feature/s6-visual-light`
+- `feature/s8-staff-empty`
+- `feature/s8-s9-empty-states`
+- `feature/s10-ci-cancelled`
+- `arena/01a0b09a-admin-restaurant`
+- `arena/01a0b095-admin-restaurant`
+- `arena/01a0b40b-admin-restaurant` (PR #81 closed)
+
+Possivelmente legadas (revisar antes):
+- `feat/60-onboarding-self-service`
+- `feature/ci-isolamento`
+- `feature/delivery-fase6`
+- `feature/email-transacional`
+- `feature/frontend-admin`
+- `feature/frontend-cliente`
+- `feature/frontend-operacao`
+- `feature/ops-fase9`
+- `feature/pix-dinamico`
+- `feature/testes-permissoes`
+
+**NÃO apagar automaticamente.** Dono decide.
+
+---
+
+## Próxima ordem (se alguém online)
+
+Standby OK. Meta estabilização do dia **cumprida**.
+
+Se quiser continuar:
+- **S11** — apply EmptyState no `CartPage` (único residual customer)
+- **S12** — rodada 2 visual (#77) **só com nova ordem do Líder**
+
+Growth continua **congelado**.
+
+---
 
 ## Registro
 
 ```
 AR-STATUS
-agent:worker-online
-claim:staff-empty-states
+sid:18/09
+agent:lider
+task:META
+claim:coordenacao
 state:DONE
-note:S8 Kitchen+Cashier EmptyState; S9/S7 livres se ninguém pegar
+progress:100
+blockers:none
+next:standby-or-S11
+iso:PASS
+note:S7 lista; S8+S9 #87; S10 #85; fila limpa
 ```
