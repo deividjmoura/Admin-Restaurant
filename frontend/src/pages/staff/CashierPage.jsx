@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 function formatBRL(v) {
   return `R$ ${Number(v || 0).toFixed(2)}`;
@@ -46,7 +53,7 @@ export default function CashierPage() {
     return () => clearInterval(id);
   }, [user, load]);
 
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner label="Carregando caixa…" />;
   if (!user) return <Navigate to="/login" replace state={{ from: '/cashier' }} />;
 
   async function closeSession(id) {
@@ -93,7 +100,7 @@ export default function CashierPage() {
         </Button>
       </div>
 
-      <ErrorBox error={error} />
+      <ErrorBox error={error} title="Falha no caixa" />
 
       {pix && (
         <Card className="bg-sky-50 border-sky-200 mb-3">
@@ -111,12 +118,10 @@ export default function CashierPage() {
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="space-y-3">
           {sessions.length === 0 && (
-            <Card>
-              <p className="text-sm text-stone-500">Nenhuma sessão aberta.</p>
-              <p className="text-xs text-stone-400 mt-1">
-                Abra uma mesa pelo QR do cliente para aparecer aqui.
-              </p>
-            </Card>
+            <EmptyState
+              title="Nenhuma sessão aberta"
+              description="Abra uma mesa pelo QR do cliente para aparecer aqui."
+            />
           )}
           {sessions.map((s) => {
             const table = s.tableNumber || s.table_number || s.table?.number || '—';
@@ -168,12 +173,11 @@ export default function CashierPage() {
         </div>
 
         <div className="space-y-3">
-          {!selected && (
-            <Card>
-              <p className="text-sm text-stone-500">
-                Selecione uma sessão para ver consumo e pagamentos.
-              </p>
-            </Card>
+          {!selected && sessions.length > 0 && (
+            <EmptyState
+              title="Selecione uma sessão"
+              description="Toque em Detalhar para ver consumo e pagamentos."
+            />
           )}
           {selected && (
             <>
