@@ -1,7 +1,6 @@
 # =============================================================================
-# CI de isolamento multi-tenant (S1 estabilização)
-# Roda test/isolation em todo PR/push main com Postgres 16 real.
-# skipped ≠ 0 ou pass = 0 → falha (isolamento não exercitado).
+# CI de isolamento multi-tenant
+# skipped=0 · pass>0 · fail=0 · cancelled=0 → senão bloqueia merge
 # =============================================================================
 name: CI — Isolamento multi-tenant
 
@@ -73,7 +72,7 @@ jobs:
           npm run test:isolation 2>&1 | tee /tmp/test-isolation.log
           exit "${PIPESTATUS[0]}"
 
-      - name: Verifica suite completa (skipped=0, pass>0)
+      - name: Verifica suite completa (skipped=0, cancelled=0, pass>0, fail=0)
         run: |
           echo "Resumo da suíte:"
           grep -E "^(# tests|# suites|# pass|# fail|# skipped|# cancelled)" /tmp/test-isolation.log || true
@@ -81,9 +80,20 @@ jobs:
           SKIPPED=$(awk '/^# skipped/ {print $3; exit}' /tmp/test-isolation.log)
           PASSED=$(awk '/^# pass/ {print $3; exit}' /tmp/test-isolation.log)
           FAILED=$(awk '/^# fail/ {print $3; exit}' /tmp/test-isolation.log)
+          CANCELLED=$(awk '/^# cancelled/ {print $3; exit}' /tmp/test-isolation.log)
 
           if [ -z "$SKIPPED" ] || [ "$SKIPPED" != "0" ]; then
             echo "::error::Esperado '# skipped 0' em CI — got skipped=${SKIPPED:-?}"
+            tail -n 80 /tmp/test-isolation.log || true
+            exit 1
+          fi
+
+          # Setup quebrado (ex. before() com erro) cancela testes — não pode passar silencioso
+          if [ -z "$CANCELLED" ]; then
+            CANCELLED=0
+          fi
+          if [ "$CANCELLED" != "0" ]; then
+            echo "::error::Esperado '# cancelled 0' — got cancelled=${CANCELLED} (setup/hook provavelmente falhou)"
             tail -n 80 /tmp/test-isolation.log || true
             exit 1
           fi
@@ -99,7 +109,7 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Suite ok: pass=${PASSED} skipped=0 fail=0"
+          echo "✓ Suite ok: pass=${PASSED} skipped=0 cancelled=0 fail=0"
 
       - name: Smoke — /ready com DB
         run: |
