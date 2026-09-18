@@ -2,7 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+  SuccessBox,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -74,10 +82,10 @@ export default function WaiterPage() {
             key={s}
             type="button"
             onClick={() => setFilter(s)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               filter === s
                 ? 'bg-amber-500 text-white border-amber-500'
-                : 'bg-white text-stone-600 border-stone-200'
+                : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
             }`}
           >
             {s === 'ALL' ? 'Todos' : s}
@@ -92,22 +100,17 @@ export default function WaiterPage() {
         </Button>
       </div>
 
-      {msg && (
-        <div className="mb-3 rounded-xl bg-green-50 border border-green-200 text-green-800 text-sm px-3 py-2">
-          {msg}
-        </div>
-      )}
+      <SuccessBox>{msg}</SuccessBox>
+      {msg && <div className="mb-3" />}
 
       <ErrorBox error={error} />
 
       <div className="space-y-3">
         {items.length === 0 && (
-          <Card>
-            <p className="text-sm text-stone-500">Nenhum item pronto para entrega.</p>
-            <p className="text-xs text-stone-400 mt-1">
-              Itens ficam READY na cozinha/bar e aparecem aqui (poll 3s).
-            </p>
-          </Card>
+          <EmptyState
+            title="Nenhum item pronto para entrega"
+            description="Itens ficam READY na cozinha/bar e aparecem aqui (poll 3s)."
+          />
         )}
         {items.map((it) => {
           const table =
@@ -119,16 +122,16 @@ export default function WaiterPage() {
           return (
             <Card key={it.id} className="flex justify-between items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">
+                <p className="font-medium truncate text-stone-900">
                   {it.quantity}× {it.productName || it.product_name}
                 </p>
-                <p className="text-xs text-stone-500 truncate">
+                <p className="text-xs text-stone-500 truncate mt-0.5">
                   {table ? `Mesa ${table} · ` : ''}
                   Pedido #{String(it.orderId || it.order_id || '').slice(0, 8)} ·{' '}
                   {it.station || '—'} · READY
                 </p>
                 {it.notes && (
-                  <p className="text-xs text-stone-400">Obs: {it.notes}</p>
+                  <p className="text-xs text-stone-400 mt-0.5">Obs: {it.notes}</p>
                 )}
               </div>
               <Button
