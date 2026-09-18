@@ -38,3 +38,19 @@ Os testes de integração (`repository-isolation`, `http-isolation`) são **pula
 | Onboarding self-service (issue #60) | integration |
 | **API admin cardápio (issue #49)**: 401/403, CRUD cat/prod/addon, reordenação, cache pós-mutação + isolamento, cross-store 404 | integration |
 | **Ops workers (issue #52)**: fila fire-and-forget, retries + dead-letter, job tenant-aware, **falha de impressão não bloqueia pedido**, `/ready` com métricas | unit + integration |
+| **Matriz de permissões (issue #47 / T2)**: 401 sem auth; 403 cross-store (OWNER de B em A e vice-versa); OWNER/MANAGER passam em admin; KITCHEN/STAFF bloqueados; kitchen board e tables por papel | integration |
+
+### Armadilha conhecida: hook quebrado cancela a suíte (não aparece em `# skipped`)
+
+Um `before`/`after` que lança — por exemplo violação de índice único ao montar
+fixtures — **cancela** todos os testes do arquivo. O resumo do runner fica
+`# fail 0` / `# cancelled N`, que é fácil de ler como verde. Consequência real:
+a matriz de permissões ficou um tempo com `0 fail` enquanto **nenhum** teste
+cross-store era exercitado (o `before` colidia em `uq_users_email`, índice
+único global — `users.email` é único por plataforma, não por loja; e-mails de
+fixture precisam ser únicos entre lojas e entre papéis).
+
+Por isso o CI (`ci-isolation.yml`) falha duro em `# skipped != 0` **e** em
+`# cancelled != 0`. Se for adicionar fixture com usuário, garanta e-mail único
+(inclua o slug da loja ou um sufixo aleatório) — nunca reuse o papel como
+identificador.
