@@ -45,6 +45,12 @@ const itemStatusSchema = z.object({
 function mapOrderError(err) {
   const code = err.code || err.message;
   switch (code) {
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return new AppError(
+        'IDEMPOTENCY_KEY_REUSED',
+        'Chave de idempotência já usada em outra sessão.',
+        409
+      );
     case 'ORDER_EMPTY':
       return new AppError('ORDER_EMPTY', 'Pedido sem itens.', 400);
     case 'PRODUCT_NOT_FOUND':

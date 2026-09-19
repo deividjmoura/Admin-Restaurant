@@ -117,9 +117,9 @@ npm run test:suite              # migrations + suíte completa + guarda de conta
 >
 > `npm run test:suite` cuida disso por você: aborta com exit 2 sem `DATABASE_URL`, aplica as
 > migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
-> ignorado ou menos testes que `MIN_TESTS` (baseline **34**). Use-o em vez de `npm test`.
+> ignorado ou menos testes que `MIN_TESTS` (baseline **38**). Use-o em vez de `npm test`.
 
-Baseline na `main` (`2bf937f` + esta): **34 testes · 9 suítes · 0 fail · 0 skipped** (~42 s).
+Baseline na `main` (`cd435de` + esta): **38 testes · 10 suítes · 0 fail · 0 skipped** (~53 s).
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
 
 > **CI ativo:** `.github/workflows/ci.yml` roda em todo PR contra `main` — job *backend*
@@ -175,7 +175,7 @@ confiável, isolada, auditável e extensível.
 | Situação | O que acontece hoje |
 |----------|---------------------|
 | SSE `/api/kitchen/events` | `EventSource` não manda header → use `?tenant=<slug>` (aceito só nas rotas `/api/kitchen/*`, que checam a membership da loja). `probe=1` devolve o canal resolvido sem abrir o stream |
-| `POST /api/orders` com `Idempotency-Key` já usada em **outra** sessão | devolve `200 replayed:true` com o pedido da sessão original; `cart/checkout` responde `409 IDEMPOTENCY_KEY_REUSED` (inconsistência a corrigir) |
+| `POST /api/orders` com `Idempotency-Key` já usada em **outra** sessão | `409 IDEMPOTENCY_KEY_REUSED` (igual ao `cart/checkout`); retry na mesma sessão continua `200 replayed:true` |
 | `npm test` sem `DATABASE_URL` no shell | verde falso com `skipped 13` → use `npm run test:suite` (recusa) |
 | `npm run db:seed` | imprime `[db] …` entre os `token=` — é log, não erro |
 | Comentários de rota em `payments-routes.js` | o confirm está documentado como `PATCH`; a rota é `POST` |
