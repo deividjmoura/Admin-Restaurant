@@ -61,6 +61,19 @@ scripts/
 
 ---
 
+## Validação rápida (sem frontend)
+
+```bash
+npm ci && npm run db:migrate && npm run db:seed && npm run dev
+export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
+npm test          # isolamento: pass 24 · fail 0 · skipped 0
+```
+
+Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa):
+**[docs/SMOKE.md](docs/SMOKE.md)**.
+
+---
+
 ## Fases de implementação
 
 Veja as [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues) e os Epics:
