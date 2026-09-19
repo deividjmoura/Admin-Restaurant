@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import { resolveStoreFromRequest } from './resolve-tenant.js';
+import { resolveStoreFromRequest, findActiveStoreBySlug } from './resolve-tenant.js';
 import { errorResponse, AppError } from '../../shared/errors.js';
 
 const SKIP_PREFIXES = ['/health', '/ready'];
@@ -37,6 +37,28 @@ async function tenantPlugin(app) {
   });
 
   app.decorate('requireTenant', async function requireTenant(request, reply) {
+    // Rotas marcadas com `allowTenantQuery: true` aceitam `?tenant=<slug>`.
+    // Motivo: EventSource (SSE) não envia headers, então em deploy de host único
+    // (API servindo a SPA) o browser não tem como mandar X-Tenant-Slug.
+    // A autorização continua no `requireStoreAccess` da rota: quem não é membro
+    // da loja resolve 403 — o query só substitui o *transporte* do slug.
+    if (!request.storeId && request.routeOptions?.config?.allowTenantQuery) {
+      const slug = request.query?.tenant;
+      if (typeof slug === 'string' && slug.trim()) {
+        try {
+          const store = await findActiveStoreBySlug(slug.trim());
+          request.store = store;
+          request.storeId = store.id;
+        } catch (err) {
+          if (err instanceof AppError) {
+            const { statusCode, body } = errorResponse(err);
+            return reply.code(statusCode).send(body);
+          }
+          throw err;
+        }
+      }
+    }
+
     if (!request.storeId) {
       const err = new AppError(
         'TENANT_REQUIRED',

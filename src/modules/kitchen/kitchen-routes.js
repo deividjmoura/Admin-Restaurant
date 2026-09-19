@@ -17,7 +17,9 @@ async function kitchenRoutes(app) {
    */
   app.get(
     '/api/kitchen/orders',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    // `allowTenantQuery`: EventSource/poll em host único não conseguem mandar
+    // X-Tenant-Slug; a autorização segue em requireStoreAccess.
+    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requireStoreAccess] },
     async (request, reply) => {
       const station = parseStation(request.query?.station);
       if (!station) {
@@ -46,7 +48,8 @@ async function kitchenRoutes(app) {
    */
   app.get(
     '/api/kitchen/events',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    // SSE: EventSource não envia headers, então o slug pode vir por `?tenant=`.
+    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requireStoreAccess] },
     async (request, reply) => {
       const station = parseStation(request.query?.station);
       if (!station) {
@@ -60,6 +63,13 @@ async function kitchenRoutes(app) {
       }
 
       const storeId = request.storeId;
+
+      // Diagnóstico/handshake: devolve o tenant resolvido sem abrir o stream.
+      // Mantém a rota testável (SSE hijacka a resposta) e permite ao front
+      // confirmar o canal antes de assinar.
+      if (request.query?.probe === '1') {
+        return { storeId, station, channel: `store:${storeId}:orders:${station}` };
+      }
 
       reply.hijack();
       reply.raw.writeHead(200, {
