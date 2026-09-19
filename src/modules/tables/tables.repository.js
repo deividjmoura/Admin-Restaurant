@@ -4,6 +4,9 @@ import { query } from '../../infrastructure/db.js';
 const SESSION_TTL_MS =
   (Number(process.env.TABLE_SESSION_TTL_HOURS) || 6) * 60 * 60 * 1000;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /** All queries scoped by store_id when listing/mutating for a store. */
 
 export async function listTables(storeId) {
@@ -18,7 +21,7 @@ export async function listTables(storeId) {
 }
 
 export async function findTableByPublicToken(publicToken) {
-  if (!publicToken) return null;
+  if (!publicToken || !UUID_RE.test(String(publicToken))) return null;
   const { rows } = await query(
     `SELECT id, store_id, number, label, public_token, status, is_active, created_at, updated_at
      FROM tables
