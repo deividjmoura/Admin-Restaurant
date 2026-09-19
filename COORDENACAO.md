@@ -8,7 +8,7 @@
 |----|--------|
 | A1 | livre — higiene/docs |
 | A2 | **DONE** CartPage EmptyState |
-| **A3** | **DESIGNADO** — README de produto |
+| **A3** | **WIP agente-arena** — README de produto |
 | A4 | livre — smoke/CI |
 | A5 | livre — audit feature/* |
 
@@ -23,10 +23,10 @@
 ```
 AR-STATUS
 sid:19/09
-agent:<seu-id>
+agent:agente-arena
 claim:A3
 state:WIP
-note:README produto
+note:README produto (SaaS multi-tenant, sem tutorial de clone)
 ```
 
 ## Registro A2
