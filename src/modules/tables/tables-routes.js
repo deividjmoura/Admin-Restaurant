@@ -81,7 +81,7 @@ async function tablesRoutes(app) {
   /** Staff: list active tables */
   app.get(
     '/api/tables',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.read')] },
     async (request) => {
       const tables = await listTables(request.storeId);
       return { tables: tables.map(mapTable) };
@@ -91,7 +91,7 @@ async function tablesRoutes(app) {
   /** Staff: list all (incl. inactive) */
   app.get(
     '/api/admin/tables',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.read')] },
     async (request) => {
       const tables = await listTablesAdmin(request.storeId);
       return { storeId: request.storeId, tables: tables.map(mapTable) };
@@ -100,7 +100,7 @@ async function tablesRoutes(app) {
 
   app.post(
     '/api/admin/tables',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.write')] },
     async (request, reply) => {
       const parsed = tableBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -130,7 +130,7 @@ async function tablesRoutes(app) {
 
   app.patch(
     '/api/admin/tables/:id',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.write')] },
     async (request, reply) => {
       const parsed = tablePatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -172,7 +172,7 @@ async function tablesRoutes(app) {
 
   app.delete(
     '/api/admin/tables/:id',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.write')] },
     async (request, reply) => {
       const existing = await findTableById(request.storeId, request.params.id);
       if (!existing) {
@@ -188,7 +188,7 @@ async function tablesRoutes(app) {
   /** Regenera token do QR (sticker antigo invalida) */
   app.post(
     '/api/admin/tables/:id/regenerate-token',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('tables.write')] },
     async (request, reply) => {
       const table = await regenerateTableToken(
         request.storeId,

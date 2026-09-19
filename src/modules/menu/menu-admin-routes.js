@@ -99,16 +99,21 @@ function mapRepoError(err) {
 }
 
 async function menuAdminRoutes(app) {
-  const staff = { preHandler: [app.requireTenant, app.requireStoreAccess] };
+  const readCategories = { preHandler: [app.requireTenant, app.requirePermission('menu.categories.read')] };
+  const writeCategories = { preHandler: [app.requireTenant, app.requirePermission('menu.categories.write')] };
+  const readProducts = { preHandler: [app.requireTenant, app.requirePermission('menu.products.read')] };
+  const writeProducts = { preHandler: [app.requireTenant, app.requirePermission('menu.products.write')] };
+  const readAddons = { preHandler: [app.requireTenant, app.requirePermission('menu.addons.read')] };
+  const writeAddons = { preHandler: [app.requireTenant, app.requirePermission('menu.addons.write')] };
 
   // ——— Categories ———
 
-  app.get('/api/admin/categories', staff, async (request) => {
+  app.get('/api/admin/categories', readCategories, async (request) => {
     const rows = await listCategoriesAdmin(request.storeId);
     return { storeId: request.storeId, categories: rows.map(mapCategory) };
   });
 
-  app.post('/api/admin/categories', staff, async (request, reply) => {
+  app.post('/api/admin/categories', writeCategories, async (request, reply) => {
     const parsed = categorySchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400, {
@@ -130,7 +135,7 @@ async function menuAdminRoutes(app) {
     return reply.code(201).send({ category: mapCategory(row) });
   });
 
-  app.patch('/api/admin/categories/:id', staff, async (request, reply) => {
+  app.patch('/api/admin/categories/:id', writeCategories, async (request, reply) => {
     const parsed = categoryPatchSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400);
@@ -147,7 +152,7 @@ async function menuAdminRoutes(app) {
   });
 
   // soft-delete = is_active false
-  app.delete('/api/admin/categories/:id', staff, async (request, reply) => {
+  app.delete('/api/admin/categories/:id', writeCategories, async (request, reply) => {
     const existing = await findCategoryById(request.storeId, request.params.id);
     if (!existing) {
       const err = new AppError('CATEGORY_NOT_FOUND', 'Categoria não encontrada.', 404);
@@ -162,13 +167,13 @@ async function menuAdminRoutes(app) {
 
   // ——— Products ———
 
-  app.get('/api/admin/products', staff, async (request) => {
+  app.get('/api/admin/products', readProducts, async (request) => {
     const categoryId = request.query?.categoryId || null;
     const rows = await listProductsAdmin(request.storeId, { categoryId });
     return { storeId: request.storeId, products: rows.map(mapProduct) };
   });
 
-  app.get('/api/admin/products/:id', staff, async (request, reply) => {
+  app.get('/api/admin/products/:id', readProducts, async (request, reply) => {
     const row = await findProductById(request.storeId, request.params.id);
     if (!row) {
       const err = new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado.', 404);
@@ -182,7 +187,7 @@ async function menuAdminRoutes(app) {
     };
   });
 
-  app.post('/api/admin/products', staff, async (request, reply) => {
+  app.post('/api/admin/products', writeProducts, async (request, reply) => {
     const body = { ...(request.body || {}) };
     if (body.imageUrl === '') body.imageUrl = null;
     const parsed = productSchema.safeParse(body);
@@ -221,7 +226,7 @@ async function menuAdminRoutes(app) {
     }
   });
 
-  app.patch('/api/admin/products/:id', staff, async (request, reply) => {
+  app.patch('/api/admin/products/:id', writeProducts, async (request, reply) => {
     const body = { ...(request.body || {}) };
     if (body.imageUrl === '') body.imageUrl = null;
     const parsed = productPatchSchema.safeParse(body);
@@ -254,7 +259,7 @@ async function menuAdminRoutes(app) {
     }
   });
 
-  app.delete('/api/admin/products/:id', staff, async (request, reply) => {
+  app.delete('/api/admin/products/:id', writeProducts, async (request, reply) => {
     const existing = await findProductById(request.storeId, request.params.id);
     if (!existing) {
       const err = new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado.', 404);
@@ -270,7 +275,7 @@ async function menuAdminRoutes(app) {
 
   // ——— Addons ———
 
-  app.get('/api/admin/products/:productId/addons', staff, async (request, reply) => {
+  app.get('/api/admin/products/:productId/addons', readAddons, async (request, reply) => {
     const product = await findProductById(
       request.storeId,
       request.params.productId
@@ -284,7 +289,7 @@ async function menuAdminRoutes(app) {
     return { productId: product.id, addons: rows.map(mapAddon) };
   });
 
-  app.post('/api/admin/products/:productId/addons', staff, async (request, reply) => {
+  app.post('/api/admin/products/:productId/addons', writeAddons, async (request, reply) => {
     const parsed = addonSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400);
@@ -313,7 +318,7 @@ async function menuAdminRoutes(app) {
     }
   });
 
-  app.patch('/api/admin/addons/:id', staff, async (request, reply) => {
+  app.patch('/api/admin/addons/:id', writeAddons, async (request, reply) => {
     const parsed = addonPatchSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400);
@@ -333,7 +338,7 @@ async function menuAdminRoutes(app) {
     return { addon: mapAddon(row) };
   });
 
-  app.delete('/api/admin/addons/:id', staff, async (request, reply) => {
+  app.delete('/api/admin/addons/:id', writeAddons, async (request, reply) => {
     const existing = await findAddonById(request.storeId, request.params.id);
     if (!existing) {
       const err = new AppError('ADDON_NOT_FOUND', 'Adicional não encontrado.', 404);

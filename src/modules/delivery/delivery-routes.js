@@ -100,7 +100,7 @@ async function deliveryRoutes(app) {
   /** Staff: listar todas as zonas (inclui inativas) */
   app.get(
     '/api/delivery/zones/admin',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('delivery.zones.read')] },
     async (request) => {
       const zones = await listZones(request.storeId, { activeOnly: false });
       return { storeId: request.storeId, zones };
@@ -110,7 +110,7 @@ async function deliveryRoutes(app) {
   /** Staff: criar zona */
   app.post(
     '/api/delivery/zones',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('delivery.zones.write')] },
     async (request, reply) => {
       const parsed = zoneBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -137,7 +137,7 @@ async function deliveryRoutes(app) {
   /** Staff: atualizar zona */
   app.patch(
     '/api/delivery/zones/:id',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('delivery.zones.write')] },
     async (request, reply) => {
       const parsed = zonePatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {

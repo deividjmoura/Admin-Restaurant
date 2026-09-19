@@ -19,6 +19,7 @@ import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
+import permissionsRoutes from './modules/permissions/permissions-routes.js';
 import { AppError, errorResponse } from './shared/errors.js';
 
 /**
@@ -85,6 +86,7 @@ export async function buildApp(opts = {}) {
   await app.register(paymentsRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
+  await app.register(permissionsRoutes);
 
   // GOLDEN_RULES: never leak 500 on malformed UUID / invalid input syntax
   app.setErrorHandler((err, request, reply) => {

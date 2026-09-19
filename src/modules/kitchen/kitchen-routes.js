@@ -17,9 +17,7 @@ async function kitchenRoutes(app) {
    */
   app.get(
     '/api/kitchen/orders',
-    // `allowTenantQuery`: EventSource/poll em host único não conseguem mandar
-    // X-Tenant-Slug; a autorização segue em requireStoreAccess.
-    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requirePermission('kitchen.orders.read')] },
     async (request, reply) => {
       const station = parseStation(request.query?.station);
       if (!station) {
@@ -48,8 +46,7 @@ async function kitchenRoutes(app) {
    */
   app.get(
     '/api/kitchen/events',
-    // SSE: EventSource não envia headers, então o slug pode vir por `?tenant=`.
-    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { config: { allowTenantQuery: true }, preHandler: [app.requireTenant, app.requirePermission('kitchen.orders.read')] },
     async (request, reply) => {
       const station = parseStation(request.query?.station);
       if (!station) {

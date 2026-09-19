@@ -66,7 +66,7 @@ async function storeRoutes(app) {
   /** Staff: settings completos (inclui chave PIX) */
   app.get(
     '/api/admin/store/settings',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('store.settings.read')] },
     async (request, reply) => {
       const store = await findById(request.storeId);
       if (!store) {
@@ -86,7 +86,7 @@ async function storeRoutes(app) {
 
   app.patch(
     '/api/admin/store/settings',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('store.settings.write')] },
     async (request, reply) => {
       const parsed = settingsPatchSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
