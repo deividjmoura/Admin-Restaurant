@@ -17,6 +17,18 @@ export async function findPaymentById(storeId, paymentId) {
   return rows[0] ? mapPayment(rows[0]) : null;
 }
 
+/**
+ * Resolve o tenant de um pagamento sem aceitar store_id fornecido pelo cliente.
+ * Uso restrito a integrações que recebem apenas o paymentId interno.
+ */
+export async function findPaymentStoreId(paymentId) {
+  const { rows } = await query(
+    `SELECT store_id FROM payments WHERE id = $1`,
+    [paymentId]
+  );
+  return rows[0]?.store_id ?? null;
+}
+
 export async function findPaymentByIdempotency(storeId, key) {
   if (!key) return null;
   const { rows } = await query(
@@ -88,6 +100,28 @@ export async function createPayment(
 
   const store = await findStoreById(storeId);
   if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
+
+  // O alvo do pagamento também precisa pertencer ao tenant resolvido.
+  // Nunca aceitar um orderId/sessionId de outra loja só porque o storeId atual é válido.
+  if (orderId) {
+    const { rows } = await query(
+      `SELECT id FROM orders WHERE id = $1 AND store_id = $2`,
+      [orderId, storeId]
+    );
+    if (!rows[0]) {
+      throw new PaymentError('ORDER_NOT_FOUND', 'Pedido não encontrado nesta loja.');
+    }
+  }
+
+  if (sessionId) {
+    const { rows } = await query(
+      `SELECT id FROM table_sessions WHERE id = $1 AND store_id = $2`,
+      [sessionId, storeId]
+    );
+    if (!rows[0]) {
+      throw new PaymentError('SESSION_NOT_FOUND', 'Sessão não encontrada nesta loja.');
+    }
+  }
 
   const settings =
     typeof store.settings === 'object' && store.settings
