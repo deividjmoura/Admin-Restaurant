@@ -138,12 +138,20 @@ export async function createOrder(storeId, {
   idempotencyKey = null,
   items = [],
 }) {
+  async function replayExisting(existing) {
+    const orderItems = await listOrderItems(storeId, existing.id);
+    const stations = await getOrderStations(storeId, existing.id);
+    return {
+      order: existing,
+      items: orderItems,
+      stations,
+      replayed: true,
+    };
+  }
+
   if (idempotencyKey) {
     const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
-    if (existing) {
-      const orderItems = await listOrderItems(storeId, existing.id);
-      return { order: existing, items: orderItems, replayed: true };
-    }
+    if (existing) return replayExisting(existing);
   }
 
   if (!items.length) {
@@ -152,94 +160,103 @@ export async function createOrder(storeId, {
     throw err;
   }
 
-  return withTransaction(async (client) => {
-    const productIds = [...new Set(items.map((i) => i.productId))];
-    const { rows: products } = await client.query(
-      `SELECT id, name, price, is_available, is_active, station
-       FROM products
-       WHERE store_id = $1 AND id = ANY($2::uuid[])`,
-      [storeId, productIds]
-    );
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
-    for (const item of items) {
-      const p = productMap.get(item.productId);
-      if (!p || !p.is_active) {
-        const err = new Error('PRODUCT_NOT_FOUND');
-        err.code = 'PRODUCT_NOT_FOUND';
-        throw err;
-      }
-      if (!p.is_available) {
-        const err = new Error('PRODUCT_UNAVAILABLE');
-        err.code = 'PRODUCT_UNAVAILABLE';
-        throw err;
-      }
-    }
-
-    const { rows: orderRows } = await client.query(
-      `INSERT INTO orders
-        (store_id, table_session_id, status, channel, notes, idempotency_key)
-       VALUES ($1, $2, 'PENDING', $3, $4, $5)
-       RETURNING id, store_id, table_session_id, status, channel, notes,
-                 idempotency_key, cancelled_at, created_at, updated_at`,
-      [storeId, tableSessionId, channel, notes, idempotencyKey]
-    );
-    const order = orderRows[0];
-
-    const createdItems = [];
-    const stations = new Set();
-
-    for (const item of items) {
-      const p = productMap.get(item.productId);
-      const station = p.station === 'BAR' ? 'BAR' : 'KITCHEN';
-      stations.add(station);
-
-      const { rows: itemRows } = await client.query(
-        `INSERT INTO order_items
-          (store_id, order_id, product_id, product_name, unit_price, quantity, notes, station)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, store_id, order_id, product_id, product_name, unit_price,
-                   quantity, notes, status, station, created_at, updated_at`,
-        [
-          storeId,
-          order.id,
-          p.id,
-          p.name,
-          p.price,
-          item.quantity,
-          item.notes ?? null,
-          station,
-        ]
+  try {
+    return await withTransaction(async (client) => {
+      const productIds = [...new Set(items.map((i) => i.productId))];
+      const { rows: products } = await client.query(
+        `SELECT id, name, price, is_available, is_active, station
+         FROM products
+         WHERE store_id = $1 AND id = ANY($2::uuid[])`,
+        [storeId, productIds]
       );
-      const orderItem = itemRows[0];
+      const productMap = new Map(products.map((p) => [p.id, p]));
 
-      if (item.addonIds?.length) {
-        const { rows: addons } = await client.query(
-          `SELECT id, name, price
-           FROM product_addons
-           WHERE store_id = $1 AND product_id = $2 AND id = ANY($3::uuid[]) AND is_active = TRUE`,
-          [storeId, p.id, item.addonIds]
-        );
-        for (const a of addons) {
-          await client.query(
-            `INSERT INTO order_item_addons
-              (store_id, order_item_id, addon_id, addon_name, unit_price)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [storeId, orderItem.id, a.id, a.name, a.price]
-          );
+      for (const item of items) {
+        const p = productMap.get(item.productId);
+        if (!p || !p.is_active) {
+          const err = new Error('PRODUCT_NOT_FOUND');
+          err.code = 'PRODUCT_NOT_FOUND';
+          throw err;
+        }
+        if (!p.is_available) {
+          const err = new Error('PRODUCT_UNAVAILABLE');
+          err.code = 'PRODUCT_UNAVAILABLE';
+          throw err;
         }
       }
 
-      createdItems.push(orderItem);
-    }
+      const { rows: orderRows } = await client.query(
+        `INSERT INTO orders
+          (store_id, table_session_id, status, channel, notes, idempotency_key)
+         VALUES ($1, $2, 'PENDING', $3, $4, $5)
+         RETURNING id, store_id, table_session_id, status, channel, notes,
+                   idempotency_key, cancelled_at, created_at, updated_at`,
+        [storeId, tableSessionId, channel, notes, idempotencyKey]
+      );
+      const order = orderRows[0];
 
-    return {
-      order,
-      items: createdItems,
-      stations: [...stations],
-      replayed: false,
-    };
-  });
+      const createdItems = [];
+      const stations = new Set();
+
+      for (const item of items) {
+        const p = productMap.get(item.productId);
+        const station = p.station === 'BAR' ? 'BAR' : 'KITCHEN';
+        stations.add(station);
+
+        const { rows: itemRows } = await client.query(
+          `INSERT INTO order_items
+            (store_id, order_id, product_id, product_name, unit_price, quantity, notes, station)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, store_id, order_id, product_id, product_name, unit_price,
+                     quantity, notes, status, station, created_at, updated_at`,
+          [
+            storeId,
+            order.id,
+            p.id,
+            p.name,
+            p.price,
+            item.quantity,
+            item.notes ?? null,
+            station,
+          ]
+        );
+        const orderItem = itemRows[0];
+
+        if (item.addonIds?.length) {
+          const { rows: addons } = await client.query(
+            `SELECT id, name, price
+             FROM product_addons
+             WHERE store_id = $1 AND product_id = $2 AND id = ANY($3::uuid[]) AND is_active = TRUE`,
+            [storeId, p.id, item.addonIds]
+          );
+          for (const a of addons) {
+            await client.query(
+              `INSERT INTO order_item_addons
+                (store_id, order_item_id, addon_id, addon_name, unit_price)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [storeId, orderItem.id, a.id, a.name, a.price]
+            );
+          }
+        }
+
+        createdItems.push(orderItem);
+      }
+
+      return {
+        order,
+        items: createdItems,
+        stations: [...stations],
+        replayed: false,
+      };
+    });
+  } catch (err) {
+    // Concurrent same Idempotency-Key: unique index wins → replay winner
+    if (err.code === '23505' && idempotencyKey) {
+      const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
+      if (existing) return replayExisting(existing);
+    }
+    throw err;
+  }
 }
 
 export async function transitionOrderStatus(storeId, orderId, nextStatus) {
@@ -351,20 +368,12 @@ export async function transitionOrderItemStatus(storeId, itemId, nextStatus) {
     const updated = rows[0];
     if (!updated) return null;
 
-    // Auto-avançar pedido pai (best-effort, não bloqueia a transição do item)
     await maybeAdvanceOrderStatus(client, storeId, updated.order_id);
 
     return updated;
   });
 }
 
-/**
- * Regras simples de sincronização pedido ← itens:
- * - Todos CANCELLED → pedido CANCELLED
- * - Todos DELIVERED (ou CANCELLED) → pedido DELIVERED
- * - Todos READY ou DELIVERED (ou CANCELLED) → pedido READY (se ainda não estiver além)
- * - Algum PREPARING → pedido PREPARING (se estava CONFIRMED/PENDING)
- */
 async function maybeAdvanceOrderStatus(client, storeId, orderId) {
   const { rows: orderRows } = await client.query(
     `SELECT id, status FROM orders WHERE id = $1 AND store_id = $2 FOR UPDATE`,
@@ -418,9 +427,6 @@ async function maybeAdvanceOrderStatus(client, storeId, orderId) {
   );
 }
 
-/**
- * Painel do garçom: itens READY aguardando entrega.
- */
 export async function listReadyItems(
   storeId,
   { station = null, limit = 100 } = {}
@@ -466,10 +472,6 @@ export async function listReadyItems(
   }));
 }
 
-/**
- * Resumo de consumo de uma sessão (para caixa).
- * Considera apenas itens não cancelados.
- */
 export async function getSessionSummary(storeId, sessionId) {
   const { rows: sessionRows } = await query(
     `SELECT ts.id, ts.store_id, ts.table_id, ts.opened_at, ts.closed_at, ts.status,
@@ -564,9 +566,6 @@ function mapSession(s) {
   };
 }
 
-/**
- * Lista sessões abertas da loja com totais rápidos (caixa).
- */
 export async function listOpenSessions(storeId, { limit = 50 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
 
