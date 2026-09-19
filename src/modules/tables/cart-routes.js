@@ -160,8 +160,7 @@ async function cartRoutes(app) {
 
     try {
       const result = await updateCartItem(
-        session.store_id,
-        session.id,
+        session.store_id, session.id,
         request.params.itemId,
         parsed.data
       );
@@ -222,6 +221,7 @@ async function cartRoutes(app) {
   /**
    * POST /api/sessions/:sessionId/cart/checkout
    * Converte carrinho → pedido e esvazia o carrinho.
+   * Idempotência resolvida ANTES de ler o carrinho (permite retry seguro).
    */
   app.post('/api/sessions/:sessionId/cart/checkout', async (request, reply) => {
     const parsed = checkoutSchema.safeParse(request.body ?? {});
@@ -245,6 +245,50 @@ async function cartRoutes(app) {
       null;
 
     try {
+      // Idempotency FIRST — before cart read. Enables safe client retries
+      // after network failure. Also blocks cross-session key reuse.
+      if (idempotencyKey) {
+        const {
+          findOrderByIdempotencyKey,
+          listOrderItems,
+          getOrderStations,
+        } = await import('../orders/orders.repository.js');
+        const existing = await findOrderByIdempotencyKey(
+          session.store_id,
+          idempotencyKey
+        );
+        if (existing) {
+          if (existing.table_session_id !== session.id) {
+            const err = new AppError(
+              'IDEMPOTENCY_KEY_REUSED',
+              'Chave de idempotência já usada em outra sessão.',
+              409
+            );
+            const { statusCode, body } = errorResponse(err);
+            return reply.code(statusCode).send(body);
+          }
+          const orderItems = await listOrderItems(session.store_id, existing.id);
+          const stations = await getOrderStations(session.store_id, existing.id);
+          return reply.code(200).send({
+            replayed: true,
+            order: {
+              id: existing.id,
+              status: existing.status,
+              tableSessionId: existing.table_session_id,
+              createdAt: existing.created_at,
+            },
+            items: orderItems.map((it) => ({
+              id: it.id,
+              productName: it.product_name,
+              quantity: it.quantity,
+              station: it.station,
+              status: it.status,
+            })),
+            stations: stations || [],
+          });
+        }
+      }
+
       const snapshot = await getCartItemsForCheckout(session.store_id, session.id);
       if (snapshot.version !== parsed.data.expectedVersion) {
         throw new CartConflictError(snapshot.version);

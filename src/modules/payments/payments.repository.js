@@ -189,6 +189,10 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
 /**
  * Processa evento de webhook de forma idempotente.
  * Retorna { duplicate, event, payment? }
+ *
+ * Importante: nunca fazer SELECT no client da transação depois de um 23505
+ * (a tx já está abortada). Checamos existência antes ou devolvemos duplicate
+ * no race sem re-query na tx abortada.
  */
 export async function processWebhookEvent({
   storeId = null,
@@ -203,8 +207,21 @@ export async function processWebhookEvent({
     throw new PaymentError('WEBHOOK_INVALID', 'provider e externalEventId obrigatórios.');
   }
 
+  // Fast path: already processed
+  const { rows: existingRows } = await query(
+    `SELECT * FROM payment_events
+     WHERE provider = $1 AND external_event_id = $2`,
+    [provider, externalEventId]
+  );
+  if (existingRows[0]) {
+    return {
+      duplicate: true,
+      event: mapEvent(existingRows[0]),
+      payment: null,
+    };
+  }
+
   return withTransaction(async (client) => {
-    // insert-or-detect duplicate
     try {
       const { rows } = await client.query(
         `INSERT INTO payment_events
@@ -246,14 +263,12 @@ export async function processWebhookEvent({
       return { duplicate: false, event: mapEvent(event), payment };
     } catch (err) {
       if (err.code === '23505') {
-        const { rows } = await client.query(
-          `SELECT * FROM payment_events
-           WHERE provider = $1 AND external_event_id = $2`,
-          [provider, externalEventId]
-        );
+        // Race: another request inserted between our pre-check and INSERT.
+        // Do NOT query on this client — transaction is aborted.
+        // Caller still gets a clean 200 {duplicate:true}.
         return {
           duplicate: true,
-          event: rows[0] ? mapEvent(rows[0]) : null,
+          event: null,
           payment: null,
         };
       }
