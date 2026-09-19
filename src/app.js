@@ -19,6 +19,7 @@ import deliveryRoutes from './modules/delivery/delivery-routes.js';
 import paymentsRoutes from './modules/payments/payments-routes.js';
 import reportsRoutes from './modules/reports/reports-routes.js';
 import storeRoutes from './modules/tenancy/store-routes.js';
+import { AppError, errorResponse } from './shared/errors.js';
 
 /**
  * @param {{ logger?: boolean | object }} [opts]
@@ -39,13 +40,27 @@ export async function buildApp(opts = {}) {
     contentSecurityPolicy: false,
   });
 
-  const corsOrigin = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
+  // CORS: credentials needs explicit Origin or reflection.
+  // When CORS_ORIGIN / FRONTEND_ORIGIN is unset in production, reflect request
+  // Origin so SPA login cookies work. Prefer setting the env in real deploys.
+  const corsOriginEnv = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
+  let corsOrigin;
+  if (corsOriginEnv) {
+    corsOrigin = corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (isProd) {
+    if (!globalThis.__corsOriginWarned) {
+      console.warn(
+        '[cors] CORS_ORIGIN / FRONTEND_ORIGIN not set. Reflecting request Origin. Set the env to your frontend URL(s) for production.'
+      );
+      globalThis.__corsOriginWarned = true;
+    }
+    corsOrigin = true;
+  } else {
+    corsOrigin = true;
+  }
+
   await app.register(cors, {
-    origin: isProd
-      ? corsOrigin
-        ? corsOrigin.split(',').map((s) => s.trim())
-        : false
-      : true,
+    origin: corsOrigin,
     credentials: true,
   });
 
@@ -70,6 +85,25 @@ export async function buildApp(opts = {}) {
   await app.register(paymentsRoutes);
   await app.register(reportsRoutes);
   await app.register(storeRoutes);
+
+  // GOLDEN_RULES: never leak 500 on malformed UUID / invalid input syntax
+  app.setErrorHandler((err, request, reply) => {
+    if (err?.code === '22P02') {
+      return reply.code(400).send({
+        error: {
+          code: 'INVALID_ID',
+          message: 'Identificador inválido.',
+        },
+      });
+    }
+    if (err instanceof AppError) {
+      const { statusCode, body } = errorResponse(err);
+      return reply.code(statusCode).send(body);
+    }
+    request.log?.error({ err }, 'unhandled error');
+    const { statusCode, body } = errorResponse(err);
+    return reply.code(statusCode).send(body);
+  });
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 
