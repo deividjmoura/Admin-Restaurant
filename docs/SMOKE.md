@@ -13,13 +13,13 @@ arquitetura: [ARCHITECTURE.md](./ARCHITECTURE.md)
 | Item | Valor |
 |------|-------|
 | Data | 2026-09-19 (São Paulo) |
-| Commit | `1dc7e84` (`main`) |
+| Commit | `05c0e29` (`main`) — revalidado após #94/#95/#96/#98/#99/#101 |
 | Ambiente | Node v22.22.3 · PostgreSQL 18.4 (local) · Linux x64 |
 | Setup | `db:migrate` → **13 migrations** · `db:seed` → 2 stores (`demo`, `loja2`), 5 mesas, 4 produtos |
 | Checklist API (seções 3–6) | **todos os passos com o status esperado** |
-| `npm test` com `DATABASE_URL` | **24 testes · 7 suítes · pass 24 · fail 0 · skipped 0** (~21 s) |
-| `npm test` sem `DATABASE_URL` | pass 16 · **skipped 8** — verde falso (ver 5.2) |
-| Observações abertas | 3 itens na seção 8 (nenhum corrigido aqui — A4 é docs) |
+| `npm test` com `DATABASE_URL` | **29 testes · 8 suítes · pass 29 · fail 0 · skipped 0** (~31 s) |
+| `npm test` sem `DATABASE_URL` | pass 16 · **skipped 13** — verde falso (ver 5.2) |
+| Observações abertas | 2 itens na seção 8 (o erro `22P02` foi tratado pelo #98) |
 
 > Números de execução real, não estimativa. Ao rodar de novo, atualize esta tabela.
 
@@ -120,7 +120,7 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 12 | **Caixa** | `GET /api/cashier/sessions/$SID` | `totals.amount` = soma dos itens |
 | 13 | Fechar mesa | `POST /api/cashier/sessions/$SID/close` | `200` + `status:"closed"`; 2ª vez `404` |
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
-| 15 | Testes | `npm test` com `DATABASE_URL` | `pass 24 · fail 0 · skipped 0` |
+| 15 | Testes | `npm test` com `DATABASE_URL` | `pass 29 · fail 0 · skipped 0` |
 
 ### 3.1 Health
 
@@ -314,16 +314,16 @@ curl -s -w ' HTTP %{http_code}\n' -H 'X-Tenant-Slug: demo' $API/api/kitchen/orde
 ```bash
 npm run test:unit                                    # sem banco
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test                                             # 24 testes · 7 suítes
+npm test                                             # 29 testes · 8 suítes
 ```
 
 > **Pegadinha:** `node --test` **não** carrega `.env`. Sem `DATABASE_URL` no *shell*,
-> `npm test` sai com `exit 0`, `pass 16` e **`skipped 8`** — verde falso. Exporte a variável
+> `npm test` sai com `exit 0`, `pass 16` e **`skipped 13`** — verde falso. Exporte a variável
 > (ou prefixe o comando). Critério de aceite: `skipped 0` **e** `fail 0`.
 
-Arquivos em `test/isolation/` (7): `cart-version`, `http-isolation`, `menu-cache`,
-`order-scoping`, `pix-static`, `repository-isolation`, `tenant-resolution`
-— `node --test` conta subtestes, por isso `# tests 24` e não 7.
+Arquivos em `test/isolation/` (8): `cart-version`, `http-isolation`, `menu-cache`,
+`order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `tenant-resolution`
+— `node --test` conta subtestes, por isso `# tests 29` e não 8.
 
 > Nesta `main` não há workflow de CI (`.github/` não existe no repositório), então a suíte
 > precisa ser rodada localmente antes do merge.
@@ -363,7 +363,7 @@ Chave aceita em header `Idempotency-Key` ou no body (`idempotencyKey`), 8–128 
 | `409 INVALID_ITEM_STATUS_TRANSITION` | pulou etapa | `PENDING → PREPARING → READY → DELIVERED` |
 | `503 PIX_NOT_CONFIGURED` | sem `PIX_*` nem `stores.settings.pix` | defina `PIX_CHAVE/NOME/CIDADE` e reinicie a API |
 | SSE `/api/kitchen/events` devolve `400` | tenant só por header/subdomínio | use subdomínio (`demo.localhost:3000`) — ver 8.1 |
-| Suíte "verde" com `skipped 8` | `DATABASE_URL` ausente no shell | `export DATABASE_URL=…` antes de `npm test` |
+| Suíte "verde" com `skipped 13` | `DATABASE_URL` ausente no shell | `export DATABASE_URL=…` antes de `npm test` |
 | Seed sem `token=` | mesas já existiam | o seed reimprime `Mesa N token=…` mesmo assim |
 
 ---
@@ -371,6 +371,10 @@ Chave aceita em header `Idempotency-Key` ou no body (`idempotencyKey`), 8–128 
 ## 8. Observações desta execução (encaminhadas ao Líder)
 
 Nada foi corrigido aqui: A4 é docs/smoke e não toca domínio de outro agente.
+
+> **Atualização:** o `500 22P02` para UUID malformado (citado na 1ª versão deste doc) foi
+> tratado pelo PR #98 (handler global). Verificado em `05c0e29`:
+> `GET /api/tables/by-token/nao-existe` → `404 TABLE_NOT_FOUND`. Os itens 8.1 e 8.2 seguem abertos.
 
 ### 8.1 SSE fica inacessível para o browser em host único
 
@@ -386,7 +390,7 @@ Só funciona por subdomínio (`demo.localhost:3000` / `demo.seudominio.com`). Em
 host único (API servindo a SPA), a cozinha/bar perde o tempo real e cai no poll.
 Sugestão: aceitar `?tenant=` **apenas** nessa rota (ou ler o slug do cookie de sessão).
 
-### 8.2 `POST /api/orders` não valida chave reusada entre sessões
+### 8.2 `POST /api/orders` não valida chave reusada entre sessões (segue aberto em `05c0e29`)
 
 `cart/checkout` responde `409 IDEMPOTENCY_KEY_REUSED`, mas `POST /api/orders` com a mesma
 `Idempotency-Key` e **outro** `tableSessionId` devolve `200 replayed:true` com o pedido da
@@ -419,7 +423,7 @@ npm run dev &          # ou outro terminal
 # 2) suíte de isolamento
 npm run test:unit
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test               # esperado: pass 24 · fail 0 · skipped 0
+npm test               # esperado: pass 29 · fail 0 · skipped 0
 
 # 3) fluxo (variáveis na seção 2)
 API=http://localhost:3000; TENANT=demo
@@ -431,4 +435,4 @@ curl -s -H "X-Tenant-Slug: $TENANT" $API/api/menu
 # … siga 3.4 → 3.9 marcando cada "Esperado"
 ```
 
-Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~21 s).
+Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~31 s).
