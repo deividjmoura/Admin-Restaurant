@@ -67,15 +67,14 @@ function mapCartError(err) {
  */
 async function resolveSessionStore(request, sessionId) {
   const { query } = await import('../../infrastructure/db.js');
+  const params = request.storeId ? [sessionId, request.storeId] : [sessionId];
+  const where = request.storeId ? 'id = $1 AND store_id = $2' : 'id = $1';
   const { rows } = await query(
-    `SELECT id, store_id, status FROM table_sessions WHERE id = $1`,
-    [sessionId]
+    `SELECT id, store_id, status FROM table_sessions WHERE ${where}`,
+    params
   );
   const session = rows[0];
   if (!session) return null;
-  if (request.storeId && request.storeId !== session.store_id) {
-    return null; // hide cross-tenant
-  }
   return session;
 }
 
