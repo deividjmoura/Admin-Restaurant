@@ -18,7 +18,7 @@ describe('payment tenant isolation (integration)', () => {
 
     const { create: createStore } = await import('../../src/modules/tenancy/store.repository.js');
     const { createCategory, createProduct } = await import('../../src/modules/menu/menu.repository.js');
-    const { createTable, openSession } = await import('../../src/modules/tables/tables.repository.js');
+    const { createTable, openOrGetSession } = await import('../../src/modules/tables/tables.repository.js');
     const { createOrder } = await import('../../src/modules/orders/orders.repository.js');
     const { createPayment } = await import('../../src/modules/payments/payments.repository.js');
 
@@ -36,7 +36,7 @@ describe('payment tenant isolation (integration)', () => {
     });
 
     const table = await createTable(storeA.id, { number: 1, label: 'A1' });
-    const session = await openSession(storeA.id, table.id);
+    const session = await openOrGetSession(storeA.id, table.id);
     sessionAId = session.id;
 
     const created = await createOrder(storeA.id, {
