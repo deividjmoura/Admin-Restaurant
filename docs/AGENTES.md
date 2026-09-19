@@ -119,7 +119,7 @@ npm run test:suite              # migrations + suíte completa + guarda de conta
 > migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
 > ignorado ou menos testes que `MIN_TESTS` (baseline **34**). Use-o em vez de `npm test`.
 
-Baseline na `main` (`2bf937f` + esta): **34 testes · 9 suítes · 0 fail · 0 skipped** (~42 s).
+Baseline desta PR: **39 testes · 12 suítes**; a suíte completa ainda precisa ser executada com `DATABASE_URL` para confirmar `fail 0` e `skipped 0`.
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
 
 > **CI ativo:** `.github/workflows/ci.yml` roda em todo PR contra `main` — job *backend*
