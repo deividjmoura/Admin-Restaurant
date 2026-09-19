@@ -6,26 +6,36 @@
 
 | ID | Status |
 |----|--------|
-| **B1** | **DONE** IDOR isolation (`a92d262`) |
+| B1 | **DONE** — 13 casos IDOR (`test/isolation/idor-modules.test.js`) |
+| **A4** | **DESIGNADO** — smoke + documentação operacional |
 | A1 | livre |
-| A4 | livre |
 
-## Registro B1
+## A4 — Smoke / docs (próximo agente)
+
+1. Garantir que a suíte isolation (incluindo B1) está refletida na doc
+2. Criar ou atualizar `docs/SMOKE.md` (ou seção em DEMO.md):
+   - comandos reais do `package.json` (`test`, isolation, seed se houver)
+   - checklist 5–10 min: login → mesa/QR → pedido → cozinha → caixa
+3. Conferir `.github/workflows` — gates claros; se main vermelha por flake, nota + fix mínimo
+4. COORDENACAO: A4 DONE + AR-STATUS
+
+Não reabrir growth. Entrega na **main**.
 
 ```
 AR-STATUS
 sid:19/09
+agent:<id>
+claim:A4
+state:WIP
+note:smoke/docs
+```
+
+## B1 (feito)
+
+```
+AR-STATUS
 agent:agente-b1
 claim:B1
 state:DONE
-note:13 casos HTTP em test/isolation/idor-modules.test.js; repos já amarravam store_id — sem fix de buraco; prova coupons/wallets/billing/reports/whatsapp
+note:13 casos IDOR coupons/wallets/billing/reports/whatsapp; repos ok
 ```
-
-### Casos
-- coupons: GET by id cross-tenant 404 · list B sem código A · validate B falha · PATCH 404
-- wallets: list B sem wallet A · txs de wallet A em B vazias · OWNER_B em A → 403
-- billing: subscription storeId scoped · POST cross 403
-- reports: OWNER_B em A → 403 · dashboard B só storeId B
-- whatsapp: messages B sem seed A · OWNER_B em A → 403
-
-Arquivo: `test/isolation/idor-modules.test.js`
