@@ -6,6 +6,7 @@ import {
   findPaymentById,
   listPayments,
   processWebhookEvent,
+  findPaymentStoreId,
   getPixConfigForStore,
   PaymentError,
 } from './payments.repository.js';
@@ -200,7 +201,8 @@ async function paymentsRoutes(app) {
       body.externalEventId || body.id || body.event_id || null;
     const eventType = body.eventType || body.type || 'unknown';
     const paymentId = body.paymentId || null;
-    const storeId = body.storeId || request.storeId || null;
+    const clientStoreId = body.storeId || null;
+    const requestStoreId = request.storeId || null;
     const markPaid =
       body.markPaid === true ||
       eventType === 'payment.paid' ||
@@ -217,6 +219,43 @@ async function paymentsRoutes(app) {
     }
 
     try {
+      // Nunca confie em body.storeId como fonte de tenant.
+      // Se houver paymentId, o tenant é derivado do próprio pagamento.
+      // Sem paymentId, só aceitamos tenant resolvido pelo host/header.
+      const paymentStoreId = paymentId
+        ? await findPaymentStoreId(paymentId)
+        : null;
+
+      if (paymentId && !paymentStoreId) {
+        const err = new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado.', 404);
+        const { statusCode, body: b } = errorResponse(err);
+        return reply.code(statusCode).send(b);
+      }
+
+      const storeId = paymentStoreId || requestStoreId;
+
+      if (!storeId) {
+        const err = new AppError(
+          'WEBHOOK_TENANT_REQUIRED',
+          'Não foi possível resolver a loja do webhook com segurança.',
+          400
+        );
+        const { statusCode, body: b } = errorResponse(err);
+        return reply.code(statusCode).send(b);
+      }
+
+      if (clientStoreId && clientStoreId !== storeId) {
+        const err = new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado.', 404);
+        const { statusCode, body: b } = errorResponse(err);
+        return reply.code(statusCode).send(b);
+      }
+
+      if (requestStoreId && requestStoreId !== storeId) {
+        const err = new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado.', 404);
+        const { statusCode, body: b } = errorResponse(err);
+        return reply.code(statusCode).send(b);
+      }
+
       const result = await processWebhookEvent({
         storeId,
         provider,
@@ -224,7 +263,7 @@ async function paymentsRoutes(app) {
         eventType: String(eventType),
         payload: body,
         paymentId,
-        markPaid: Boolean(markPaid && paymentId && storeId),
+        markPaid: Boolean(markPaid && paymentId),
       });
 
       if (result.payment && !result.duplicate) {
