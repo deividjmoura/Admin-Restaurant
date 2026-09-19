@@ -116,7 +116,7 @@ async function paymentsRoutes(app) {
   /** Listar por sessão ou pedido */
   app.get(
     '/api/payments',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('payments.read')] },
     async (request) => {
       const payments = await listPayments(request.storeId, {
         sessionId: request.query?.sessionId || null,
@@ -133,7 +133,7 @@ async function paymentsRoutes(app) {
    */
   app.post(
     '/api/payments/:id/confirm',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('payments.confirm')] },
     async (request, reply) => {
       try {
         const result = await confirmPayment(request.storeId, request.params.id, {

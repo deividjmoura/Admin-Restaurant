@@ -251,7 +251,7 @@ async function ordersRoutes(app) {
 
   app.patch(
     '/api/orders/:id/status',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('orders.status.write')] },
     async (request, reply) => {
       const parsed = statusSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -301,7 +301,7 @@ async function ordersRoutes(app) {
    */
   app.patch(
     '/api/orders/items/:itemId/status',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('orders.items.status.write')] },
     async (request, reply) => {
       const parsed = itemStatusSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -364,7 +364,7 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/waiter/ready-items',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('waiter.ready.read')] },
     async (request) => {
       const station = request.query?.station
         ? String(request.query.station).toUpperCase()
@@ -382,7 +382,7 @@ async function ordersRoutes(app) {
    */
   app.patch(
     '/api/waiter/items/:itemId/deliver',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('waiter.items.deliver')] },
     async (request, reply) => {
       try {
         const item = await transitionOrderItemStatus(
@@ -434,7 +434,7 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/cashier/sessions',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.read')] },
     async (request) => {
       const sessions = await listOpenSessions(request.storeId);
       return { storeId: request.storeId, sessions };
@@ -447,7 +447,7 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/cashier/sessions/:id',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.read')] },
     async (request, reply) => {
       const summary = await getSessionSummary(request.storeId, request.params.id);
       if (!summary) {
@@ -466,7 +466,7 @@ async function ordersRoutes(app) {
    */
   app.post(
     '/api/cashier/sessions/:id/close',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.close')] },
     async (request, reply) => {
       const session = await closeSession(request.storeId, request.params.id);
       if (!session) {

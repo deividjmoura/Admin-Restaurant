@@ -54,7 +54,16 @@ export async function create({ slug, name, customDomain = null, settings = {} })
      RETURNING id, slug, name, custom_domain, status, settings, created_at, updated_at`,
     [slug, name, customDomain, JSON.stringify(settings)]
   );
-  return rows[0];
+  const store = rows[0];
+  // Seed default RBAC permissions for new store (non-critical: don't fail creation if it errors)
+  try {
+    const { ensureDefaultRolePermissions } = await import('../permissions/permissions.repository.js');
+    await ensureDefaultRolePermissions(store.id);
+  } catch (err) {
+    // permissions table may not exist yet (before migration) or other error — log but don't block
+    console.warn('[store] ensureDefaultRolePermissions failed for', store.id, err.message);
+  }
+  return store;
 }
 
 export async function updateStatus(id, status) {

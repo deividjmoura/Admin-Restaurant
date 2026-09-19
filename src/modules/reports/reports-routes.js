@@ -48,7 +48,7 @@ async function reportsRoutes(app) {
    */
   app.get(
     '/api/reports/dashboard',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('reports.read')] },
     async (request, reply) => {
       const { period, error } = parsePeriod(request.query);
       if (error) {
@@ -78,7 +78,7 @@ async function reportsRoutes(app) {
   /** Só resumo */
   app.get(
     '/api/reports/summary',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('reports.read')] },
     async (request, reply) => {
       const { period, error } = parsePeriod(request.query);
       if (error) {
@@ -93,7 +93,7 @@ async function reportsRoutes(app) {
   /** Top produtos */
   app.get(
     '/api/reports/top-products',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('reports.read')] },
     async (request, reply) => {
       const { period, limit, error } = parsePeriod(request.query);
       if (error) {
@@ -110,7 +110,7 @@ async function reportsRoutes(app) {
   /** Operação ao vivo */
   app.get(
     '/api/reports/live',
-    { preHandler: [app.requireTenant, app.requireStoreAccess] },
+    { preHandler: [app.requireTenant, app.requirePermission('reports.read')] },
     async (request) => {
       const live = await getLiveOps(request.storeId);
       return { storeId: request.storeId, live };

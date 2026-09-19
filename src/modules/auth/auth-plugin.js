@@ -83,6 +83,68 @@ async function authPlugin(app) {
     request.storeRole = membership.role;
   });
 
+  /**
+   * Granular RBAC: verifica permissão por ação+recurso no contexto tenant/loja.
+   * Uso: `preHandler: [app.requireTenant, app.requirePermission('orders.status.write')]`
+   * - Nega por padrão (403) se sem permissão explícita
+   * - SUPER_ADMIN tem bypass de permissão mas NÃO bypassa tenant (storeId obrigatório)
+   * - Fallback para matriz hardcoded quando role_permissions está vazio (lojas efêmeras de teste)
+   */
+  app.decorate('requirePermission', function requirePermission(permissionKey) {
+    return async function (request, reply) {
+      if (!request.user) {
+        const err = new AppError('UNAUTHORIZED', 'Authentication required.', 401);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      if (!request.storeId) {
+        const err = new AppError('TENANT_REQUIRED', 'Store context required.', 400);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      // SUPER_ADMIN não bypassa isolamento (precisa tenant) mas tem todas as permissões
+      if (request.user.isSuperAdmin) {
+        request.storeRole = 'OWNER';
+        return;
+      }
+
+      const { getStoreRole } = await import('./user.repository.js');
+      const membership = await getStoreRole(request.user.id, request.storeId);
+      if (!membership || !membership.is_active) {
+        const err = new AppError('FORBIDDEN', 'No access to this store.', 403);
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
+
+      request.storeRole = membership.role;
+
+      try {
+        const { hasPermission } = await import('../permissions/permissions.repository.js');
+        const allowed = await hasPermission(request.storeId, membership.role, permissionKey);
+        if (!allowed) {
+          const err = new AppError('FORBIDDEN', `Missing permission: ${permissionKey}`, 403);
+          const { statusCode, body } = errorResponse(err);
+          return reply.code(statusCode).send(body);
+        }
+      } catch (err) {
+        // Se tabela ainda não existe (migration pendente) ou erro de fallback, usar matriz hardcoded
+        if (err.code === '42P01' || String(err.message).includes('permissions') || String(err.message).includes('role_permissions')) {
+          const { FALLBACK_MATRIX } = await import('../permissions/catalog.js');
+          const fallback = FALLBACK_MATRIX[membership.role] || [];
+          if (!fallback.includes(permissionKey)) {
+            const e = new AppError('FORBIDDEN', `Missing permission: ${permissionKey}`, 403);
+            const { statusCode, body } = errorResponse(e);
+            return reply.code(statusCode).send(body);
+          }
+          return;
+        }
+        throw err;
+      }
+    };
+  });
+
   app.post('/api/auth/login', async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
