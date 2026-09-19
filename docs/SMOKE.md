@@ -18,7 +18,7 @@ arquitetura: [ARCHITECTURE.md](./ARCHITECTURE.md)
 | Setup | `db:migrate` → **13 migrations** · `db:seed` → 2 stores (`demo`, `loja2`), 5 mesas, 4 produtos |
 | Checklist API (seções 3–6) | **todos os passos com o status esperado** |
 | `npm test` com `DATABASE_URL` | **34 testes · 9 suítes · pass 34 · fail 0 · skipped 0** (~42 s) |
-| `npm test` sem `DATABASE_URL` | pass 16 · **skipped 13** — verde falso (ver 5.2) |
+| `npm test` sem `DATABASE_URL` | pass parcial · **skipped > 0** — verde falso (ver 5.2) |
 | Observações abertas | 1 item na seção 8 (`22P02` tratado pelo #98; SSE resolvido por `?tenant=`) |
 
 > Números de execução real, não estimativa. Ao rodar de novo, atualize esta tabela.
@@ -120,7 +120,7 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 12 | **Caixa** | `GET /api/cashier/sessions/$SID` | `totals.amount` = soma dos itens |
 | 13 | Fechar mesa | `POST /api/cashier/sessions/$SID/close` | `200` + `status:"closed"`; 2ª vez `404` |
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
-| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 34 · fail 0 · skipped 0` |
+| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 39 · fail 0 · skipped 0` |
 
 ### 3.1 Health
 
@@ -322,13 +322,14 @@ npm test                                             # (cru; não valida a conta
 > `npm test` sai com `exit 0`, `pass 16` e **`skipped 13`** — verde falso. Exporte a variável
 > (ou prefixe o comando). Critério de aceite: `skipped 0` **e** `fail 0`.
 
-Arquivos em `test/isolation/` (9): `cart-version`, `http-isolation`, `menu-cache`,
-`order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `sse-tenant`,
-`tenant-resolution` — `node --test` conta subtestes, por isso `# tests 34` e não 9.
+Arquivos em `test/isolation/` (12): `cart-version`, `cart-tenant`, `http-isolation`, `menu-cache`,
+`order-scoping`, `p0-regression`, `payment-isolation`, `pix-static`, `realtime-events`,
+`repository-isolation`, `sse-tenant`, `tenant-resolution` — `node --test` conta subtestes, por isso
+`# tests 39` e não 12.
 
 > O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
 > Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
-> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (34).
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (39).
 
 ---
 
@@ -414,7 +415,12 @@ sessão original:
 Não duplica pedido (bom), mas é inconsistente com o checkout e entrega a outra sessão um
 pedido que não é dela. Alinhamento sugerido: mesmo `409 IDEMPOTENCY_KEY_REUSED`.
 
-### 8.3 Nit de comentário
+### 8.3 Hardening #105 — pagamentos/webhooks
+
+`POST /api/payments` agora valida que `orderId` e `sessionId` pertencem à loja resolvida antes de criar o pagamento.
+Webhooks não usam mais `body.storeId` como fonte de verdade: com `paymentId`, a loja é derivada do próprio pagamento; sem `paymentId`, é necessário tenant resolvido por host/header. Um `storeId` adulterado não pode direcionar um pagamento de outra loja.
+
+### 8.4 Nit de comentário
 
 `src/modules/payments/payments-routes.js` documenta a confirmação como
 `PATCH /api/payments/:id/confirm`; a rota registrada é `POST`. Só o comentário.
