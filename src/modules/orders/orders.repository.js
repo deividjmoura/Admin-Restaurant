@@ -149,9 +149,29 @@ export async function createOrder(storeId, {
     };
   }
 
+  /**
+   * Replay só é válido para a MESMA sessão. Chave reusada em outra sessão é
+   * conflito: devolver o pedido original vazaria dados de outra mesa/comanda
+   * (o checkout já responde 409 IDEMPOTENCY_KEY_REUSED — ver cart-routes.js).
+   */
+  function assertSameSession(existing) {
+    if (
+      existing.table_session_id &&
+      tableSessionId &&
+      existing.table_session_id !== tableSessionId
+    ) {
+      const err = new Error('IDEMPOTENCY_KEY_REUSED');
+      err.code = 'IDEMPOTENCY_KEY_REUSED';
+      throw err;
+    }
+  }
+
   if (idempotencyKey) {
     const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
-    if (existing) return replayExisting(existing);
+    if (existing) {
+      assertSameSession(existing);
+      return replayExisting(existing);
+    }
   }
 
   if (!items.length) {
@@ -253,7 +273,10 @@ export async function createOrder(storeId, {
     // Concurrent same Idempotency-Key: unique index wins → replay winner
     if (err.code === '23505' && idempotencyKey) {
       const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
-      if (existing) return replayExisting(existing);
+      if (existing) {
+        assertSameSession(existing);
+        return replayExisting(existing);
+      }
     }
     throw err;
   }

@@ -17,9 +17,9 @@ arquitetura: [ARCHITECTURE.md](./ARCHITECTURE.md)
 | Ambiente | Node v22.22.3 · PostgreSQL 18.4 (local) · Linux x64 |
 | Setup | `db:migrate` → **13 migrations** · `db:seed` → 2 stores (`demo`, `loja2`), 5 mesas, 4 produtos |
 | Checklist API (seções 3–6) | **todos os passos com o status esperado** |
-| `npm test` com `DATABASE_URL` | **34 testes · 9 suítes · pass 34 · fail 0 · skipped 0** (~42 s) |
+| `npm test` com `DATABASE_URL` | **38 testes · 10 suítes · pass 38 · fail 0 · skipped 0** (~53 s) |
 | `npm test` sem `DATABASE_URL` | pass 16 · **skipped 13** — verde falso (ver 5.2) |
-| Observações abertas | 1 item na seção 8 (`22P02` tratado pelo #98; SSE resolvido por `?tenant=`) |
+| Observações abertas | nenhuma — os 3 itens da seção 8 foram resolvidos (`22P02` #98, SSE `?tenant=`, Idempotency-Key cross-session) |
 
 > Números de execução real, não estimativa. Ao rodar de novo, atualize esta tabela.
 
@@ -120,7 +120,7 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 12 | **Caixa** | `GET /api/cashier/sessions/$SID` | `totals.amount` = soma dos itens |
 | 13 | Fechar mesa | `POST /api/cashier/sessions/$SID/close` | `200` + `status:"closed"`; 2ª vez `404` |
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
-| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 34 · fail 0 · skipped 0` |
+| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 38 · fail 0 · skipped 0` |
 
 ### 3.1 Health
 
@@ -314,7 +314,7 @@ curl -s -w ' HTTP %{http_code}\n' -H 'X-Tenant-Slug: demo' $API/api/kitchen/orde
 ```bash
 npm run test:unit                                    # sem banco
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm run test:suite                                   # migrations + 34 testes · 9 suítes + guarda
+npm run test:suite                                   # migrations + 38 testes · 10 suítes + guarda
 npm test                                             # (cru; não valida a contagem)
 ```
 
@@ -322,13 +322,14 @@ npm test                                             # (cru; não valida a conta
 > `npm test` sai com `exit 0`, `pass 16` e **`skipped 13`** — verde falso. Exporte a variável
 > (ou prefixe o comando). Critério de aceite: `skipped 0` **e** `fail 0`.
 
-Arquivos em `test/isolation/` (9): `cart-version`, `http-isolation`, `menu-cache`,
-`order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `sse-tenant`,
-`tenant-resolution` — `node --test` conta subtestes, por isso `# tests 34` e não 9.
+Arquivos em `test/isolation/` (10): `cart-version`, `http-isolation`,
+`idempotency-cross-session`, `menu-cache`, `order-scoping`, `p0-regression`, `pix-static`,
+`repository-isolation`, `sse-tenant`, `tenant-resolution` — `node --test` conta subtestes,
+por isso `# tests 38` e não 10.
 
 > O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
 > Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
-> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (34).
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (38).
 
 ---
 
@@ -398,26 +399,29 @@ curl -s -b /tmp/ar.cookie "$API/api/kitchen/events?station=KITCHEN&probe=1&tenan
 
 Coberto por `test/isolation/sse-tenant.test.js` (5 casos). O front ainda usa poll de 4 s;
 voltar ao SSE com `?tenant=` é ajuste pequeno de `KitchenPage.jsx`.
-Sugestão: aceitar `?tenant=` **apenas** nessa rota (ou ler o slug do cookie de sessão).
 
-### 8.2 `POST /api/orders` não valida chave reusada entre sessões (segue aberto em `05c0e29`)
+### 8.2 `POST /api/orders` não validava chave reusada entre sessões — RESOLVIDO
 
-`cart/checkout` responde `409 IDEMPOTENCY_KEY_REUSED`, mas `POST /api/orders` com a mesma
-`Idempotency-Key` e **outro** `tableSessionId` devolve `200 replayed:true` com o pedido da
-sessão original:
+`cart/checkout` respondia `409 IDEMPOTENCY_KEY_REUSED`, mas `POST /api/orders` com a mesma
+`Idempotency-Key` e **outro** `tableSessionId` devolvia `200 replayed:true` com o pedido da
+sessão original — inconsistente e vazando pedido alheio.
+
+A checagem de sessão entrou em `createOrder` (vale para qualquer chamador, inclusive a corrida
+de `23505`):
 
 ```bash
-# sessão A: 201 order.id=c1389f20...
-# sessão B, mesma chave: 200 {"replayed":true,"order":{"id":"c1389f20...","tableSessionId":"<A>"}}
+# sessão A, chave nova        → 201 replayed:false
+# sessão A, retry mesma chave → 200 replayed:true  (mesmo pedido)
+# sessão B, mesma chave       → 409 IDEMPOTENCY_KEY_REUSED (sem order no corpo)
+# sessão B, chave própria     → 201
 ```
 
-Não duplica pedido (bom), mas é inconsistente com o checkout e entrega a outra sessão um
-pedido que não é dela. Alinhamento sugerido: mesmo `409 IDEMPOTENCY_KEY_REUSED`.
+Coberto por `test/isolation/idempotency-cross-session.test.js` (4 casos).
 
-### 8.3 Nit de comentário
+### 8.3 Nit de comentário — RESOLVIDO
 
-`src/modules/payments/payments-routes.js` documenta a confirmação como
-`PATCH /api/payments/:id/confirm`; a rota registrada é `POST`. Só o comentário.
+`src/modules/payments/payments-routes.js` documentava a confirmação como
+`PATCH /api/payments/:id/confirm`; a rota registrada é `POST`. Comentário corrigido.
 
 ---
 
@@ -433,7 +437,7 @@ npm run dev &          # ou outro terminal
 # 2) suíte de isolamento
 npm run test:unit
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test               # esperado: pass 34 · fail 0 · skipped 0
+npm test               # esperado: pass 38 · fail 0 · skipped 0
 
 # 3) fluxo (variáveis na seção 2)
 API=http://localhost:3000; TENANT=demo
@@ -445,4 +449,4 @@ curl -s -H "X-Tenant-Slug: $TENANT" $API/api/menu
 # … siga 3.4 → 3.9 marcando cada "Esperado"
 ```
 
-Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~42 s).
+Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~53 s).
