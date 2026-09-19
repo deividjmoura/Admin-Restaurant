@@ -77,6 +77,7 @@ Detalhes: [docs/GOLDEN_RULES.md](docs/GOLDEN_RULES.md) · [docs/DEPLOY.md](docs/
 
 | Doc | Conteúdo |
 |-----|----------|
+| [docs/SMOKE.md](docs/SMOKE.md) | Smoke **só de API** (curl): login → mesa → pedido → cozinha → caixa + isolation |
 | [docs/DEMO.md](docs/DEMO.md) | Seed, tokens de mesa, checklist smoke 5 min |
 | [docs/GOLDEN_RULES.md](docs/GOLDEN_RULES.md) | Isolamento, idempotência, testes |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Host único, env, SPA |

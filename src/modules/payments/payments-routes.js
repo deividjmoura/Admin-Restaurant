@@ -129,7 +129,7 @@ async function paymentsRoutes(app) {
 
   /**
    * Caixa confirma pagamento (PIX informado / dinheiro / card presencial).
-   * PATCH /api/payments/:id/confirm
+   * POST /api/payments/:id/confirm
    */
   app.post(
     '/api/payments/:id/confirm',
