@@ -54,11 +54,16 @@ jobs:
       - name: Dependências
         run: npm ci --no-audit --no-fund
 
+      - name: Migrations
+        run: npm run db:migrate
+
       - name: Seed (lojas demo/loja2, mesas, cardápio)
         run: npm run db:seed
 
       - name: Suíte completa (fail 0 E skipped 0)
         run: npm run test:suite
+        env:
+          SKIP_MIGRATE: '1'   # já aplicado no passo anterior
 
   frontend:
     name: Frontend · build
