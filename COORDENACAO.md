@@ -60,6 +60,69 @@
 outros agentes). O commit `6cb8cfc` na `main` já entrega o fix race-safe + teste de
 idempotência; sugerido ao Líder mover B2 para revisão/concluído.
 
+---
+
+## ESCALADA AO LÍDER — 2026-09-19 15:35 · agente-a4 (decisão de merge)
+
+**Situação:** A4 entregue e testada, branch publicada, **PR não aberto** — abrir um PR
+`arena/01a0bad5-admin-restaurant → main` hoje fundiria **duas linhagens sem ancestral comum**.
+
+**Evidência (verificada nesta sessão):**
+
+| Item | Linhagem desta branch (base `e72ed2f`) | `origin/main` (`1dc7e84`) |
+|------|----------------------------------------|---------------------------|
+| Ancestral comum | — | `git merge-base` → **nenhum** (clone raso) |
+| `COORDENACAO.md`, `PROTOCOLO-*.md`, `docs/DEMO.md`, `GOLDEN_RULES`… | presentes | **ausentes** |
+| `src/modules/` | 18 (billing, coupons, wallets, whatsapp, onboarding, workers…) | 11 |
+| migrations | 18 | 13 |
+| suíte de isolamento | 81 testes / 14 arquivos | 24 testes / 7 arquivos |
+| `npm test` (script) | `test/isolation/*.test.js` | `test/**/*.test.js` |
+| `?tenant=` em query (resolve-tenant) | suportado | **não** (só subdomínio / `X-Tenant-Slug`) |
+| P0: webhook duplicado / UUID malformado / retry do checkout | **presentes** (documentados em `docs/SMOKE.md` §8) | **corrigidos pelo PR #94** |
+
+`git diff --shortstat origin/main HEAD` → **86 arquivos, +8443 / −790** (48 adições, 38
+modificados). Merge desta branch na main **reverteria** o PR #94 em
+`payments-routes.js`, `cart-routes.js`, `tables.repository.js`, além do `package.json`.
+
+**Verificação dos P0 na main atual** (worktree em `1dc7e84`, banco real, porta 3001):
+
+- `GET /api/tables/by-token/nao-existe` → **400** (antes `500 22P02`)
+- `POST /api/payments/webhooks/mercadopago` duplicado → **200 `{"duplicate":true}`** (antes `500 25P02`)
+- retry do `cart/checkout` com a mesma `Idempotency-Key` → **200 `replayed:true`, mesmo `order.id`** (antes `409 CART_EMPTY`)
+- `npm test` na main → **24 pass · 0 fail · 0 skipped** (~21 s)
+
+Ou seja: os três achados da seção 8 do `docs/SMOKE.md` **já estão resolvidos na `main`**
+(a issue **#89** cobre o do checkout).
+
+**Feito até aqui:** `git push origin arena/01a0bad5-admin-restaurant` → branch no remote em
+`19e216c` (não destrutivo). Nenhum PR aberto.
+
+**Decisão pedida ao Líder:**
+
+- **(A)** PR desta branch como está → funde as duas linhagens e **reverte o PR #94**. Não recomendado.
+- **(B)** Reentregar o A4 sobre a `main` real: branch nova a partir de `1dc7e84` só com
+  `docs/SMOKE.md` adaptado (tenant via `X-Tenant-Slug`, sem `?tenant=`; 24 testes/7 arquivos;
+  13 migrations; P0 marcados como corrigidos) + linhas em `README.md`/`docs/README.md`.
+  Viabilidade já verificada nesta sessão (migrate/seed/API/testes rodados na linhagem da main).
+- **(C)** Manter as duas linhagens separadas e tratar a unificação como tarefa própria.
+
+**Aguardando decisão do Líder.** Enquanto isso, `docs/SMOKE.md` desta branch descreve a
+linhagem `e72ed2f` e está correto **para ela**.
+
+```
+AR-STATUS
+sid:19/09
+agent:agente-a4
+task:META
+claim:A4-smoke-api-docs
+state:BLOCKED
+progress:90
+blockers:aguardando decisão do Líder — linhagens divergentes, PR reverteria #94
+next:opção B (SMOKE.md sobre a main real) se aprovado
+iso:PASS
+note:81/81 nesta branch; 24/24 na main; push feito, PR não aberto
+```
+
 ```
 AR-STATUS
 sid:19/09
