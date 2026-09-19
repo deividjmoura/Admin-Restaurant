@@ -79,3 +79,14 @@ export async function resolveStoreFromRequest(request) {
 
   return null;
 }
+
+/**
+ * Fallback de slug por query — só quando a rota optou com
+ * `config: { allowTenantQuery: true }`. Nunca global.
+ */
+export async function resolveTenantFromQuery(request) {
+  if (!request.routeOptions?.config?.allowTenantQuery) return null;
+  const slug = request.query?.tenant;
+  if (typeof slug !== 'string' || !slug.trim()) return null;
+  return findActiveStoreBySlug(slug.trim());
+}

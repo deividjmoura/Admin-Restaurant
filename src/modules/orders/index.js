@@ -11,6 +11,7 @@ export {
   listOpenSessions,
   getSessionSummary,
   createOrder,
+  findOrderByProviderExternal,
   transitionOrderStatus,
   transitionOrderItemStatus,
   cancelOrderAsCustomer,
