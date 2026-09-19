@@ -120,7 +120,7 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 12 | **Caixa** | `GET /api/cashier/sessions/$SID` | `totals.amount` = soma dos itens |
 | 13 | Fechar mesa | `POST /api/cashier/sessions/$SID/close` | `200` + `status:"closed"`; 2ª vez `404` |
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
-| 15 | Testes | `npm test` com `DATABASE_URL` | `pass 29 · fail 0 · skipped 0` |
+| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 29 · fail 0 · skipped 0` |
 
 ### 3.1 Health
 
@@ -314,7 +314,8 @@ curl -s -w ' HTTP %{http_code}\n' -H 'X-Tenant-Slug: demo' $API/api/kitchen/orde
 ```bash
 npm run test:unit                                    # sem banco
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test                                             # 29 testes · 8 suítes
+npm run test:suite                                   # migrations + 29 testes · 8 suítes + guarda
+npm test                                             # (cru; não valida a contagem)
 ```
 
 > **Pegadinha:** `node --test` **não** carrega `.env`. Sem `DATABASE_URL` no *shell*,
@@ -325,8 +326,9 @@ Arquivos em `test/isolation/` (8): `cart-version`, `http-isolation`, `menu-cache
 `order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `tenant-resolution`
 — `node --test` conta subtestes, por isso `# tests 29` e não 8.
 
-> Nesta `main` não há workflow de CI (`.github/` não existe no repositório), então a suíte
-> precisa ser rodada localmente antes do merge.
+> O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
+> Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (29).
 
 ---
 

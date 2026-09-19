@@ -39,3 +39,6 @@ tmp/
 *.tsbuildinfo
 frontend/node_modules/
 frontend/dist/
+
+# relatório TAP gerado por scripts/run-suite.mjs
+.tap/
