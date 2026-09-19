@@ -287,10 +287,13 @@ export async function clearCart(storeId, sessionId, expectedVersion) {
 
 /**
  * Snapshot dos itens do carrinho no formato do createOrder.
+ * Throws CartError — never returns null (avoids TypeError in checkout route).
  */
 export async function getCartItemsForCheckout(storeId, sessionId) {
   const cart = await getCart(storeId, sessionId);
-  if (!cart) return null;
+  if (!cart) {
+    throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+  }
   if (!cart.items.length) {
     throw new CartError('CART_EMPTY', 'Carrinho vazio.');
   }
