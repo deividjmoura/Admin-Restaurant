@@ -1,41 +1,46 @@
 # COORDENACAO — Admin-Restaurant
 
-> **main** · 19/09/2026
+> **main** · 19/09 · **fase: fechar backend** · front depois
 
-## Fila
+## Feito
 
-| ID | Status |
-|----|--------|
-| B1 | **DONE** — 13 casos IDOR (`test/isolation/idor-modules.test.js`) |
-| **A4** | **DESIGNADO** — smoke + documentação operacional |
-| A1 | livre |
+B1 IDOR (13 casos) · A2/A3/A5
 
-## A4 — Smoke / docs (próximo agente)
+## Fila (pegar 1 · claim no Registro)
 
-1. Garantir que a suíte isolation (incluindo B1) está refletida na doc
-2. Criar ou atualizar `docs/SMOKE.md` (ou seção em DEMO.md):
-   - comandos reais do `package.json` (`test`, isolation, seed se houver)
-   - checklist 5–10 min: login → mesa/QR → pedido → cozinha → caixa
-3. Conferir `.github/workflows` — gates claros; se main vermelha por flake, nota + fix mínimo
-4. COORDENACAO: A4 DONE + AR-STATUS
+| ID | Pri | Tarefa | Não conflita com |
+|----|-----|--------|------------------|
+| **A4** | P1 | Smoke + `docs/SMOKE.md` / DEMO checklist | B2, B3 |
+| **B2** | P0 | **Idempotência + corrida em pedidos** | A4, B3 |
+| **B3** | P0 | **Máquina de status + audit trail** | A4, B2 |
+| A1 | P2 | Higiene residual (COORDENACAO/PROTOCOLO) | todos |
 
-Não reabrir growth. Entrega na **main**.
+**Front congelado** até ordem nova.
+
+---
+
+### A4 — Smoke/docs
+Checklist 5–10 min + comandos `package.json` + isolation (incl. B1). `docs/SMOKE.md` ou DEMO.
+
+### B2 — Idempotência / race (backend)
+- Revisar `src/modules/orders/` (Idempotency-Key, create pedido, status)
+- Teste: **mesmo Idempotency-Key duas vezes** → 1 pedido
+- Teste: **dois POSTs concorrentes** (se viável no harness) não duplicam
+- Cart version / conflito: resposta coerente (409 ou equivalente já existente)
+- Arquivo preferido: `test/isolation/order-idempotency.test.js` (novo) ou extensão de `order-scoping` / `cart-version`
+- Se achar buraco: **fix no repository** + teste
+
+### B3 — Status machine + audit
+- `orders/status-machine.js` + transições cozinha/caixa
+- Testes: transição **inválida** rejeitada; válida ok; **sempre com store_id**
+- `src/modules/audit/`: garantir que ações críticas (status, pagamento se houver hook) registram ou documentar gap
+- Não inventar UI
 
 ```
 AR-STATUS
 sid:19/09
 agent:<id>
-claim:A4
-state:WIP
-note:smoke/docs
-```
-
-## B1 (feito)
-
-```
-AR-STATUS
-agent:agente-b1
-claim:B1
-state:DONE
-note:13 casos IDOR coupons/wallets/billing/reports/whatsapp; repos ok
+claim:A4|B2|B3|A1
+state:WIP|DONE
+note:<curto>
 ```
