@@ -117,9 +117,9 @@ npm run test:suite              # migrations + suíte completa + guarda de conta
 >
 > `npm run test:suite` cuida disso por você: aborta com exit 2 sem `DATABASE_URL`, aplica as
 > migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
-> ignorado ou menos testes que `MIN_TESTS` (baseline **29**). Use-o em vez de `npm test`.
+> ignorado ou menos testes que `MIN_TESTS` (baseline **34**). Use-o em vez de `npm test`.
 
-Baseline na `main` (`668434b`): **29 testes · 8 suítes · 0 fail · 0 skipped** (~31 s).
+Baseline na `main` (`2bf937f` + esta): **34 testes · 9 suítes · 0 fail · 0 skipped** (~42 s).
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
 
 > **CI ativo:** `.github/workflows/ci.yml` roda em todo PR contra `main` — job *backend*
@@ -174,7 +174,7 @@ confiável, isolada, auditável e extensível.
 
 | Situação | O que acontece hoje |
 |----------|---------------------|
-| SSE `/api/kitchen/events` | exige tenant; `EventSource` não manda header e `?tenant=` **não** é aceito → `400`. Por isso `KitchenPage` usa poll de 4 s. Só funciona por subdomínio |
+| SSE `/api/kitchen/events` | `EventSource` não manda header → use `?tenant=<slug>` (aceito só nas rotas `/api/kitchen/*`, que checam a membership da loja). `probe=1` devolve o canal resolvido sem abrir o stream |
 | `POST /api/orders` com `Idempotency-Key` já usada em **outra** sessão | devolve `200 replayed:true` com o pedido da sessão original; `cart/checkout` responde `409 IDEMPOTENCY_KEY_REUSED` (inconsistência a corrigir) |
 | `npm test` sem `DATABASE_URL` no shell | verde falso com `skipped 13` → use `npm run test:suite` (recusa) |
 | `npm run db:seed` | imprime `[db] …` entre os `token=` — é log, não erro |

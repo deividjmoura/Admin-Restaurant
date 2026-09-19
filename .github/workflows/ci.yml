@@ -41,7 +41,7 @@ jobs:
       COOKIE_SECRET: ci-cookie-secret-0000000000000000000000000000
       BASE_DOMAIN: localhost
       STAFF_SEED_PASSWORD: ci-seed-password
-      MIN_TESTS: '29'
+      MIN_TESTS: '34'
 
     steps:
       - uses: actions/checkout@v4

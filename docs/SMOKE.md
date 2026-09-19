@@ -17,9 +17,9 @@ arquitetura: [ARCHITECTURE.md](./ARCHITECTURE.md)
 | Ambiente | Node v22.22.3 · PostgreSQL 18.4 (local) · Linux x64 |
 | Setup | `db:migrate` → **13 migrations** · `db:seed` → 2 stores (`demo`, `loja2`), 5 mesas, 4 produtos |
 | Checklist API (seções 3–6) | **todos os passos com o status esperado** |
-| `npm test` com `DATABASE_URL` | **29 testes · 8 suítes · pass 29 · fail 0 · skipped 0** (~31 s) |
+| `npm test` com `DATABASE_URL` | **34 testes · 9 suítes · pass 34 · fail 0 · skipped 0** (~42 s) |
 | `npm test` sem `DATABASE_URL` | pass 16 · **skipped 13** — verde falso (ver 5.2) |
-| Observações abertas | 2 itens na seção 8 (o erro `22P02` foi tratado pelo #98) |
+| Observações abertas | 1 item na seção 8 (`22P02` tratado pelo #98; SSE resolvido por `?tenant=`) |
 
 > Números de execução real, não estimativa. Ao rodar de novo, atualize esta tabela.
 
@@ -120,7 +120,7 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 12 | **Caixa** | `GET /api/cashier/sessions/$SID` | `totals.amount` = soma dos itens |
 | 13 | Fechar mesa | `POST /api/cashier/sessions/$SID/close` | `200` + `status:"closed"`; 2ª vez `404` |
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
-| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 29 · fail 0 · skipped 0` |
+| 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 34 · fail 0 · skipped 0` |
 
 ### 3.1 Health
 
@@ -314,7 +314,7 @@ curl -s -w ' HTTP %{http_code}\n' -H 'X-Tenant-Slug: demo' $API/api/kitchen/orde
 ```bash
 npm run test:unit                                    # sem banco
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm run test:suite                                   # migrations + 29 testes · 8 suítes + guarda
+npm run test:suite                                   # migrations + 34 testes · 9 suítes + guarda
 npm test                                             # (cru; não valida a contagem)
 ```
 
@@ -322,13 +322,13 @@ npm test                                             # (cru; não valida a conta
 > `npm test` sai com `exit 0`, `pass 16` e **`skipped 13`** — verde falso. Exporte a variável
 > (ou prefixe o comando). Critério de aceite: `skipped 0` **e** `fail 0`.
 
-Arquivos em `test/isolation/` (8): `cart-version`, `http-isolation`, `menu-cache`,
-`order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `tenant-resolution`
-— `node --test` conta subtestes, por isso `# tests 29` e não 8.
+Arquivos em `test/isolation/` (9): `cart-version`, `http-isolation`, `menu-cache`,
+`order-scoping`, `p0-regression`, `pix-static`, `repository-isolation`, `sse-tenant`,
+`tenant-resolution` — `node --test` conta subtestes, por isso `# tests 34` e não 9.
 
 > O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
 > Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
-> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (29).
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (34).
 
 ---
 
@@ -376,20 +376,28 @@ Nada foi corrigido aqui: A4 é docs/smoke e não toca domínio de outro agente.
 
 > **Atualização:** o `500 22P02` para UUID malformado (citado na 1ª versão deste doc) foi
 > tratado pelo PR #98 (handler global). Verificado em `05c0e29`:
-> `GET /api/tables/by-token/nao-existe` → `404 TABLE_NOT_FOUND`. Os itens 8.1 e 8.2 seguem abertos.
+> `GET /api/tables/by-token/nao-existe` → `404 TABLE_NOT_FOUND`. O item 8.1 foi resolvido;
+> o 8.2 segue aberto.
 
-### 8.1 SSE fica inacessível para o browser em host único
+### 8.1 SSE ficava inacessível para o browser em host único — RESOLVIDO
 
-`/api/kitchen/events` exige tenant, mas `EventSource` **não envia headers** e não há fallback
-por query nesta `main`:
+`EventSource` **não envia headers**, então `/api/kitchen/events` devolvia `400 TENANT_REQUIRED`
+em deploy de host único (API servindo a SPA) e a cozinha caía no poll.
+
+As rotas `/api/kitchen/*` agora aceitam `?tenant=<slug>` (opt-in por rota via
+`config.allowTenantQuery`; a autorização continua no `requireStoreAccess` — usuário de outra
+loja recebe `403`). `probe=1` devolve o canal resolvido sem abrir o stream:
 
 ```bash
-curl -s -N -b /tmp/ar.cookie "$API/api/kitchen/events?station=KITCHEN"            # 400 TENANT_REQUIRED
-curl -s -N "$API/api/kitchen/events?station=KITCHEN&tenant=demo"                  # 400 TENANT_REQUIRED
+# membro da loja demo
+curl -s -b /tmp/ar.cookie "$API/api/kitchen/events?station=KITCHEN&probe=1&tenant=demo"
+#   → 200 {"storeId":"...","station":"KITCHEN","channel":"store:...:orders:KITCHEN"}
+# mesma chamada com usuário de outra loja  → 403 FORBIDDEN
+# /api/menu?tenant=demo (rota sem opt-in)  → 400 TENANT_REQUIRED
 ```
 
-Só funciona por subdomínio (`demo.localhost:3000` / `demo.seudominio.com`). Em deploy de
-host único (API servindo a SPA), a cozinha/bar perde o tempo real e cai no poll.
+Coberto por `test/isolation/sse-tenant.test.js` (5 casos). O front ainda usa poll de 4 s;
+voltar ao SSE com `?tenant=` é ajuste pequeno de `KitchenPage.jsx`.
 Sugestão: aceitar `?tenant=` **apenas** nessa rota (ou ler o slug do cookie de sessão).
 
 ### 8.2 `POST /api/orders` não valida chave reusada entre sessões (segue aberto em `05c0e29`)
@@ -425,7 +433,7 @@ npm run dev &          # ou outro terminal
 # 2) suíte de isolamento
 npm run test:unit
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test               # esperado: pass 29 · fail 0 · skipped 0
+npm test               # esperado: pass 34 · fail 0 · skipped 0
 
 # 3) fluxo (variáveis na seção 2)
 API=http://localhost:3000; TENANT=demo
@@ -437,4 +445,4 @@ curl -s -H "X-Tenant-Slug: $TENANT" $API/api/menu
 # … siga 3.4 → 3.9 marcando cada "Esperado"
 ```
 
-Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~31 s).
+Tempo típico: **3 min** com banco já migrado, **5–10 min** do zero (a suíte leva ~42 s).

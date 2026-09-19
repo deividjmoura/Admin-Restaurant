@@ -9,6 +9,25 @@ import {
 export { normalizeHost, extractSubdomainSlug };
 
 /**
+ * Busca a loja pelo slug e garante que está ativa.
+ * Usado pelos fallbacks de slug (header e query) — o host continua sendo a
+ * fonte preferencial em `resolveStoreFromRequest`.
+ *
+ * @param {string} slug
+ * @returns {Promise<object>} store
+ */
+export async function findActiveStoreBySlug(slug) {
+  const store = await findBySlug(slug);
+  if (!store) {
+    throw new AppError('TENANT_NOT_FOUND', 'Loja não encontrada.', 404);
+  }
+  if (store.status !== 'active') {
+    throw new AppError('TENANT_INACTIVE', 'Loja indisponível.', 403);
+  }
+  return store;
+}
+
+/**
  * Resolve a loja a partir do request.
  * Ordem:
  * 1. Subdomínio do BASE_DOMAIN

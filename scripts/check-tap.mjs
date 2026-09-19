@@ -33,6 +33,11 @@ const tests = counter('tests');
 const pass = counter('pass');
 const fail = counter('fail');
 const skipped = counter('skipped');
+const cancelled = counter('cancelled') ?? 0;
+
+// `node --test` reporta falha de suíte/hook como `not ok` com `fail 0` e
+// `cancelled N`. Contar só o `# fail` deixaria isso passar como verde.
+const notOk = raw.split('\n').filter((l) => /^not ok /.test(l));
 
 if (tests === null || fail === null || skipped === null) {
   console.error('[check-tap] não encontrei o resumo TAP ("# tests"/"# pass"/"# fail").');
@@ -40,10 +45,22 @@ if (tests === null || fail === null || skipped === null) {
   process.exit(2);
 }
 
-console.log(`[check-tap] tests=${tests} pass=${pass} fail=${fail} skipped=${skipped} (mínimo ${MIN_TESTS})`);
+console.log(
+  `[check-tap] tests=${tests} pass=${pass} fail=${fail} skipped=${skipped} cancelled=${cancelled} ` +
+    `not_ok=${notOk.length} (mínimo ${MIN_TESTS})`,
+);
 
 const problems = [];
 if (fail > 0) problems.push(`${fail} teste(s) com falha`);
+if (cancelled > 0) {
+  problems.push(
+    `${cancelled} teste(s) cancelados — normalmente um hook before()/after() quebrou a suíte`,
+  );
+}
+if (notOk.length > 0) {
+  const first = notOk[0].replace(/^not ok \d* ?-? ?/, '').slice(0, 90);
+  problems.push(`${notOk.length} linha(s) "not ok" no relatório (primeira: ${first})`);
+}
 if (skipped > 0 && !ALLOW_SKIP) {
   problems.push(
     `${skipped} teste(s) ignorados — quase sempre DATABASE_URL ausente no shell. ` +
