@@ -108,18 +108,23 @@ npm run dev                     # API em :3000
 
 npm run test:unit               # sem banco
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm test                        # suíte completa
+npm run test:suite              # migrations + suíte completa + guarda de contagem
 ```
 
 > **Armadilha conhecida:** `node --test` **não** lê `.env`. Sem `DATABASE_URL` exportada no
 > *shell*, `npm test` termina com `exit 0`, `pass 16` e **`skipped 13`** — verde falso.
 > Critério de aceite: **`fail 0` E `skipped 0`**.
+>
+> `npm run test:suite` cuida disso por você: aborta com exit 2 sem `DATABASE_URL`, aplica as
+> migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
+> ignorado ou menos testes que `MIN_TESTS` (baseline **29**). Use-o em vez de `npm test`.
 
-Estado atual da `main` (`05c0e29`): **29 testes · 8 suítes · 0 fail · 0 skipped** (~31 s).
+Baseline na `main` (`668434b`): **29 testes · 8 suítes · 0 fail · 0 skipped** (~31 s).
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
 
-> **Não há CI configurado** (`.github/` não existe na `main`). Rodar a suíte localmente é
-> obrigatório antes de pedir revisão. Restaurar o CI é tarefa em aberto (relacionada à Issue #53).
+> **CI ativo:** `.github/workflows/ci.yml` roda em todo PR contra `main` — job *backend*
+> (Postgres 18 de serviço → `db:seed` → `npm run test:suite`) e job *frontend* (`npm run build`).
+> PR com check vermelho não entra. Adicionou teste novo? Suba o `MIN_TESTS` do workflow junto.
 
 Frontend: `npm ci --prefix frontend && npm run build --prefix frontend` precisa passar.
 
@@ -171,7 +176,7 @@ confiável, isolada, auditável e extensível.
 |----------|---------------------|
 | SSE `/api/kitchen/events` | exige tenant; `EventSource` não manda header e `?tenant=` **não** é aceito → `400`. Por isso `KitchenPage` usa poll de 4 s. Só funciona por subdomínio |
 | `POST /api/orders` com `Idempotency-Key` já usada em **outra** sessão | devolve `200 replayed:true` com o pedido da sessão original; `cart/checkout` responde `409 IDEMPOTENCY_KEY_REUSED` (inconsistência a corrigir) |
-| `npm test` sem `DATABASE_URL` no shell | verde falso com `skipped 13` |
+| `npm test` sem `DATABASE_URL` no shell | verde falso com `skipped 13` → use `npm run test:suite` (recusa) |
 | `npm run db:seed` | imprime `[db] …` entre os `token=` — é log, não erro |
 | Comentários de rota em `payments-routes.js` | o confirm está documentado como `PATCH`; a rota é `POST` |
 
@@ -181,7 +186,7 @@ confiável, isolada, auditável e extensível.
 
 - [ ] Critérios de aceite da Issue atendidos
 - [ ] Testes adicionados/atualizados; nenhum teste existente quebrado sem justificativa
-- [ ] `npm test` com `DATABASE_URL`: `fail 0` **e** `skipped 0`
+- [ ] `npm run test:suite`: `fail 0` **e** `skipped 0` (e o check **CI** verde no PR)
 - [ ] Autorização e isolamento tenant/store revisados
 - [ ] Migration (se houver) reversível e documentada
 - [ ] Logs e erros relevantes observáveis

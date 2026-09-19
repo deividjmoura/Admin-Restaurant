@@ -10,6 +10,8 @@
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
     "test": "node --test test/**/*.test.js",
+    "test:suite": "node scripts/run-suite.mjs",
+    "test:guard": "node scripts/check-tap.mjs",
     "lint": "echo \"lint placeholder\"",
     "test:unit": "node --test test/isolation/menu-cache.test.js test/isolation/tenant-resolution.test.js test/isolation/order-scoping.test.js test/isolation/cart-version.test.js test/isolation/pix-static.test.js",
     "test:isolation": "node --test test/isolation/**/*.test.js",
