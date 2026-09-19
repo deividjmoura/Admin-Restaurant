@@ -21,14 +21,14 @@ describe('public cart tenant isolation (integration)', () => {
     await app.ready();
 
     const { create: createStore } = await import('../../src/modules/tenancy/store.repository.js');
-    const { createTable, openSession } = await import('../../src/modules/tables/tables.repository.js');
+    const { createTable, openOrGetSession } = await import('../../src/modules/tables/tables.repository.js');
 
     const suffix = Date.now().toString(36);
     storeA = await createStore({ slug: `cart-a-${suffix}`, name: 'Cart Store A' });
     storeB = await createStore({ slug: `cart-b-${suffix}`, name: 'Cart Store B' });
 
     const table = await createTable(storeA.id, { number: 1, label: 'A1' });
-    const session = await openSession(storeA.id, table.id);
+    const session = await openOrGetSession(storeA.id, table.id);
     sessionAId = session.id;
   });
 
