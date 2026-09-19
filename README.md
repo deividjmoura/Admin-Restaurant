@@ -61,6 +61,13 @@ scripts/
 
 ---
 
+## Guia dos agentes
+
+Quem vai contribuir (humano ou agente) começa por **[docs/AGENTES.md](docs/AGENTES.md)**:
+claim de Issue, branch, template de PR, como rodar os testes e Definition of Done.
+
+---
+
 ## Validação rápida (sem frontend)
 
 ```bash
