@@ -80,3 +80,12 @@ claim:coordenacao
 state:DONE
 note:PRs 86/88 closed; fila A1–A5; delete branches = comando acima
 ```
+
+```
+AR-STATUS
+sid:19/09
+agent:agente-ui
+claim:A2
+state:DONE
+note:EmptyState, SuccessBox, ErrorBox e Spinner aplicados no CartPage (S11)
+```
