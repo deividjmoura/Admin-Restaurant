@@ -28,4 +28,8 @@ await writeAuditLog({
 });
 ```
 
-Hooks that call this on every admin mutation come in a follow-up PR.
+## Consulta
+
+`GET /api/admin/audit-logs` exige tenant e papel `OWNER`. Aceita `limit`, `offset`, `action`, `resource`, `from` e `to`. A consulta sempre filtra pelo tenant resolvido no host/header; `store_id` enviado pelo cliente não é usado.
+
+As escritas são best effort: falha no logger é registrada, mas não interrompe a operação principal. A migration `0018_audit_immutability.sql` instala uma proteção no banco contra UPDATE/DELETE.
