@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { z } from 'zod';
 import { findById, updateSettings } from './store.repository.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { auditRequest } from '../audit/audit-context.js';
 
 const settingsPatchSchema = z.object({
   pix: z
@@ -102,6 +103,14 @@ async function storeRoutes(app) {
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
+      await auditRequest(request, {
+        action: 'store.settings_updated',
+        resource: 'store_settings',
+        resourceId: store.id,
+        // apenas os nomes dos campos: settings.pix.key é segredo
+        metadata: { fields: Object.keys(parsed.data) },
+      });
+
       return {
         id: store.id,
         slug: store.slug,

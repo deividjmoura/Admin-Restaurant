@@ -329,7 +329,7 @@ por isso `# tests 38` e não 10.
 
 > O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
 > Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
-> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (38).
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (141).
 
 ---
 

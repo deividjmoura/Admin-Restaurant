@@ -73,11 +73,15 @@ claim de Issue, branch, template de PR, como rodar os testes e Definition of Don
 ```bash
 npm ci && npm run db:migrate && npm run db:seed && npm run dev
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm run test:suite   # migrations + suíte + guarda: pass 29 · fail 0 · skipped 0
+npm run test:suite   # migrations + suíte + guarda: pass 141 · fail 0 · skipped 0
 ```
 
 Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa):
 **[docs/SMOKE.md](docs/SMOKE.md)**.
+
+Hardening de segurança (webhooks assinados, CORS fail-closed, totais com
+adicionais, atomicidade de checkout/delivery, sessões de QR e auditoria):
+**[docs/SECURITY.md](docs/SECURITY.md)**.
 
 ---
 

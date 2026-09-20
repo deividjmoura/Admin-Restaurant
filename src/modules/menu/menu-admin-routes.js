@@ -15,6 +15,7 @@ import {
   findAddonById,
 } from './menu.repository.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { auditRequest } from '../audit/audit-context.js';
 
 const categorySchema = z.object({
   name: z.string().min(1).max(120),
@@ -126,6 +127,13 @@ async function menuAdminRoutes(app) {
       name: parsed.data.name,
       sortOrder: parsed.data.sortOrder,
     });
+    await auditRequest(request, {
+      action: 'menu.category_created',
+      resource: 'category',
+      resourceId: row.id,
+      metadata: { name: row.name },
+    });
+
     if (parsed.data.isActive === false) {
       const updated = await updateCategory(request.storeId, row.id, {
         isActive: false,
@@ -148,6 +156,12 @@ async function menuAdminRoutes(app) {
       const { statusCode, body } = errorResponse(err);
       return reply.code(statusCode).send(body);
     }
+    await auditRequest(request, {
+      action: 'menu.category_updated',
+      resource: 'category',
+      resourceId: row.id,
+      metadata: { fields: Object.keys(parsed.data) },
+    });
     return { category: mapCategory(row) };
   });
 
@@ -161,6 +175,12 @@ async function menuAdminRoutes(app) {
     }
     const row = await updateCategory(request.storeId, request.params.id, {
       isActive: false,
+    });
+    await auditRequest(request, {
+      action: 'menu.category_deleted',
+      resource: 'category',
+      resourceId: row.id,
+      metadata: { softDelete: true },
     });
     return { category: mapCategory(row) };
   });
@@ -215,6 +235,12 @@ async function menuAdminRoutes(app) {
           isActive: parsed.data.isActive,
         });
       }
+      await auditRequest(request, {
+        action: 'menu.product_created',
+        resource: 'product',
+        resourceId: result.id,
+        metadata: { name: result.name, price: Number(result.price) },
+      });
       return reply.code(201).send({ product: mapProduct(result) });
     } catch (err) {
       const mapped = mapRepoError(err);
@@ -248,6 +274,17 @@ async function menuAdminRoutes(app) {
         const { statusCode, body: b } = errorResponse(err);
         return reply.code(statusCode).send(b);
       }
+      await auditRequest(request, {
+        action: 'menu.product_updated',
+        resource: 'product',
+        resourceId: row.id,
+        // payload de negócio (preço/disponibilidade), nunca dados de cliente
+        metadata: {
+          fields: Object.keys(parsed.data),
+          price: Number(row.price),
+          isAvailable: row.is_available,
+        },
+      });
       return { product: mapProduct(row) };
     } catch (err) {
       const mapped = mapRepoError(err);
@@ -269,6 +306,12 @@ async function menuAdminRoutes(app) {
     const row = await updateProduct(request.storeId, request.params.id, {
       isActive: false,
       isAvailable: false,
+    });
+    await auditRequest(request, {
+      action: 'menu.product_deleted',
+      resource: 'product',
+      resourceId: row.id,
+      metadata: { softDelete: true, name: row.name },
     });
     return { product: mapProduct(row) };
   });
@@ -307,6 +350,16 @@ async function menuAdminRoutes(app) {
       if (parsed.data.isActive === false) {
         result = await updateAddon(request.storeId, row.id, { isActive: false });
       }
+      await auditRequest(request, {
+        action: 'menu.addon_created',
+        resource: 'addon',
+        resourceId: result.id,
+        metadata: {
+          productId: result.product_id,
+          name: result.name,
+          price: Number(result.price),
+        },
+      });
       return reply.code(201).send({ addon: mapAddon(result) });
     } catch (err) {
       const mapped = mapRepoError(err);
@@ -335,6 +388,12 @@ async function menuAdminRoutes(app) {
       const { statusCode, body } = errorResponse(err);
       return reply.code(statusCode).send(body);
     }
+    await auditRequest(request, {
+      action: 'menu.addon_updated',
+      resource: 'addon',
+      resourceId: row.id,
+      metadata: { fields: Object.keys(parsed.data), price: Number(row.price) },
+    });
     return { addon: mapAddon(row) };
   });
 
@@ -347,6 +406,12 @@ async function menuAdminRoutes(app) {
     }
     const row = await updateAddon(request.storeId, request.params.id, {
       isActive: false,
+    });
+    await auditRequest(request, {
+      action: 'menu.addon_deleted',
+      resource: 'addon',
+      resourceId: row.id,
+      metadata: { softDelete: true, name: row.name },
     });
     return { addon: mapAddon(row) };
   });
