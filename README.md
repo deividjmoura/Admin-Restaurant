@@ -70,11 +70,18 @@ claim de Issue, branch, template de PR, como rodar os testes e Definition of Don
 
 ## Validação rápida (sem frontend)
 
+Requisito: **Node.js 22+** (`scripts/run-suite.mjs` usa `fs.globSync`, que não
+existe no Node 20 — a suíte quebra com `SyntaxError`; o CI roda Node 22 e
+`package.json` declara `engines.node >= 22`).
+
 ```bash
+node -v              # precisa ser v22.x (nvm use 22)
 npm ci && npm run db:migrate && npm run db:seed && npm run dev
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
 npm run test:suite   # migrations + suíte + guarda: pass 199 · fail 0 · skipped 0
 ```
+
+O script de migração é **`npm run db:migrate`** (não existe `npm run migrate`).
 
 Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa):
 **[docs/SMOKE.md](docs/SMOKE.md)**.
