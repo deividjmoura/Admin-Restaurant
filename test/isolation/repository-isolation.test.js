@@ -31,6 +31,9 @@ describe('repository isolation (integration)', () => {
       '../../src/modules/menu/menu.repository.js'
     );
     const { createOrder } = await import('../../src/modules/orders/orders.repository.js');
+    const { createTable, openOrGetSession } = await import(
+      '../../src/modules/tables/tables.repository.js'
+    );
 
     const suffix = Date.now().toString(36);
 
@@ -56,8 +59,13 @@ describe('repository isolation (integration)', () => {
     });
     productAId = prod.id;
 
+    // Canal TABLE exige sessão aberta: o pedido precisa pertencer a uma mesa.
+    const tableA = await createTable(storeAId, { number: 91 });
+    const sessionA = await openOrGetSession(storeAId, tableA.id);
+
     const result = await createOrder(storeAId, {
       channel: 'TABLE',
+      tableSessionId: sessionA.id,
       notes: null,
       idempotencyKey: `iso-key-${suffix}`,
       items: [{ productId: productAId, quantity: 1, addonIds: [], notes: null }],

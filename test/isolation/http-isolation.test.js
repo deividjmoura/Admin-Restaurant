@@ -37,6 +37,9 @@ describe('HTTP tenant isolation (integration)', () => {
       '../../src/modules/menu/menu.repository.js'
     );
     const { createOrder } = await import('../../src/modules/orders/orders.repository.js');
+    const { createTable, openOrGetSession } = await import(
+      '../../src/modules/tables/tables.repository.js'
+    );
 
     const suffix = Date.now().toString(36);
     storeA = await createStore({ slug: `http-a-${suffix}`, name: 'HTTP Store A' });
@@ -52,8 +55,12 @@ describe('HTTP tenant isolation (integration)', () => {
     });
     productAId = prod.id;
 
+    const tableA = await createTable(storeA.id, { number: 71 });
+    const sessionA = await openOrGetSession(storeA.id, tableA.id);
+
     const created = await createOrder(storeA.id, {
       channel: 'TABLE',
+      tableSessionId: sessionA.id,
       idempotencyKey: `http-iso-${suffix}`,
       items: [{ productId: productAId, quantity: 1, addonIds: [] }],
     });

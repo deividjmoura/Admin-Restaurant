@@ -11,6 +11,8 @@ import {
   regenerateTableToken,
   findTableById,
 } from './tables.repository.js';
+import { findById as findStoreById } from '../tenancy/store.repository.js';
+import { auditRequest } from '../audit/audit-context.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
 const tableBodySchema = z.object({
@@ -60,7 +62,29 @@ async function tablesRoutes(app) {
 
     const session = await openOrGetSession(table.store_id, table.id);
 
+    // Loja resolvida PELO token da mesa (store_id da própria tabela).
+    // Nunca por body/query do cliente: o QR é a única credencial aqui.
+    const store = await findStoreById(table.store_id);
+    if (!store) {
+      const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
+      const { statusCode, body } = errorResponse(err);
+      return reply.code(statusCode).send(body);
+    }
+
+    if (session.created) {
+      await auditRequest(request, {
+        storeId: store.id,
+        action: 'cashier.session_opened',
+        resource: 'table_session',
+        resourceId: session.id,
+        metadata: { tableId: table.id, tableNumber: table.number },
+      });
+    }
+
     return {
+      storeId: store.id,
+      storeSlug: store.slug,
+      storeName: store.name,
       table: {
         id: table.id,
         number: table.number,
@@ -73,8 +97,9 @@ async function tablesRoutes(app) {
         status: session.status,
         openedAt: session.opened_at,
         cartVersion: session.cart_version ?? 0,
+        expired: Boolean(session.expired),
+        expiredAt: session.expired_at ?? null,
       },
-      storeId: table.store_id,
     };
   });
 
@@ -112,6 +137,12 @@ async function tablesRoutes(app) {
       }
       try {
         const table = await createTable(request.storeId, parsed.data);
+        await auditRequest(request, {
+          action: 'table.created',
+          resource: 'table',
+          resourceId: table.id,
+          metadata: { number: table.number, label: table.label },
+        });
         return reply.code(201).send({ table: mapTable(table) });
       } catch (err) {
         if (err.code === 'TABLE_NUMBER_TAKEN') {
@@ -149,6 +180,12 @@ async function tablesRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+        await auditRequest(request, {
+          action: 'table.updated',
+          resource: 'table',
+          resourceId: table.id,
+          metadata: { fields: Object.keys(parsed.data) },
+        });
         return { table: mapTable(table) };
       } catch (err) {
         if (err.code === 'TABLE_NUMBER_TAKEN') {
@@ -181,6 +218,12 @@ async function tablesRoutes(app) {
         return reply.code(statusCode).send(body);
       }
       const table = await deactivateTable(request.storeId, request.params.id);
+      await auditRequest(request, {
+        action: 'table.deleted',
+        resource: 'table',
+        resourceId: table.id,
+        metadata: { softDelete: true, number: table.number },
+      });
       return { table: mapTable(table) };
     }
   );
@@ -199,6 +242,13 @@ async function tablesRoutes(app) {
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
+      await auditRequest(request, {
+        action: 'table.token_regenerated',
+        resource: 'table',
+        resourceId: table.id,
+        // o token em si NUNCA entra na auditoria
+        metadata: { number: table.number },
+      });
       return { table: mapTable(table) };
     }
   );
