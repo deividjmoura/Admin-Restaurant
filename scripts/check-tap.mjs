@@ -13,12 +13,12 @@
  *   npm test -- --test-reporter=tap | node scripts/check-tap.mjs   # ou via stdin
  *
  * Variáveis:
- *   MIN_TESTS   mínimo de testes esperados (default 171)
+ *   MIN_TESTS   mínimo de testes esperados (default 199)
  *   ALLOW_SKIP  "1" relaxa a checagem de skipped (não usar em CI)
  */
 import { readFileSync } from 'node:fs';
 
-const MIN_TESTS = Number(process.env.MIN_TESTS ?? 171);
+const MIN_TESTS = Number(process.env.MIN_TESTS ?? 199);
 const ALLOW_SKIP = process.env.ALLOW_SKIP === '1';
 
 const file = process.argv[2];

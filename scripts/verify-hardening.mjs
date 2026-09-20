@@ -135,10 +135,10 @@ async function main() {
 
     const checkTap = readFileSync(resolve(REPO_ROOT, 'scripts/check-tap.mjs'), 'utf8');
     const ci = readFileSync(resolve(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8');
-    assert(/MIN_TESTS \?\? 171/.test(checkTap), 'check-tap.mjs deveria ter default MIN_TESTS=171');
-    assert(/MIN_TESTS: '171'/.test(ci), "workflow deveria ter MIN_TESTS: '171'");
+    assert(/MIN_TESTS \?\? 199/.test(checkTap), 'check-tap.mjs deveria ter default MIN_TESTS=199');
+    assert(/MIN_TESTS: '199'/.test(ci), "workflow deveria ter MIN_TESTS: '199'");
 
-    return 'índices/colunas/trigger presentes e guarda de suíte elevada para 171';
+    return 'índices/colunas/trigger presentes e guarda de suíte elevada para 199';
   });
 
   // ────────────────────────────────────────────────────────────── CHECK 1

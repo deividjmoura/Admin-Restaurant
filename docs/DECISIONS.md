@@ -65,3 +65,50 @@ sem guarda, erros 4xx como 500 e auditoria incompleta).
 - **Auditoria** centralizada em `auditRequest`/`auditSafe` (best effort),
   cobrindo login, pedidos, pagamentos, mesas, cardápio, permissões, settings e
   delivery, com metadados sanitizados e leitura restrita ao OWNER.
+
+## 2026-09-20 — Caixa físico: gaveta, ledger append-only e pagamento combinado (#107–#110)
+
+**Contexto:** o restaurante recebia dinheiro sem registro de gaveta: não havia
+como saber quanto deveria estar no caixa no fim do turno, suprimentos/sangrias
+sumiam, estorno de pagamento em dinheiro não devolvia o valor ao caixa e não era
+possível pagar um pedido com duas formas (parte em dinheiro, parte no PIX). O
+pagamento também tinha corrida: o "valor devido" era lido fora da transação, o
+que permitia cobrar o mesmo pedido duas vezes em requisições simultâneas.
+
+**Decisões:**
+
+- **Uma gaveta aberta por operador/loja**, garantida por índice único parcial
+  (`cash_sessions WHERE status = 'open'`), não por checagem em código. Abrir a
+  segunda devolve `409 CASH_SESSION_ALREADY_OPEN` **com a sessão existente** —
+  o caixa recupera o contexto em vez de ficar travado.
+- **`cash_movements` é append-only no banco** (trigger rejeita UPDATE/DELETE).
+  Histórico de dinheiro editável não é histórico: correção se faz com movimento
+  de `ADJUSTMENT` (com `direction` e motivo obrigatório), nunca reescrevendo o
+  passado.
+- **Todo efeito de caixa acontece na transação do pagamento.** A gaveta é
+  travada com `SELECT ... FOR UPDATE` e o pagamento é criado/confirmado dentro da
+  mesma transação — venda em dinheiro e lançamento no ledger não podem divergir,
+  nem sob concorrência.
+- **Pagamento combinado é um grupo atômico** (`split_group`): vários métodos no
+  mesmo alvo, uma `Idempotency-Key`, tudo ou nada. A soma é validada contra o
+  devido **depois** de travar o alvo (`lockPaymentTarget`), então
+  `409 AMOUNT_EXCEEDS_DUE` substitui o sobrepagamento por corrida.
+- **Troco é derivado no servidor** (`recebido − valor`). Aceitar troco do cliente
+  permitiria fechar gaveta com número inventado.
+- **Estorno é idempotente por `(payment_id, type)`** e nunca apaga o pagamento:
+  vira `REFUNDED` + movimento `REFUND` de saída. Retry devolve
+  `alreadyRefunded: true` sem duplicar dinheiro.
+- **Dinheiro sem gaveta aberta não bloqueia a venda**, mas volta como
+  `cashMovement: null` + warning `CASH_WITHOUT_SESSION`. Estabelecimento que
+  exige gaveta ligada usa `CASH_REQUIRE_OPEN_SESSION=1` (vira `409`).
+- **Fechamento exige contagem** (`CASH_COUNT_REQUIRED`) e é idempotente; o
+  relatório devolve `reconciliation` derivada do ledger (opening, cashSales,
+  supplies, adjustments, withdrawals, refunds, expected, counted, difference),
+  então "esperado" nunca é um número guardado que pode dessincronizar.
+- **STAFF não fecha gaveta** (`cashier.cash.close` é de OWNER/MANAGER) e só opera
+  a própria gaveta; gerente opera qualquer gaveta da loja. Recurso de outra loja
+  continua sendo **404**, nunca 403.
+- **Permissões novas entram em três lugares coerentes**: catálogo
+  (`FALLBACK_MATRIX`), migration de backfill e seed de loja nova — o seed passou
+  a ser **derivado do catálogo** (antes duplicava a lista em SQL e permissão nova
+  valia só para OWNER).

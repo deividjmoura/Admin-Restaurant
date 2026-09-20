@@ -1,5 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { query, withTransaction } from '../../infrastructure/db.js';
 import { paymentsTotal } from '../../infrastructure/metrics.js';
+import {
+  AMOUNT_TOLERANCE,
+  toCents,
+  round2,
+  hasCentPrecision,
+  sumMoney,
+  diffMoney,
+} from '../../shared/money.js';
 import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
 import { findOrderById } from '../orders/orders.repository.js';
@@ -8,8 +17,9 @@ import {
   redactWebhookPayload,
 } from './webhook-auth.js';
 
-/** Tolerância de comparação de valores (meio centavo). */
-export const AMOUNT_TOLERANCE = 0.005;
+// A aritmética de dinheiro vive em shared/money.js (caixa usa a mesma).
+// Reexportado aqui para não quebrar quem já importava deste módulo.
+export { AMOUNT_TOLERANCE, toCents, round2, hasCentPrecision };
 
 export class PaymentError extends Error {
   constructor(code, message, details = undefined) {
@@ -17,22 +27,6 @@ export class PaymentError extends Error {
     this.code = code;
     if (details) this.details = details;
   }
-}
-
-/** Arredonda para centavos (evita 0.1+0.2 = 0.30000000000000004). */
-export function toCents(value) {
-  return Math.round(Number(value) * 100);
-}
-
-export function round2(value) {
-  return toCents(value) / 100;
-}
-
-/** true quando o valor tem no máximo duas casas decimais. */
-export function hasCentPrecision(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return false;
-  return Math.abs(toCents(n) - n * 100) < 1e-6;
 }
 
 export async function findPaymentById(storeId, paymentId) {
@@ -119,12 +113,13 @@ export async function listPayments(
  *
  * @returns {Promise<{ itemsTotal: number, paidTotal: number, pendingTotal: number, due: number }>}
  */
-export async function amountDue(storeId, { orderId = null, sessionId = null } = {}) {
+export async function amountDue(storeId, { orderId = null, sessionId = null, client = null } = {}) {
   if (!orderId && !sessionId) {
     throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
   }
 
-  const { rows } = await query(
+  const runner = client ? client.query.bind(client) : query;
+  const { rows } = await runner(
     `WITH items AS (
        SELECT COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity), 0) AS items_total
        FROM order_items oi
@@ -176,11 +171,17 @@ export async function amountDue(storeId, { orderId = null, sessionId = null } = 
  * Valida que o alvo do pagamento pertence à loja resolvida pelo tenant.
  * Nunca aceita ordem/sessão de outra loja.
  */
-export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
+export async function assertPaymentTarget(storeId, { orderId, sessionId, client = null }) {
+  const runner = client ? client.query.bind(client) : query;
   let order = null;
 
   if (orderId) {
-    order = await findOrderById(storeId, orderId);
+    order = client
+      ? (await runner(
+          `SELECT id, store_id, status FROM orders WHERE id = $1 AND store_id = $2`,
+          [orderId, storeId]
+        )).rows[0] ?? null
+      : await findOrderById(storeId, orderId);
     if (!order) {
       throw new PaymentError('ORDER_NOT_FOUND', 'Pedido não encontrado nesta loja.');
     }
@@ -194,7 +195,7 @@ export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
 
   let session = null;
   if (sessionId) {
-    const { rows } = await query(
+    const { rows } = await runner(
       `SELECT id, store_id, status FROM table_sessions
        WHERE id = $1 AND store_id = $2`,
       [sessionId, storeId]
@@ -209,6 +210,89 @@ export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
   }
 
   return { order, session };
+}
+
+/**
+ * Resolve provider e (quando PIX) o copia-e-cola estático.
+ * Compartilhado por `createPayment` e `createSplitPayments` — a regra de
+ * "loja sem chave PIX em produção responde 503" não pode depender do chamador.
+ *
+ * @param {object} store linha de `stores`
+ * @param {{ method: string, amount: number, provider?: string|null, idempotencyKey?: string|null, txidSuffix?: string }} input
+ * @returns {{ provider: string, pixCopyPaste: string|null }}
+ */
+export function resolveProviderContext(store, { method, amount, provider = null, idempotencyKey = null, txidSuffix = '' }) {
+  const settings =
+    typeof store?.settings === 'object' && store?.settings ? store.settings : {};
+
+  let resolvedProvider = provider || 'manual';
+  let pixCopyPaste = null;
+
+  if (method === 'PIX') {
+    const pix = resolvePixConfig(settings);
+    if (!pix.configured) {
+      throw new PaymentError(
+        'PIX_NOT_CONFIGURED',
+        'PIX não configurado nesta loja (settings.pix.key).'
+      );
+    }
+    resolvedProvider = provider || 'static_pix';
+    const txid =
+      `${idempotencyKey || `P${Date.now()}`}${txidSuffix}`
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 25) || 'PEDIDO';
+    pixCopyPaste = buildStaticPixPayload({
+      key: pix.key,
+      name: pix.name,
+      city: pix.city,
+      amount: Number(amount),
+      txid,
+    });
+  }
+
+  if (method === 'CARD') {
+    // Nunca armazenamos dados de cartão. CARD só via provider futuro.
+    resolvedProvider = provider || 'provider_pending';
+  }
+
+  return { provider: resolvedProvider, pixCopyPaste };
+}
+
+/**
+ * INSERT único de pagamento — usado fora e dentro de transação (pagamento
+ * combinado). `client` nulo usa o pool.
+ */
+async function insertPaymentRow(client, payment) {
+  const runner = client ? client.query.bind(client) : query;
+  const { rows } = await runner(
+    `INSERT INTO payments
+      (store_id, order_id, session_id, method, status, amount, provider,
+       provider_payment_id, idempotency_key, pix_copy_paste, metadata,
+       cash_session_id, split_group, confirmed_by, tendered_amount, change_amount,
+       paid_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,
+             CASE WHEN $5 = 'PAID' THEN now() ELSE NULL END)
+     RETURNING *`,
+    [
+      payment.storeId,
+      payment.orderId ?? null,
+      payment.sessionId ?? null,
+      payment.method,
+      payment.status || 'PENDING',
+      round2(payment.amount),
+      payment.provider || 'manual',
+      payment.providerPaymentId ?? null,
+      payment.idempotencyKey ?? null,
+      payment.pixCopyPaste ?? null,
+      JSON.stringify(payment.metadata || {}),
+      payment.cashSessionId ?? null,
+      payment.splitGroup ?? null,
+      payment.confirmedBy ?? null,
+      payment.tenderedAmount ?? null,
+      payment.changeAmount ?? null,
+    ]
+  );
+  return rows[0];
 }
 
 /**
@@ -244,83 +328,69 @@ export async function createPayment(
     );
   }
 
+  // Fast path de idempotência (sem abrir transação).
   if (idempotencyKey) {
     const existing = await findPaymentByIdempotency(storeId, idempotencyKey);
     if (existing) return { payment: existing, replayed: true };
   }
 
-  await assertPaymentTarget(storeId, { orderId, sessionId });
-
-  const due = await amountDue(storeId, { orderId, sessionId });
-  if (Number(amount) > due.due + AMOUNT_TOLERANCE) {
-    throw new PaymentError(
-      'AMOUNT_EXCEEDS_DUE',
-      `Valor acima do total devido (R$ ${due.due.toFixed(2)}).`,
-      { due: due.due, requested: round2(amount) }
-    );
-  }
-
-  const store = await findStoreById(storeId);
-  if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
-
-  const settings =
-    typeof store.settings === 'object' && store.settings
-      ? store.settings
-      : {};
-
-  let resolvedProvider = provider || 'manual';
-  let pixCopyPaste = null;
-
-  if (method === 'PIX') {
-    const pix = resolvePixConfig(settings);
-    if (!pix.configured) {
-      throw new PaymentError(
-        'PIX_NOT_CONFIGURED',
-        'PIX não configurado nesta loja (settings.pix.key).'
-      );
-    }
-    resolvedProvider = provider || 'static_pix';
-    const txid = (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';
-    pixCopyPaste = buildStaticPixPayload({
-      key: pix.key,
-      name: pix.name,
-      city: pix.city,
-      amount: Number(amount),
-      txid,
-    });
-  }
-
-  if (method === 'CARD') {
-    // Nunca armazenamos dados de cartão. CARD só via provider futuro.
-    resolvedProvider = provider || 'provider_pending';
-  }
-
   try {
-    const { rows } = await query(
-      `INSERT INTO payments
-        (store_id, order_id, session_id, method, status, amount, provider,
-         provider_payment_id, idempotency_key, pix_copy_paste, metadata)
-       VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9,$10::jsonb)
-       RETURNING *`,
-      [
+    // Tudo numa transação só: trava do alvo → conferência do devido → INSERT.
+    // Ler o "devido" fora da transação permitia que duas cobranças simultâneas
+    // do mesmo pedido passassem na validação e sobrepagassem (issue #109).
+    return await withTransaction(async (client) => {
+      await lockPaymentTarget(client, storeId, { orderId, sessionId });
+
+      if (idempotencyKey) {
+        const { rows } = await client.query(
+          `SELECT * FROM payments WHERE store_id = $1 AND idempotency_key = $2`,
+          [storeId, idempotencyKey]
+        );
+        if (rows[0]) return { payment: mapPayment(rows[0]), replayed: true };
+      }
+
+      await assertPaymentTarget(storeId, { orderId, sessionId, client });
+
+      const due = await amountDue(storeId, { orderId, sessionId, client });
+      if (Number(amount) > due.due + AMOUNT_TOLERANCE) {
+        throw new PaymentError(
+          'AMOUNT_EXCEEDS_DUE',
+          `Valor acima do total devido (R$ ${due.due.toFixed(2)}).`,
+          { due: due.due, requested: round2(amount) }
+        );
+      }
+
+      const { rows: storeRows } = await client.query(
+        `SELECT * FROM stores WHERE id = $1`,
+        [storeId]
+      );
+      const store = storeRows[0];
+      if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
+
+      const { provider: resolvedProvider, pixCopyPaste } = resolveProviderContext(store, {
+        method,
+        amount,
+        provider,
+        idempotencyKey,
+      });
+
+      const row = await insertPaymentRow(client, {
         storeId,
         orderId,
         sessionId,
         method,
-        round2(amount),
-        resolvedProvider,
+        amount,
+        status: 'PENDING',
+        provider: resolvedProvider,
         providerPaymentId,
         idempotencyKey,
         pixCopyPaste,
-        JSON.stringify(metadata || {}),
-      ]
-    );
-    paymentsTotal.inc({
-      store_id: storeId,
-      method,
-      outcome: 'created',
-    });
-    return { payment: mapPayment(rows[0]), replayed: false };
+        metadata,
+      });
+
+      paymentsTotal.inc({ store_id: storeId, method, outcome: 'created' });
+      return { payment: mapPayment(row), replayed: false };
+    }, { operation: 'tx:create_payment' });
   } catch (err) {
     if (err.code === '23505' && idempotencyKey) {
       const existing = await findPaymentByIdempotency(storeId, idempotencyKey);
@@ -332,9 +402,26 @@ export async function createPayment(
 
 /**
  * Confirma pagamento (caixa / webhook). Idempotente se já PAID.
+ *
+ * `cashSessionId`/`actorUserId` (issue #107): pagamento em DINHEIRO confirmado
+ * no caixa entra no ledger da gaveta na MESMA transação — sem isso o fechamento
+ * não reconcilia. Quando a sessão não é informada, usa-se a sessão aberta do
+ * operador; se ele não tem sessão aberta, nada é lançado (e o chamador recebe
+ * `cashMovement: null` para alertar).
  */
-export async function confirmPayment(storeId, paymentId, { metadata = {} } = {}) {
-  return withTransaction(async (client) => {
+export async function confirmPayment(
+  storeId,
+  paymentId,
+  {
+    metadata = {},
+    cashSessionId = null,
+    actorUserId = null,
+    tenderedAmount = null,
+    changeAmount = null,
+  } = {},
+  { tx = null } = {}
+) {
+  const run = async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
       [paymentId, storeId]
@@ -343,7 +430,7 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
     if (!row) return null;
 
     if (row.status === 'PAID') {
-      return { payment: mapPayment(row), alreadyPaid: true };
+      return { payment: mapPayment(row), alreadyPaid: true, cashMovement: null };
     }
     if (row.status === 'CANCELLED' || row.status === 'REFUNDED') {
       throw new PaymentError(
@@ -352,28 +439,108 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
       );
     }
 
+    if (
+      tenderedAmount != null &&
+      (!hasCentPrecision(tenderedAmount) || Number(tenderedAmount) < Number(row.amount))
+    ) {
+      throw new PaymentError(
+        'INVALID_AMOUNT',
+        'Valor recebido deve ser maior ou igual ao pagamento (e ter 2 casas).'
+      );
+    }
+
+    // Troco derivado do valor recebido (nunca do que o cliente "informou").
+    const computedChange =
+      tenderedAmount != null
+        ? round2(Number(tenderedAmount) - Number(row.amount))
+        : changeAmount != null
+          ? round2(changeAmount)
+          : null;
+
     const { rows: updated } = await client.query(
       `UPDATE payments
        SET status = 'PAID',
            paid_at = now(),
            updated_at = now(),
+           confirmed_by = COALESCE($4::uuid, confirmed_by),
+           cash_session_id = COALESCE($5::uuid, cash_session_id),
+           tendered_amount = COALESCE($6::numeric, tendered_amount),
+           change_amount = COALESCE($7::numeric, change_amount),
            metadata = metadata || $3::jsonb
        WHERE id = $1 AND store_id = $2
        RETURNING *`,
-      [paymentId, storeId, JSON.stringify(metadata)]
+      [
+        paymentId,
+        storeId,
+        JSON.stringify(metadata),
+        actorUserId,
+        cashSessionId,
+        tenderedAmount == null ? null : round2(tenderedAmount),
+        computedChange,
+      ]
     );
+
+    const payment = mapPayment(updated[0]);
+    const cashMovement = await recordCashMovementForPayment(client, 'SALE', {
+      storeId,
+      payment,
+      cashSessionId,
+      actorUserId,
+    });
+
     paymentsTotal.inc({
       store_id: storeId,
       method: row.method,
       outcome: 'confirmed',
     });
-    return { payment: mapPayment(updated[0]), alreadyPaid: false };
+    return { payment, alreadyPaid: false, cashMovement };
+  };
+
+  if (tx) return run(tx);
+  return withTransaction(run, { operation: 'tx:confirm_payment' });
+}
+
+/**
+ * Lança (ou não) o efeito de caixa de um pagamento, dentro da transação dele.
+ *
+ * Regras:
+ *  - só dinheiro entra/sai da gaveta (CASH); PIX/cartão não afetam o caixa físico;
+ *  - sessão resolvida por `cashSessionId` OU pela sessão aberta do operador;
+ *  - idempotente: `(payment_id, type)` é único no ledger — retry não duplica;
+ *  - `CASH_REQUIRE_OPEN_SESSION=1` bloqueia a operação sem sessão aberta.
+ *
+ * @returns {Promise<object|null>} movimento criado (ou null quando não se aplica)
+ */
+async function recordCashMovementForPayment(client, type, { storeId, payment, cashSessionId, actorUserId }) {
+  if (payment.method !== 'CASH') return null;
+
+  const { insertCashMovementForPayment } = await import('../cash/cash.repository.js');
+  const movement = await insertCashMovementForPayment(client, {
+    storeId,
+    type,
+    payment,
+    cashSessionId,
+    actorUserId,
   });
+
+  // A gaveta é resolvida dentro do ledger (explícita ou sessão aberta do
+  // operador) e carimbada no payment lá. O objeto que devolvemos foi montado
+  // ANTES desse carimbo — sem refletir aqui, a resposta da API mostraria
+  // cashSessionId nulo para um pagamento que já está na gaveta.
+  if (movement && !payment.cashSessionId) {
+    payment.cashSessionId = movement.cashSessionId;
+  }
+  return movement;
 }
 
 /** Estorna/cancela um pagamento (OWNER: payments.refund). */
-export async function refundPayment(storeId, paymentId, { reason = null, actorUserId = null } = {}) {
-  return withTransaction(async (client) => {
+export async function refundPayment(
+  storeId,
+  paymentId,
+  { reason = null, actorUserId = null, cashSessionId = null } = {},
+  { tx = null } = {}
+) {
+  const run = async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
       [paymentId, storeId]
@@ -382,7 +549,7 @@ export async function refundPayment(storeId, paymentId, { reason = null, actorUs
     if (!row) return null;
 
     if (row.status === 'REFUNDED') {
-      return { payment: mapPayment(row), alreadyRefunded: true };
+      return { payment: mapPayment(row), alreadyRefunded: true, cashMovement: null };
     }
     if (row.status === 'PENDING' || row.status === 'FAILED') {
       throw new PaymentError(
@@ -408,13 +575,27 @@ export async function refundPayment(storeId, paymentId, { reason = null, actorUs
         }),
       ]
     );
+
+    const payment = mapPayment(updated[0]);
+    // Estorno em dinheiro SAI da gaveta na mesma transação (issue #108/#109).
+    // Idempotente por (payment_id, 'REFUND'): retry não duplica a saída.
+    const cashMovement = await recordCashMovementForPayment(client, 'REFUND', {
+      storeId,
+      payment,
+      cashSessionId,
+      actorUserId,
+    });
+
     paymentsTotal.inc({
       store_id: storeId,
       method: row.method,
       outcome: 'refunded',
     });
-    return { payment: mapPayment(updated[0]), alreadyRefunded: false };
-  });
+    return { payment, alreadyRefunded: false, cashMovement };
+  };
+
+  if (tx) return run(tx);
+  return withTransaction(run, { operation: 'tx:refund_payment' });
 }
 
 /**
@@ -604,6 +785,271 @@ export async function getPixConfigForStore(storeId) {
   };
 }
 
+/** Métodos aceitos (mesmo conjunto do CHECK de `payments.method`). */
+export const PAYMENT_METHODS = ['PIX', 'CASH', 'CARD', 'OTHER'];
+
+/**
+ * Trava o alvo do pagamento (pedido ou sessão de mesa) para serializar
+ * cobranças concorrentes. Sem isso duas requisições simultâneas leem o mesmo
+ * "total devido" e o pedido acaba pago em dobro (issue #109).
+ */
+async function lockPaymentTarget(client, storeId, { orderId = null, sessionId = null }) {
+  if (orderId) {
+    await client.query(
+      `SELECT id FROM orders WHERE id = $1 AND store_id = $2 FOR UPDATE`,
+      [orderId, storeId]
+    );
+  }
+  if (sessionId) {
+    await client.query(
+      `SELECT id FROM table_sessions WHERE id = $1 AND store_id = $2 FOR UPDATE`,
+      [sessionId, storeId]
+    );
+  }
+}
+
+export async function findPaymentsBySplitGroup(storeId, splitGroup) {
+  if (!splitGroup) return [];
+  const { rows } = await query(
+    `SELECT * FROM payments
+     WHERE store_id = $1 AND split_group = $2
+     ORDER BY created_at ASC`,
+    [storeId, splitGroup]
+  );
+  return rows.map(mapPayment);
+}
+
+/**
+ * Pagamento parcial/combinado — issue #109.
+ *
+ * Vários métodos no MESMO alvo (ex.: R$ 20 dinheiro + R$ 30 PIX), numa única
+ * transação e com UMA `Idempotency-Key` para o grupo:
+ *   - soma dos itens não pode passar do total devido (com tolerância de meio
+ *     centavo) — pagamento parcial é permitido, sobrepagamento não;
+ *   - CASH/CARD/OTHER já nascem PAID (pagamento presencial); PIX nasce PENDING
+ *     com copia-e-cola (o cliente paga depois e o webhook/caixa confirma);
+ *   - dinheiro confirmado entra no ledger da gaveta na mesma transação;
+ *   - retry com a mesma chave devolve o grupo inteiro (`replayed: true`) sem
+ *     duplicar nada.
+ *
+ * `tx` permite participar de uma transação maior (usado pelo módulo de caixa).
+ *
+ * @returns {Promise<{ payments: object[], replayed: boolean, splitGroup: string|null, totals: object }>}
+ */
+export async function createSplitPayments(
+  storeId,
+  {
+    orderId = null,
+    sessionId = null,
+    items = [],
+    idempotencyKey = null,
+    cashSessionId = null,
+    actorUserId = null,
+    metadata = {},
+  },
+  { tx = null } = {}
+) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new PaymentError('SPLIT_EMPTY', 'Informe ao menos um pagamento.');
+  }
+  if (items.length > 8) {
+    throw new PaymentError('SPLIT_TOO_MANY', 'Máximo de 8 métodos por pagamento.');
+  }
+  if (!orderId && !sessionId) {
+    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
+  }
+
+  const normalized = items.map((item, index) => {
+    const method = String(item?.method || '').toUpperCase();
+    if (!PAYMENT_METHODS.includes(method)) {
+      throw new PaymentError(
+        'VALIDATION_ERROR',
+        `Método inválido no item ${index}: use ${PAYMENT_METHODS.join(', ')}.`
+      );
+    }
+    const amount = Number(item?.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new PaymentError('INVALID_AMOUNT', `Valor inválido no item ${index}.`);
+    }
+    if (!hasCentPrecision(amount)) {
+      throw new PaymentError(
+        'INVALID_AMOUNT',
+        `Valor do item ${index} deve ter no máximo duas casas decimais.`
+      );
+    }
+
+    let tenderedAmount = null;
+    let changeAmount = null;
+    if (item?.tenderedAmount != null || item?.changeAmount != null) {
+      if (method !== 'CASH') {
+        throw new PaymentError(
+          'VALIDATION_ERROR',
+          'Troco só se aplica a pagamento em dinheiro.'
+        );
+      }
+      tenderedAmount = Number(item.tenderedAmount ?? 0);
+      if (!hasCentPrecision(tenderedAmount) || tenderedAmount < amount) {
+        throw new PaymentError(
+          'INVALID_AMOUNT',
+          `Valor recebido no item ${index} deve cobrir o pagamento.`
+        );
+      }
+      changeAmount = round2(tenderedAmount - amount);
+    }
+
+    const confirm =
+      item?.confirm === undefined ? method !== 'PIX' : Boolean(item.confirm);
+
+    return {
+      index,
+      method,
+      amount: round2(amount),
+      tenderedAmount,
+      changeAmount,
+      confirm,
+      notes: typeof item?.notes === 'string' ? item.notes.slice(0, 200) : null,
+    };
+  });
+
+  const run = async (client) => {
+    await lockPaymentTarget(client, storeId, { orderId, sessionId });
+
+    // Idempotência do GRUPO: a chave do primeiro pagamento é a chave do grupo.
+    if (idempotencyKey) {
+      const { rows } = await client.query(
+        `SELECT * FROM payments WHERE store_id = $1 AND idempotency_key = $2`,
+        [storeId, idempotencyKey]
+      );
+      if (rows[0]) {
+        const existing = mapPayment(rows[0]);
+        const group = existing.splitGroup
+          ? await findPaymentsBySplitGroup(storeId, existing.splitGroup)
+          : [existing];
+        const totals = await amountDue(storeId, { orderId, sessionId, client });
+        return {
+          payments: group,
+          replayed: true,
+          splitGroup: existing.splitGroup,
+          totals,
+        };
+      }
+    }
+
+    await assertPaymentTarget(storeId, { orderId, sessionId, client });
+
+    const before = await amountDue(storeId, { orderId, sessionId, client });
+    const requestedTotal = sumMoney(normalized.map((item) => item.amount));
+    if (requestedTotal > before.due + AMOUNT_TOLERANCE) {
+      throw new PaymentError(
+        'AMOUNT_EXCEEDS_DUE',
+        `Soma dos pagamentos (R$ ${requestedTotal.toFixed(2)}) acima do devido (R$ ${before.due.toFixed(2)}).`,
+        { due: before.due, requested: requestedTotal }
+      );
+    }
+
+    const store = await findStoreById(storeId);
+    if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
+
+    const splitGroup = normalized.length > 1 || idempotencyKey ? randomUUID() : null;
+    const created = [];
+
+    for (const item of normalized) {
+      const { provider, pixCopyPaste } = resolveProviderContext(store, {
+        method: item.method,
+        amount: item.amount,
+        idempotencyKey,
+        txidSuffix: idempotencyKey ? String(item.index) : '',
+      });
+
+      const itemKey = idempotencyKey
+        ? item.index === 0
+          ? idempotencyKey
+          : `${idempotencyKey}#${item.index}`
+        : null;
+
+      const status = item.confirm ? 'PAID' : 'PENDING';
+      const row = await insertPaymentRow(client, {
+        storeId,
+        orderId,
+        sessionId,
+        method: item.method,
+        amount: item.amount,
+        status,
+        provider,
+        idempotencyKey: itemKey,
+        pixCopyPaste,
+        cashSessionId,
+        splitGroup,
+        confirmedBy: status === 'PAID' ? actorUserId : null,
+        tenderedAmount: item.tenderedAmount,
+        changeAmount: item.changeAmount,
+        metadata: {
+          ...(metadata || {}),
+          split: normalized.length > 1 ? { index: item.index, of: normalized.length } : undefined,
+          notes: item.notes ?? undefined,
+        },
+      });
+
+      const payment = mapPayment(row);
+      paymentsTotal.inc({
+        store_id: storeId,
+        method: payment.method,
+        outcome: status === 'PAID' ? 'confirmed' : 'created',
+      });
+
+      if (status === 'PAID') {
+        const { insertCashMovementForPayment } = await import('../cash/cash.repository.js');
+        await insertCashMovementForPayment(client, {
+          storeId,
+          type: 'SALE',
+          payment,
+          cashSessionId,
+          actorUserId,
+        });
+      }
+
+      created.push(payment);
+    }
+
+    const totals = await amountDue(storeId, { orderId, sessionId, client });
+    return {
+      payments: created,
+      replayed: false,
+      splitGroup,
+      totals: {
+        ...totals,
+        charged: requestedTotal,
+        changeGiven: sumMoney(
+          normalized.filter((item) => item.changeAmount != null).map((item) => item.changeAmount)
+        ),
+        paidBefore: before.paidTotal,
+      },
+    };
+  };
+
+  if (tx) return run(tx);
+
+  try {
+    return await withTransaction(run, { operation: 'tx:split_payments' });
+  } catch (err) {
+    if (err.code === '23505' && idempotencyKey) {
+      const existing = await findPaymentByIdempotency(storeId, idempotencyKey);
+      if (existing) {
+        const group = existing.splitGroup
+          ? await findPaymentsBySplitGroup(storeId, existing.splitGroup)
+          : [existing];
+        return {
+          payments: group,
+          replayed: true,
+          splitGroup: existing.splitGroup,
+          totals: await amountDue(storeId, { orderId, sessionId }),
+        };
+      }
+    }
+    throw err;
+  }
+}
+
 /** Shape completo — uso interno/staff (permission `payments.read`). */
 function mapPayment(p) {
   return {
@@ -619,6 +1065,11 @@ function mapPayment(p) {
     providerPaymentId: p.provider_payment_id,
     idempotencyKey: p.idempotency_key,
     pixCopyPaste: p.pix_copy_paste,
+    cashSessionId: p.cash_session_id ?? null,
+    splitGroup: p.split_group ?? null,
+    confirmedBy: p.confirmed_by ?? null,
+    tenderedAmount: p.tendered_amount == null ? null : Number(p.tendered_amount),
+    changeAmount: p.change_amount == null ? null : Number(p.change_amount),
     metadata: p.metadata || {},
     paidAt: p.paid_at,
     createdAt: p.created_at,

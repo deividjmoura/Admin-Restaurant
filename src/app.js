@@ -22,6 +22,7 @@ import storeRoutes from './modules/tenancy/store-routes.js';
 import permissionsRoutes from './modules/permissions/permissions-routes.js';
 import crmRoutes from './modules/crm/crm-routes.js';
 import auditRoutes from './modules/audit/audit-routes.js';
+import cashRoutes from './modules/cash/cash-routes.js';
 import opsRoutes from './modules/ops/ops-routes.js';
 import requestContext, { sanitizeRequestId } from './infrastructure/request-context.js';
 import { buildLoggerOptions, SERVICE_NAME, SERVICE_VERSION } from './infrastructure/logger.js';
@@ -257,6 +258,7 @@ export async function buildApp(opts = {}) {
   await app.register(permissionsRoutes);
   await app.register(crmRoutes);
   await app.register(auditRoutes);
+  await app.register(cashRoutes);
   // /health, /ready e /metrics (issue #106) vivem num módulo só.
   await app.register(opsRoutes);
 

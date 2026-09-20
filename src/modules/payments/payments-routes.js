@@ -17,6 +17,7 @@ import {
   verifyHmac,
   webhookSecret,
 } from './webhook-auth.js';
+import { mapCashError } from '../cash/cash.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { auditRequest } from '../audit/audit-context.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
@@ -66,6 +67,28 @@ export function mapPaymentError(err) {
     400;
   return new AppError(err.code, err.message, status, err.details);
 }
+
+/**
+ * Pagamento em dinheiro confirmado no caixa lança efeito na gaveta
+ * (issues #107/#108) — erros de caixa precisam virar 404/409, nunca 500.
+ */
+function mapPaymentOrCashError(err) {
+  return mapPaymentError(err) || mapCashError(err);
+}
+
+/**
+ * Body do confirm: além do metadata interno, o caixa pode informar a gaveta e o
+ * dinheiro recebido/troco. `cashSessionId` é opcional — sem ela usa-se a sessão
+ * aberta do próprio operador (resolvida no servidor, nunca pelo cliente).
+ */
+const confirmSchema = z
+  .object({
+    cashSessionId: z.string().uuid().optional().nullable(),
+    // Troco é CALCULADO no servidor (recebido - valor): o cliente não dita o
+    // troco, senão o fechamento da gaveta deixa de ser confiável.
+    tenderedAmount: z.number().min(0).max(1_000_000).optional().nullable(),
+  })
+  .strict('Campo não aceito na confirmação de pagamento.');
 
 function sendError(reply, err) {
   const { statusCode, body } = errorResponse(err);
@@ -193,13 +216,35 @@ async function paymentsRoutes(app) {
     '/api/payments/:id/confirm',
     { preHandler: [app.requireTenant, app.requirePermission('payments.confirm')] },
     async (request, reply) => {
+      const parsed = confirmSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          new AppError('VALIDATION_ERROR', 'Payload de confirmação inválido.', 400, {
+            issues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          })
+        );
+      }
+
+      const { cashSessionId, tenderedAmount } = parsed.data;
+
       try {
-        const result = await confirmPayment(request.storeId, request.params.id, {
-          metadata: {
-            confirmedBy: request.user?.id || null,
-            confirmedAt: new Date().toISOString(),
-          },
-        });
+        const result = await confirmPayment(
+          request.storeId,
+          request.params.id,
+          {
+            metadata: {
+              confirmedBy: request.user?.id || null,
+              confirmedAt: new Date().toISOString(),
+            },
+            cashSessionId: cashSessionId ?? null,
+            actorUserId: request.user?.id ?? null,
+            tenderedAmount: tenderedAmount ?? null,
+          }
+        );
         if (!result) {
           return sendError(
             reply,
@@ -231,9 +276,19 @@ async function paymentsRoutes(app) {
           });
         }
 
-        return { alreadyPaid: result.alreadyPaid, payment: result.payment };
+        return {
+          alreadyPaid: result.alreadyPaid,
+          payment: result.payment,
+          // Dinheiro confirmado sem gaveta aberta não entra no caixa físico:
+          // o alerta volta para o operador (não bloqueia a venda).
+          cashMovement: result.cashMovement ?? null,
+          warnings:
+            result.payment.method === 'CASH' && !result.cashMovement
+              ? [{ code: 'CASH_WITHOUT_SESSION', message: 'Nenhuma sessão de caixa aberta para lançar o dinheiro.' }]
+              : [],
+        };
       } catch (err) {
-        const mapped = mapPaymentError(err);
+        const mapped = mapPaymentOrCashError(err);
         if (mapped) return sendError(reply, mapped);
         throw err;
       }
@@ -252,6 +307,7 @@ async function paymentsRoutes(app) {
         const result = await refundPayment(request.storeId, request.params.id, {
           reason: request.body?.reason ?? null,
           actorUserId: request.user?.id ?? null,
+          cashSessionId: request.body?.cashSessionId ?? null,
         });
         if (!result) {
           return sendError(
@@ -269,9 +325,13 @@ async function paymentsRoutes(app) {
           },
         });
 
-        return { alreadyRefunded: result.alreadyRefunded, payment: result.payment };
+        return {
+          alreadyRefunded: result.alreadyRefunded,
+          payment: result.payment,
+          cashMovement: result.cashMovement ?? null,
+        };
       } catch (err) {
-        const mapped = mapPaymentError(err);
+        const mapped = mapPaymentOrCashError(err);
         if (mapped) return sendError(reply, mapped);
         throw err;
       }

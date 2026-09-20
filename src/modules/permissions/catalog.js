@@ -20,6 +20,12 @@ export const PERMISSIONS = [
   { key: 'waiter.items.deliver', description: 'Marcar item como entregue' },
   { key: 'cashier.sessions.read', description: 'Ver sessões/comandas do caixa' },
   { key: 'cashier.sessions.close', description: 'Fechar sessão/comanda' },
+  // Caixa operacional (issues #107–#110). `cashier.sessions.*` continua sendo
+  // COMANDA (sessão de mesa); gaveta de dinheiro é `cashier.cash.*`.
+  { key: 'cashier.cash.open', description: 'Abrir sessão de caixa (fundo de troco)' },
+  { key: 'cashier.cash.close', description: 'Fechar sessão de caixa com reconciliação' },
+  { key: 'cashier.cash.read', description: 'Ver sessões, ledger e relatórios de caixa' },
+  { key: 'cashier.movements.write', description: 'Registrar movimentações (suprimento, sangria, ajuste)' },
   { key: 'reports.read', description: 'Ver relatórios/dashboard' },
   { key: 'delivery.zones.read', description: 'Listar zonas de entrega' },
   { key: 'delivery.zones.write', description: 'Criar/editar zonas de entrega' },
@@ -63,6 +69,10 @@ export const FALLBACK_MATRIX = {
     'waiter.items.deliver',
     'cashier.sessions.read',
     'cashier.sessions.close',
+    // Opera a gaveta (abre, lê, movimenta); o FECHAMENTO é de gerente/dono.
+    'cashier.cash.open',
+    'cashier.cash.read',
+    'cashier.movements.write',
     'tables.read',
     'payments.read',
     'payments.create',
