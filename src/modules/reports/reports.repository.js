@@ -98,7 +98,7 @@ export async function getDashboardSummary(storeId, periodOpts = {}) {
 
   const { rows: revenueRows } = await query(
     `SELECT
-       COALESCE(SUM(oi.unit_price * oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED'), 0) AS items_revenue,
+       COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED'), 0) AS items_revenue,
        COALESCE(SUM(oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED'), 0)::int AS items_qty
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
@@ -189,7 +189,7 @@ export async function getTopProducts(storeId, periodOpts = {}, { limit = 10 } = 
        oi.product_id,
        oi.product_name,
        SUM(oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED')::int AS quantity,
-       COALESCE(SUM(oi.unit_price * oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED'), 0) AS revenue
+       COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity) FILTER (WHERE oi.status <> 'CANCELLED'), 0) AS revenue
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
      WHERE oi.store_id = $1
@@ -237,7 +237,7 @@ async function getDailySeriesFixed(storeId, preset, resolved, tz) {
          (o.created_at AT TIME ZONE '${tz}')::date AS day,
          o.id,
          COALESCE((
-           SELECT SUM(oi.unit_price * oi.quantity)
+           SELECT SUM((oi.unit_price + oi.addons_total) * oi.quantity)
            FROM order_items oi
            WHERE oi.order_id = o.id
              AND oi.store_id = o.store_id

@@ -15,6 +15,7 @@ import {
 import { closeSession } from '../tables/tables.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { auditRequest } from '../audit/audit-context.js';
 
 const createOrderSchema = z.object({
   tableSessionId: z.string().uuid().optional().nullable(),
@@ -51,12 +52,43 @@ function mapOrderError(err) {
         'Chave de idempotência já usada em outra sessão.',
         409
       );
+    case 'IDEMPOTENCY_CONFLICT':
+      return new AppError(
+        'IDEMPOTENCY_CONFLICT',
+        'Conflito de idempotência. Tente novamente.',
+        409
+      );
+    case 'STATUS_CONFLICT':
+      return new AppError(
+        'STATUS_CONFLICT',
+        'O pedido foi alterado por outra operação. Recarregue e tente novamente.',
+        409,
+        { expected: err.expected, requested: err.requested }
+      );
     case 'ORDER_EMPTY':
       return new AppError('ORDER_EMPTY', 'Pedido sem itens.', 400);
+    case 'ORDER_SESSION_REQUIRED':
+      return new AppError(
+        'ORDER_SESSION_REQUIRED',
+        'Pedido de mesa exige uma sessão aberta (tableSessionId).',
+        400
+      );
+    case 'INVALID_QUANTITY':
+      return new AppError('INVALID_QUANTITY', 'Quantidade inválida.', 400);
+    case 'ADDON_INVALID':
+      return new AppError(
+        'ADDON_INVALID',
+        'Adicional inválido para este produto.',
+        400
+      );
     case 'PRODUCT_NOT_FOUND':
       return new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.', 404);
     case 'PRODUCT_UNAVAILABLE':
       return new AppError('PRODUCT_UNAVAILABLE', 'Produto indisponível.', 409);
+    case 'SESSION_NOT_FOUND':
+      return new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada nesta loja.', 404);
+    case 'SESSION_CLOSED':
+      return new AppError('SESSION_CLOSED', 'Sessão de mesa já está fechada.', 409);
     case 'INVALID_STATUS_TRANSITION':
       return new AppError(
         'INVALID_STATUS_TRANSITION',
@@ -143,6 +175,18 @@ async function ordersRoutes(app) {
         });
 
         if (!result.replayed) {
+          await auditRequest(request, {
+            action: 'order.created',
+            resource: 'order',
+            resourceId: result.order.id,
+            metadata: {
+              channel: result.order.channel,
+              tableSessionId: result.order.table_session_id,
+              items: result.items.length,
+              stations: result.stations || [],
+            },
+          });
+
           emitOrder(request.storeId, 'order.created', result.order, {
             stations: result.stations || [],
             items: result.items.map((it) => ({
@@ -210,11 +254,19 @@ async function ordersRoutes(app) {
           createdAt: order.created_at,
           updatedAt: order.updated_at,
         },
+        totals: {
+          amount: items
+            .filter((it) => it.status !== 'CANCELLED')
+            .reduce((sum, it) => sum + it.line_total, 0)
+            .toFixed(2),
+        },
         items: items.map((it) => ({
           id: it.id,
           productId: it.product_id,
           productName: it.product_name,
           unitPrice: Number(it.unit_price),
+          addonsTotal: Number(it.addons_total) || 0,
+          lineTotal: it.line_total,
           quantity: it.quantity,
           notes: it.notes,
           status: it.status,
@@ -236,6 +288,14 @@ async function ordersRoutes(app) {
           return reply.code(statusCode).send(body);
         }
         const stations = await getOrderStations(request.storeId, order.id);
+
+        await auditRequest(request, {
+          action: 'order.cancelled',
+          resource: 'order',
+          resourceId: order.id,
+          metadata: { previousStatus: 'CANCELLED', stations },
+        });
+
         emitOrder(request.storeId, 'order.cancelled', order, { stations });
         return {
           order: {
@@ -279,6 +339,14 @@ async function ordersRoutes(app) {
         }
 
         const stations = await getOrderStations(request.storeId, order.id);
+
+        await auditRequest(request, {
+          action: 'order.status_changed',
+          resource: 'order',
+          resourceId: order.id,
+          metadata: { status: order.status, stations },
+        });
+
         emitOrder(request.storeId, 'order.status_changed', order, { stations });
 
         return {
@@ -327,6 +395,17 @@ async function ordersRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+
+        await auditRequest(request, {
+          action: 'order.item_status_changed',
+          resource: 'order_item',
+          resourceId: item.id,
+          metadata: {
+            orderId: item.order_id,
+            status: item.status,
+            station: item.station,
+          },
+        });
 
         publishStoreOrderEvent(request.storeId, {
           type: 'order.item_status_changed',
@@ -401,6 +480,13 @@ async function ordersRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+
+        await auditRequest(request, {
+          action: 'order.item_delivered',
+          resource: 'order_item',
+          resourceId: item.id,
+          metadata: { orderId: item.order_id, station: item.station },
+        });
 
         publishStoreOrderEvent(request.storeId, {
           type: 'order.item_delivered',
@@ -484,6 +570,13 @@ async function ordersRoutes(app) {
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
+
+      await auditRequest(request, {
+        action: 'cashier.session_closed',
+        resource: 'table_session',
+        resourceId: session.id,
+        metadata: { tableId: session.table_id, cartVersion: session.cart_version },
+      });
 
       publishStoreOrderEvent(request.storeId, {
         type: 'session.closed',
