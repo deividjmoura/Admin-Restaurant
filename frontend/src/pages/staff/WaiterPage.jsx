@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import { usePolling } from '../../hooks/usePolling';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ConnectionStatus,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -13,38 +20,28 @@ const STAFF_NAV = [
 
 export default function WaiterPage() {
   const { user, loading } = useAuth();
-  const [items, setItems] = useState([]);
-  const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(async () => {
-    const data = await api('/api/waiter/ready-items');
-    setItems(data.items || []);
-    setLoaded(true);
-  }, []);
+  const { data, error, loaded, offline, rateLimited, reload } = usePolling(
+    '/api/waiter/ready-items',
+    { intervalMs: 4000, enabled: Boolean(user) }
+  );
 
-  useEffect(() => {
-    if (!user) return;
-    load().catch((err) => {
-      setError(err);
-      setLoaded(true);
-    });
-    const id = setInterval(() => load().catch(() => {}), 4000);
-    return () => clearInterval(id);
-  }, [user, load]);
+  const items = data?.items || [];
+  const shownError = actionError || error;
 
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace state={{ from: '/waiter' }} />;
 
   async function deliver(itemId) {
     setBusyId(itemId);
-    setError(null);
+    setActionError(null);
     try {
       await api(`/api/waiter/items/${itemId}/deliver`, { method: 'PATCH' });
-      await load();
+      await reload();
     } catch (err) {
-      setError(err);
+      setActionError(err);
     } finally {
       setBusyId(null);
     }
@@ -62,13 +59,17 @@ export default function WaiterPage() {
           <Button
             variant="secondary"
             className="!py-1 !px-3 text-xs"
-            onClick={() => load().catch(setError)}
+            onClick={() => reload()}
           >
             Atualizar
           </Button>
         </div>
 
-        <ErrorBox error={error} />
+        <ConnectionStatus
+          offline={offline}
+          rateLimited={rateLimited}
+          error={shownError}
+        />
 
         {!loaded && <Spinner />}
 

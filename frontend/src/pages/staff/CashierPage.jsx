@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import { usePolling } from '../../hooks/usePolling';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ConnectionStatus,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -17,51 +24,41 @@ function formatMoney(n) {
 
 export default function CashierPage() {
   const { user, loading } = useAuth();
-  const [sessions, setSessions] = useState([]);
   const [detail, setDetail] = useState(null);
-  const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(async () => {
-    const data = await api('/api/cashier/sessions');
-    setSessions(data.sessions || []);
-    setLoaded(true);
-  }, []);
+  const { data, error, loaded, offline, rateLimited, reload } = usePolling(
+    '/api/cashier/sessions',
+    { intervalMs: 8000, enabled: Boolean(user) }
+  );
 
-  useEffect(() => {
-    if (!user) return;
-    load().catch((err) => {
-      setError(err);
-      setLoaded(true);
-    });
-    const id = setInterval(() => load().catch(() => {}), 8000);
-    return () => clearInterval(id);
-  }, [user, load]);
+  const sessions = data?.sessions || [];
+  const shownError = actionError || error;
 
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace state={{ from: '/cashier' }} />;
 
   async function openDetail(sessionId) {
-    setError(null);
+    setActionError(null);
     try {
       const data = await api(`/api/cashier/sessions/${sessionId}`);
       setDetail(data);
     } catch (err) {
-      setError(err);
+      setActionError(err);
     }
   }
 
   async function closeSession(id) {
     if (!window.confirm('Fechar sessão e liberar a mesa?')) return;
     setBusyId(id);
-    setError(null);
+    setActionError(null);
     try {
       await api(`/api/cashier/sessions/${id}/close`, { method: 'POST' });
       if (detail?.session?.id === id) setDetail(null);
-      await load();
+      await reload();
     } catch (err) {
-      setError(err);
+      setActionError(err);
     } finally {
       setBusyId(null);
     }
@@ -79,13 +76,17 @@ export default function CashierPage() {
           <Button
             variant="secondary"
             className="!py-1 !px-3 text-xs"
-            onClick={() => load().catch(setError)}
+            onClick={() => reload()}
           >
             Atualizar
           </Button>
         </div>
 
-        <ErrorBox error={error} />
+        <ConnectionStatus
+          offline={offline}
+          rateLimited={rateLimited}
+          error={shownError}
+        />
 
         {!loaded && <Spinner />}
 

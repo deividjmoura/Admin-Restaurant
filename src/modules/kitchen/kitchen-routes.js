@@ -1,12 +1,36 @@
 import fp from 'fastify-plugin';
 import { listStationOrders } from '../orders/orders.repository.js';
-import { subscribeStoreOrders } from '../realtime/store-events.js';
+import {
+  subscribeStoreOrders,
+  canReceiveEvent,
+} from '../realtime/store-events.js';
+import { listRolePermissions } from '../permissions/permissions.repository.js';
+import { FALLBACK_MATRIX } from '../permissions/catalog.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
 function parseStation(queryStation) {
   const s = String(queryStation || 'KITCHEN').toUpperCase();
   if (s !== 'KITCHEN' && s !== 'BAR') return null;
   return s;
+}
+
+/**
+ * Permissões efetivas do assinante para a loja, com o mesmo fallback do
+ * requirePermission (loja sem role_permissions semeado usa a matriz do código).
+ */
+async function loadSubscriberPermissions(request, storeId) {
+  const role = request.storeRole || 'OWNER';
+  const set = new Set();
+  try {
+    const rows = await listRolePermissions(storeId, role);
+    for (const r of rows) set.add(r.key);
+    if (rows.length === 0) {
+      for (const k of FALLBACK_MATRIX[role] || []) set.add(k);
+    }
+  } catch {
+    for (const k of FALLBACK_MATRIX[role] || []) set.add(k);
+  }
+  return set;
 }
 
 async function kitchenRoutes(app) {
@@ -30,10 +54,15 @@ async function kitchenRoutes(app) {
         return reply.code(statusCode).send(body);
       }
 
-      const orders = await listStationOrders(request.storeId, { station });
+      const limit = Number(request.query?.limit) || 100;
+      const orders = await listStationOrders(request.storeId, {
+        station,
+        limit,
+      });
       return {
         storeId: request.storeId,
         station,
+        limit: Math.min(Math.max(limit, 1), 200),
         orders,
       };
     }
@@ -74,8 +103,20 @@ async function kitchenRoutes(app) {
         };
       }
 
+      // Permissões do assinante decidem quais tipos de evento podem ser
+      // entregues (payment.* só com payments.read; session.closed só com
+      // cashier.sessions.read). Nunca confiamos no filtro do cliente.
+      const permissions = await loadSubscriberPermissions(
+        request,
+        storeId
+      );
+
       reply.hijack();
+
+      // Preserva os headers já calculados (CORS, Helmet, …) e só então
+      // sobrescreve o que é específico de SSE.
       reply.raw.writeHead(200, {
+        ...reply.getHeaders(),
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
@@ -94,9 +135,16 @@ async function kitchenRoutes(app) {
       });
 
       const unsubscribe = subscribeStoreOrders(storeId, (payload) => {
-        const stations = payload.stations || [];
-        // Eventos sem stations (ex. status global) → enviam para as duas estações
-        if (stations.length > 0 && !stations.includes(station)) return;
+        // Filtro por tenant + estação + permissão, sempre no servidor.
+        if (
+          !canReceiveEvent(payload, {
+            storeId,
+            station,
+            permissions,
+          })
+        ) {
+          return;
+        }
         send(payload.type || 'order', { ...payload, stationFilter: station });
       });
 

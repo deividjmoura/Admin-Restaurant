@@ -1,8 +1,15 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import { usePolling } from '../../hooks/usePolling';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ConnectionStatus,
+} from '../../components/Layout';
 
 const STAFF_NAV = [
   { to: '/kitchen', label: 'Cozinha' },
@@ -46,28 +53,26 @@ function timeAgo(iso) {
 
 export default function KitchenPage({ station = 'KITCHEN' }) {
   const { user, loading } = useAuth();
-  const [orders, setOrders] = useState([]);
-  const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [loaded, setLoaded] = useState(false);
 
-  const load = useCallback(async () => {
-    const data = await api(`/api/kitchen/orders?station=${station}`);
-    setOrders(data.orders || []);
-    setLoaded(true);
-  }, [station]);
+  // Falhas de polling nunca são engolidas: 401 desloga, 429 avisa,
+  // 5xx/rede mostram banner de conexão perdida e a aba oculta pausa o poll.
+  const {
+    data,
+    error: pollError,
+    loaded,
+    offline,
+    rateLimited,
+    reload,
+  } = usePolling(`/api/kitchen/orders?station=${station}`, {
+    intervalMs: 4000,
+    enabled: Boolean(user),
+  });
 
-  useEffect(() => {
-    if (!user) return;
-    load().catch((err) => {
-      setError(err);
-      setLoaded(true);
-    });
-    const id = setInterval(() => {
-      load().catch(() => {});
-    }, 4000);
-    return () => clearInterval(id);
-  }, [user, load]);
+  const orders = data?.orders || [];
+  // Falha de ação tem prioridade, mas o erro de polling nunca é engolido.
+  const error = actionError || pollError;
 
   if (loading) return <Spinner />;
   if (!user) {
@@ -84,15 +89,15 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
 
   async function advanceItem(itemId, status) {
     setBusyId(itemId);
-    setError(null);
+    setActionError(null);
     try {
       await api(`/api/orders/items/${itemId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
-      await load();
+      await reload();
     } catch (err) {
-      setError(err);
+      setActionError(err);
     } finally {
       setBusyId(null);
     }
@@ -114,13 +119,17 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
           <Button
             variant="secondary"
             className="!py-1 !px-3 text-xs"
-            onClick={() => load().catch(setError)}
+            onClick={() => reload()}
           >
             Atualizar
           </Button>
         </div>
 
-        <ErrorBox error={error} />
+        <ConnectionStatus
+          offline={offline}
+          rateLimited={rateLimited}
+          error={error}
+        />
 
         {!loaded && <Spinner />}
 
