@@ -30,6 +30,8 @@ export const PERMISSIONS = [
   { key: 'store.settings.write', description: 'Editar configurações da loja' },
   { key: 'permissions.manage', description: 'Gerenciar permissões por papel' },
   { key: 'audit.read', description: 'Consultar logs de auditoria' },
+  { key: 'customers.read', description: 'Listar/ver clientes da loja' },
+  { key: 'customers.write', description: 'Criar/editar clientes e consentimentos' },
 ];
 
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map((p) => p.key));

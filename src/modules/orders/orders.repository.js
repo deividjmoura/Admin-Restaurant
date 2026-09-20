@@ -15,10 +15,13 @@ const CUSTOMER_CANCELABLE = new Set(['PENDING', 'CONFIRMED']);
 
 const KITCHEN_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
 
+const ORDER_COLS = `id, store_id, table_session_id, status, channel, notes,
+            idempotency_key, cancelled_at, created_at, updated_at,
+            provider, external_id, customer_id`;
+
 export async function findOrderById(storeId, orderId) {
   const { rows } = await query(
-    `SELECT id, store_id, table_session_id, status, channel, notes,
-            idempotency_key, cancelled_at, created_at, updated_at
+    `SELECT ${ORDER_COLS}
      FROM orders
      WHERE id = $1 AND store_id = $2`,
     [orderId, storeId]
@@ -26,11 +29,21 @@ export async function findOrderById(storeId, orderId) {
   return rows[0] ?? null;
 }
 
+export async function findOrderByProviderExternal(storeId, provider, externalId) {
+  if (!externalId) return null;
+  const { rows } = await query(
+    `SELECT ${ORDER_COLS}
+     FROM orders
+     WHERE store_id = $1 AND provider = $2 AND external_id = $3`,
+    [storeId, provider, externalId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function findOrderByIdempotencyKey(storeId, key) {
   if (!key) return null;
   const { rows } = await query(
-    `SELECT id, store_id, table_session_id, status, channel, notes,
-            idempotency_key, cancelled_at, created_at, updated_at
+    `SELECT ${ORDER_COLS}
      FROM orders
      WHERE store_id = $1 AND idempotency_key = $2`,
     [storeId, key]
@@ -137,6 +150,9 @@ export async function createOrder(storeId, {
   notes = null,
   idempotencyKey = null,
   items = [],
+  provider = 'internal',
+  externalId = null,
+  customerId = null,
 }) {
   async function replayExisting(existing) {
     const orderItems = await listOrderItems(storeId, existing.id);
@@ -207,11 +223,20 @@ export async function createOrder(storeId, {
 
       const { rows: orderRows } = await client.query(
         `INSERT INTO orders
-          (store_id, table_session_id, status, channel, notes, idempotency_key)
-         VALUES ($1, $2, 'PENDING', $3, $4, $5)
-         RETURNING id, store_id, table_session_id, status, channel, notes,
-                   idempotency_key, cancelled_at, created_at, updated_at`,
-        [storeId, tableSessionId, channel, notes, idempotencyKey]
+          (store_id, table_session_id, status, channel, notes, idempotency_key,
+           provider, external_id, customer_id)
+         VALUES ($1, $2, 'PENDING', $3, $4, $5, $6, $7, $8)
+         RETURNING ${ORDER_COLS}`,
+        [
+          storeId,
+          tableSessionId,
+          channel,
+          notes,
+          idempotencyKey,
+          provider || 'internal',
+          externalId,
+          customerId,
+        ]
       );
       const order = orderRows[0];
 
@@ -271,11 +296,21 @@ export async function createOrder(storeId, {
     });
   } catch (err) {
     // Concurrent same Idempotency-Key: unique index wins → replay winner
-    if (err.code === '23505' && idempotencyKey) {
-      const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
-      if (existing) {
-        assertSameSession(existing);
-        return replayExisting(existing);
+    if (err.code === '23505') {
+      if (idempotencyKey) {
+        const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey);
+        if (existing) {
+          assertSameSession(existing);
+          return replayExisting(existing);
+        }
+      }
+      if (externalId) {
+        const existing = await findOrderByProviderExternal(
+          storeId,
+          provider || 'internal',
+          externalId
+        );
+        if (existing) return replayExisting(existing);
       }
     }
     throw err;
@@ -302,8 +337,7 @@ export async function transitionOrderStatus(storeId, orderId, nextStatus) {
          cancelled_at = COALESCE($4::timestamptz, cancelled_at),
          updated_at = now()
      WHERE id = $1 AND store_id = $2
-     RETURNING id, store_id, table_session_id, status, channel, notes,
-               idempotency_key, cancelled_at, created_at, updated_at`,
+     RETURNING ${ORDER_COLS}`,
     [orderId, storeId, nextStatus, cancelledAt]
   );
 

@@ -65,7 +65,13 @@ async function kitchenRoutes(app) {
       // Mantém a rota testável (SSE hijacka a resposta) e permite ao front
       // confirmar o canal antes de assinar.
       if (request.query?.probe === '1') {
-        return { storeId, station, channel: `store:${storeId}:orders:${station}` };
+        const channel = `store:${storeId}:orders:${station}`;
+        return {
+          storeId,
+          station,
+          channel,
+          resolvedChannel: channel,
+        };
       }
 
       reply.hijack();

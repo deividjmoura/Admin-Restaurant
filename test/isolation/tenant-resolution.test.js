@@ -9,6 +9,7 @@ import {
   extractSubdomainSlug,
 } from '../../src/modules/tenancy/tenant-host.js';
 
+
 describe('tenant resolution helpers', () => {
   it('normalizeHost strips port and lowercases', () => {
     assert.equal(normalizeHost('Loja1.Example.COM:443'), 'loja1.example.com');
@@ -25,5 +26,16 @@ describe('tenant resolution helpers', () => {
 
   it('rejects multi-level subdomains as tenant slug', () => {
     assert.equal(extractSubdomainSlug('a.b.localhost'), null);
+  });
+
+  it('query tenant is ignored unless the route opted in', async () => {
+    const { resolveTenantFromQuery } = await import(
+      '../../src/modules/tenancy/resolve-tenant.js'
+    );
+    const store = await resolveTenantFromQuery({
+      query: { tenant: 'qualquer' },
+      routeOptions: { config: {} },
+    });
+    assert.equal(store, null);
   });
 });
