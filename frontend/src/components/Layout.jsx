@@ -110,3 +110,46 @@ export function ErrorBox({ error }) {
     </div>
   );
 }
+
+export function Banner({ tone = 'warning', children }) {
+  if (!children) return null;
+  const tones = {
+    warning: 'border-amber-300 bg-amber-50 text-amber-900',
+    error: 'border-red-300 bg-red-50 text-red-800',
+    info: 'border-sky-300 bg-sky-50 text-sky-900',
+  };
+  return (
+    <div
+      role="status"
+      className={
+        'rounded-xl border px-3 py-2 text-sm ' + (tones[tone] || tones.warning)
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Estado de conexão dos painéis de operação: nunca falha em silêncio.
+ * `offline` (5xx/rede) pede atenção; `rateLimited` explica o 429.
+ */
+export function ConnectionStatus({ offline, rateLimited, error }) {
+  return (
+    <div className="space-y-2">
+      {offline && (
+        <Banner tone="error">
+          Conexão com o servidor perdida. Os dados na tela podem estar
+          desatualizados — tentando reconectar automaticamente.
+        </Banner>
+      )}
+      {rateLimited && (
+        <Banner tone="warning">
+          Muitas requisições em pouco tempo. Atualizações automáticas foram
+          desaceleradas.
+        </Banner>
+      )}
+      <ErrorBox error={error} />
+    </div>
+  );
+}

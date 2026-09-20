@@ -38,6 +38,22 @@ export function normalizePixKey(key) {
 }
 
 /**
+ * Normaliza texto do merchant (nome/cidade) conforme o BR Code:
+ * remove acentos, corta em `max` e converte para MAIÚSCULAS.
+ * O padrão EMV não aceita caracteres acentuados e tem limite de tamanho.
+ */
+export function normalizeMerchantText(value, { max, fallback = '' } = {}) {
+  const clean = String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E]/g, '')
+    .trim()
+    .toUpperCase();
+  const sliced = max ? clean.slice(0, max) : clean;
+  return sliced || fallback;
+}
+
+/**
  * Monta payload EMV copia-e-cola.
  * @param {{ key: string, name: string, city: string, amount?: number, txid?: string }} opts
  */
@@ -53,12 +69,14 @@ export function buildStaticPixPayload({
     throw new Error('PIX_KEY_REQUIRED');
   }
 
-  const merchantName = String(name).slice(0, 25).toUpperCase();
-  const merchantCity = String(city)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .slice(0, 15)
-    .toUpperCase() || 'SAO PAULO';
+  const merchantName = normalizeMerchantText(name, {
+    max: 25,
+    fallback: 'LANCHONETE',
+  });
+  const merchantCity = normalizeMerchantText(city, {
+    max: 15,
+    fallback: 'SAO PAULO',
+  });
 
   const gui = tlv('00', 'br.gov.bcb.pix') + tlv('01', pixKey);
   const merchantAccount = tlv('26', gui);
@@ -83,20 +101,27 @@ export function buildStaticPixPayload({
 }
 
 /**
- * Config PIX da loja: settings.pix ou env global.
+ * Config PIX da loja.
+ *
+ * Em produção a chave da PLATAFORMA não é usada por padrão: uma loja sem PIX
+ * próprio receberia dinheiro na conta da plataforma. Só libere com
+ * PIX_ALLOW_PLATFORM_KEY=true (ex.: loja da própria plataforma / sandbox).
  */
 export function resolvePixConfig(storeSettings = {}, env = process.env) {
   const fromStore = storeSettings?.pix || {};
-  const key =
-    fromStore.key ||
-    env.PIX_CHAVE ||
-    '';
-  const name = fromStore.name || env.PIX_NOME || 'LANCHONETE';
-  const city = fromStore.city || env.PIX_CIDADE || 'SAO PAULO';
+  const isProd = env.NODE_ENV === 'production';
+  const allowPlatformKey = !isProd || env.PIX_ALLOW_PLATFORM_KEY === 'true';
+
+  const key = fromStore.key || (allowPlatformKey ? env.PIX_CHAVE : '') || '';
+  const name = fromStore.name || (allowPlatformKey ? env.PIX_NOME : '') || 'LANCHONETE';
+  const city = fromStore.city || (allowPlatformKey ? env.PIX_CIDADE : '') || 'SAO PAULO';
+  const normalized = normalizePixKey(key);
+
   return {
-    key: normalizePixKey(key),
-    name,
-    city,
-    configured: Boolean(normalizePixKey(key)),
+    key: normalized,
+    name: normalizeMerchantText(name, { max: 25, fallback: 'LANCHONETE' }),
+    city: normalizeMerchantText(city, { max: 15, fallback: 'SAO PAULO' }),
+    configured: Boolean(normalized),
+    source: fromStore.key ? 'store' : normalized ? 'platform' : 'none',
   };
 }

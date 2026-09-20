@@ -118,6 +118,11 @@ describe('RBAC HTTP isolation (integration)', () => {
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-at-least-32-chars-long!!';
     process.env.COOKIE_SECRET = process.env.COOKIE_SECRET || 'test-cookie-secret-change-me';
 
+    // Este arquivo autentica vários papéis no mesmo minuto; o limite de 5/min do
+    // login é verificado em test/isolation/login-security.test.js.
+    process.env.LOGIN_RATE_LIMIT_MAX = '200';
+    process.env.LOGIN_IDENTITY_MAX = '200';
+
     const { buildApp } = await import('../../src/app.js');
     app = await buildApp({ logger: false });
     await app.ready();

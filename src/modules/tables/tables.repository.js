@@ -60,12 +60,17 @@ export async function createTable(storeId, { number, label = null }) {
   }
 }
 
-export async function getOpenSession(tableId) {
-  const { rows } = await query(
-    `SELECT id, store_id, table_id, opened_at, closed_at, status, cart_version, created_at, updated_at
+const SESSION_COLS = `id, store_id, table_id, opened_at, closed_at, status,
+            cart_version, expired_at, created_at, updated_at`;
+
+/** Sessão aberta da mesa — sempre filtrada por loja. */
+export async function getOpenSession(storeId, tableId, { client = null } = {}) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
+    `SELECT ${SESSION_COLS}
      FROM table_sessions
-     WHERE table_id = $1 AND status = 'open'`,
-    [tableId]
+     WHERE table_id = $1 AND store_id = $2 AND status = 'open'`,
+    [tableId, storeId]
   );
   return rows[0] ?? null;
 }
@@ -77,24 +82,65 @@ function isSessionExpired(session) {
 }
 
 /**
- * Open a session if none is open (or the open one expired); return active session.
- * QR token is permanent; session has TTL (Discussion #41).
+ * A sessão expirada só pode ser encerrada automaticamente se NÃO houver
+ * consumo em aberto. Fechar uma mesa com pedido não pago faria o consumo
+ * desaparecer do caixa; nesse caso a sessão é mantida e sinalizada como
+ * expirada para o operador decidir.
+ */
+export async function sessionHasOpenConsumption(storeId, sessionId) {
+  const { rows } = await query(
+    `SELECT
+       EXISTS (
+         SELECT 1 FROM orders o
+         WHERE o.table_session_id = $1 AND o.store_id = $2
+           AND o.status NOT IN ('CANCELLED', 'DELIVERED')
+       ) AS has_active_orders,
+       EXISTS (
+         SELECT 1 FROM payments p
+         WHERE p.session_id = $1 AND p.store_id = $2 AND p.status = 'PENDING'
+       ) AS has_pending_payments`,
+    [sessionId, storeId]
+  );
+  return Boolean(rows[0]?.has_active_orders || rows[0]?.has_pending_payments);
+}
+
+/**
+ * Abre (ou reaproveita) a sessão aberta da mesa.
+ *
+ * Concorrência: dois scans simultâneos do mesmo QR podem chegar juntos. O
+ * índice único parcial `uq_table_sessions_open_per_table` + ON CONFLICT DO
+ * NOTHING garantem que apenas uma sessão nasça; o perdedor relê a sessão
+ * vencedora em vez de estourar 500.
  */
 export async function openOrGetSession(storeId, tableId) {
-  const existing = await getOpenSession(tableId);
+  const table = await findTableById(storeId, tableId);
+  if (!table) {
+    const err = new Error('STORE_MISMATCH');
+    err.code = 'STORE_MISMATCH';
+    throw err;
+  }
+
+  const existing = await getOpenSession(storeId, tableId);
 
   if (existing) {
-    if (existing.store_id !== storeId) {
-      const err = new Error('STORE_MISMATCH');
-      err.code = 'STORE_MISMATCH';
-      throw err;
-    }
-
     if (!isSessionExpired(existing)) {
-      return existing;
+      return { ...existing, expired: false, created: false };
     }
 
-    // Expire stale session so a leaked QR photo cannot keep an old session forever
+    if (await sessionHasOpenConsumption(storeId, existing.id)) {
+      // Não fecha: existe consumo não pago. O caixa decide.
+      const { rows: marked } = await query(
+        `UPDATE table_sessions
+         SET expired_at = COALESCE(expired_at, now()), updated_at = now()
+         WHERE id = $1 AND store_id = $2 AND status = 'open'
+         RETURNING ${SESSION_COLS}`,
+        [existing.id, storeId]
+      );
+      return { ...(marked[0] ?? existing), expired: true, created: false };
+    }
+
+    // Sem consumo: expira a sessão para que uma foto vazada do QR não
+    // mantenha a mesa ocupada para sempre.
     await query(
       `UPDATE table_sessions
        SET status = 'closed', closed_at = now(), updated_at = now()
@@ -106,16 +152,32 @@ export async function openOrGetSession(storeId, tableId) {
   const { rows } = await query(
     `INSERT INTO table_sessions (store_id, table_id, status)
      VALUES ($1, $2, 'open')
-     RETURNING id, store_id, table_id, opened_at, closed_at, status, cart_version, created_at, updated_at`,
+     ON CONFLICT (table_id) WHERE status = 'open'
+     DO NOTHING
+     RETURNING ${SESSION_COLS}`,
     [storeId, tableId]
   );
+
+  let session = rows[0] ?? null;
+
+  if (!session) {
+    // Corrida: outra requisição abriu a sessão primeiro. Relê a vencedora
+    // (sempre com escopo de loja) — nunca devolve sessão de outra loja.
+    session = await getOpenSession(storeId, tableId);
+    if (!session) {
+      const err = new Error('SESSION_RACE');
+      err.code = 'SESSION_RACE';
+      throw err;
+    }
+    return { ...session, expired: false, created: false, raced: true };
+  }
 
   await query(
     `UPDATE tables SET status = 'occupied', updated_at = now() WHERE id = $1 AND store_id = $2`,
     [tableId, storeId]
   );
 
-  return rows[0];
+  return { ...session, expired: false, created: true };
 }
 
 export async function closeSession(storeId, sessionId) {
@@ -123,7 +185,7 @@ export async function closeSession(storeId, sessionId) {
     `UPDATE table_sessions
      SET status = 'closed', closed_at = now(), updated_at = now()
      WHERE id = $1 AND store_id = $2 AND status = 'open'
-     RETURNING id, store_id, table_id, opened_at, closed_at, status`,
+     RETURNING id, store_id, table_id, opened_at, closed_at, status, cart_version, expired_at`,
     [sessionId, storeId]
   );
   const session = rows[0];

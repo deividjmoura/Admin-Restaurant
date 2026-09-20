@@ -8,6 +8,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { skipWithoutDb, hasDatabase } from '../helpers/env.js';
+import { signHmac } from '../../src/modules/payments/webhook-auth.js';
+
+const WEBHOOK_SECRET = 'p0-webhook-secret';
+
+function signedWebhook(payload) {
+  const raw = JSON.stringify(payload);
+  return { raw, signature: signHmac(raw, WEBHOOK_SECRET) };
+}
 
 describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
   /** @type {import('fastify').FastifyInstance | null} */
@@ -28,6 +36,8 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       process.env.JWT_SECRET || 'test-jwt-secret-at-least-32-chars-long!!';
     process.env.COOKIE_SECRET =
       process.env.COOKIE_SECRET || 'test-cookie-secret-change-me';
+    // Provider habilitado para este arquivo: sem segredo o webhook responde 404.
+    process.env.WEBHOOK_SECRET_MERCADOPAGO = WEBHOOK_SECRET;
 
     const { buildApp } = await import('../../src/app.js');
     app = await buildApp({ logger: false });
@@ -85,11 +95,17 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       markPaid: false,
     };
 
+    // Webhook assinado (HMAC do corpo bruto). Sem assinatura → 401.
+    const { raw, signature } = signedWebhook(payload);
+
     const r1 = await app.inject({
       method: 'POST',
       url: '/api/payments/webhooks/mercadopago',
-      headers: { 'content-type': 'application/json' },
-      payload,
+      headers: {
+        'content-type': 'application/json',
+        'x-signature': signature,
+      },
+      payload: raw,
     });
     assert.equal(r1.statusCode, 200, r1.body);
     const b1 = r1.json();
@@ -99,8 +115,11 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
     const r2 = await app.inject({
       method: 'POST',
       url: '/api/payments/webhooks/mercadopago',
-      headers: { 'content-type': 'application/json' },
-      payload,
+      headers: {
+        'content-type': 'application/json',
+        'x-signature': signature,
+      },
+      payload: raw,
     });
     assert.equal(r2.statusCode, 200, r2.body);
     const b2 = r2.json();

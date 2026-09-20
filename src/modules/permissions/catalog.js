@@ -26,6 +26,7 @@ export const PERMISSIONS = [
   { key: 'payments.read', description: 'Listar/ver pagamentos' },
   { key: 'payments.create', description: 'Criar pagamento' },
   { key: 'payments.confirm', description: 'Confirmar pagamento' },
+  { key: 'payments.refund', description: 'Estornar/cancelar pagamento' },
   { key: 'store.settings.read', description: 'Ver configurações da loja' },
   { key: 'store.settings.write', description: 'Editar configurações da loja' },
   { key: 'permissions.manage', description: 'Gerenciar permissões por papel' },

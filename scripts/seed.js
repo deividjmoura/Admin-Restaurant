@@ -143,14 +143,52 @@ async function ensureDemoDeliveryZones(storeId) {
   return zones;
 }
 
+const FORBIDDEN_SEED_PASSWORDS = new Set([
+  'troque-esta-senha',
+  'troque-por-um-segredo',
+  'password',
+  'changeme',
+]);
+
+/**
+ * Em produção a senha do seed é OBRIGATÓRIA e forte: o seed cria usuários
+ * SUPER_ADMIN/OWNER com acesso total. Sem STAFF_SEED_PASSWORD válida o script
+ * aborta em vez de criar contas com senha conhecida.
+ */
+function resolveSeedPassword() {
+  const isProd = process.env.NODE_ENV === 'production';
+  const password = process.env.STAFF_SEED_PASSWORD;
+  const weak =
+    !password ||
+    password.length < 12 ||
+    FORBIDDEN_SEED_PASSWORDS.has(password.toLowerCase());
+
+  if (isProd && weak) {
+    console.error(
+      'STAFF_SEED_PASSWORD é obrigatória em produção (mínimo 12 caracteres, ' +
+        'não pode ser um valor de exemplo).'
+    );
+    process.exit(1);
+  }
+  if (weak) {
+    console.warn(
+      '[seed] STAFF_SEED_PASSWORD fraca/ausente — use --dev apenas localmente.'
+    );
+    return password || 'troque-esta-senha';
+  }
+  return password;
+}
+
 async function main() {
   console.log('→ Seed starting...');
 
+  // Gate de credencial ANTES de qualquer acesso ao banco: em produção o seed
+  // aborta sem tocar no banco quando STAFF_SEED_PASSWORD é fraca/ausente.
+  const password = resolveSeedPassword();
+  const passwordHash = await hashPassword(password);
+
   const demo = await ensureStore('demo', 'Lanchonete Demo');
   await ensureStore('loja2', 'Burger House');
-
-  const password = process.env.STAFF_SEED_PASSWORD || 'troque-esta-senha';
-  const passwordHash = await hashPassword(password);
 
   const superEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@plataforma.local';
   let superAdmin = await findUserByEmail(superEmail);
@@ -193,9 +231,11 @@ async function main() {
   await ensureDemoTables(demo.id);
   await ensureDemoDeliveryZones(demo.id);
 
-  console.log('\nSeed credentials (change in production):');
-  console.log(`  SUPER_ADMIN  ${superEmail} / ${password}`);
-  console.log(`  OWNER(demo)  ${ownerEmail} / ${password}`);
+  // Nunca imprimir senhas (nem hashes): o log do seed vai para o CI e para
+  // logs de deploy, onde credenciais vazam para qualquer um com acesso de leitura.
+  console.log('\nSeed credentials:');
+  console.log(`  SUPER_ADMIN  ${superEmail}   (senha definida em STAFF_SEED_PASSWORD)`);
+  console.log(`  OWNER(demo)  ${ownerEmail}   (senha definida em STAFF_SEED_PASSWORD)`);
   console.log('  Cozinha: GET /api/kitchen/orders?station=KITCHEN');
   console.log('  Bar:     GET /api/kitchen/orders?station=BAR');
   console.log('Seed done.');

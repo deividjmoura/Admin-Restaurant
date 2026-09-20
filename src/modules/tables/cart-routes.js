@@ -5,12 +5,11 @@ import {
   addCartItem,
   updateCartItem,
   removeCartItem,
-  clearCart,
-  getCartItemsForCheckout,
+  checkoutCart,
   CartConflictError,
   CartError,
 } from './cart.repository.js';
-import { createOrder } from '../orders/orders.repository.js';
+import { OrderError } from '../orders/orders.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
@@ -38,6 +37,23 @@ const checkoutSchema = z.object({
   idempotencyKey: z.string().min(8).max(128).optional().nullable(),
 });
 
+const CODE_STATUS = {
+  SESSION_NOT_FOUND: 404,
+  CART_ITEM_NOT_FOUND: 404,
+  PRODUCT_NOT_FOUND: 404,
+  PRODUCT_UNAVAILABLE: 409,
+  CART_EMPTY: 409,
+  SESSION_CLOSED: 409,
+  IDEMPOTENCY_KEY_REUSED: 409,
+  IDEMPOTENCY_CONFLICT: 409,
+  STATUS_CONFLICT: 409,
+  ADDON_INVALID: 400,
+  INVALID_QUANTITY: 400,
+  VERSION_REQUIRED: 400,
+  ORDER_EMPTY: 400,
+  ORDER_SESSION_REQUIRED: 400,
+};
+
 function mapCartError(err) {
   if (err instanceof CartConflictError) {
     return new AppError(
@@ -47,18 +63,16 @@ function mapCartError(err) {
       { currentVersion: err.currentVersion }
     );
   }
-  if (err instanceof CartError) {
-    const status =
-      err.code === 'SESSION_NOT_FOUND' || err.code === 'CART_ITEM_NOT_FOUND'
-        ? 404
-        : err.code === 'SESSION_CLOSED'
-          ? 409
-          : err.code === 'PRODUCT_UNAVAILABLE' || err.code === 'CART_EMPTY'
-            ? 409
-            : 400;
+  if (err instanceof CartError || err instanceof OrderError) {
+    const status = CODE_STATUS[err.code] ?? 400;
     return new AppError(err.code, err.message, status);
   }
   return null;
+}
+
+function send(reply, err) {
+  const { statusCode, body } = errorResponse(err);
+  return reply.code(statusCode).send(body);
 }
 
 /**
@@ -220,22 +234,21 @@ async function cartRoutes(app) {
 
   /**
    * POST /api/sessions/:sessionId/cart/checkout
-   * Converte carrinho → pedido e esvazia o carrinho.
-   * Idempotência resolvida ANTES de ler o carrinho (permite retry seguro).
+   * Converte carrinho → pedido e esvazia o carrinho — ATÔMICO.
+   *
+   * Duas chamadas concorrentes na mesma sessão/versão: o lock da sessão
+   * (FOR UPDATE) serializa, a versão do carrinho decide quem vence e o perdedor
+   * recebe 409 CART_VERSION_CONFLICT (sem criar pedido).
    */
   app.post('/api/sessions/:sessionId/cart/checkout', async (request, reply) => {
     const parsed = checkoutSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
-      const err = new AppError('VALIDATION_ERROR', 'Payload inválido.', 400);
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
+      return send(reply, new AppError('VALIDATION_ERROR', 'Payload inválido.', 400));
     }
 
     const session = await resolveSessionStore(request, request.params.sessionId);
     if (!session) {
-      const err = new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada.', 404);
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
+      return send(reply, new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada.', 404));
     }
 
     const headerKey = request.headers['idempotency-key'];
@@ -245,72 +258,14 @@ async function cartRoutes(app) {
       null;
 
     try {
-      // Idempotency FIRST — before cart read. Enables safe client retries
-      // after network failure. Also blocks cross-session key reuse.
-      if (idempotencyKey) {
-        const {
-          findOrderByIdempotencyKey,
-          listOrderItems,
-          getOrderStations,
-        } = await import('../orders/orders.repository.js');
-        const existing = await findOrderByIdempotencyKey(
-          session.store_id,
-          idempotencyKey
-        );
-        if (existing) {
-          if (existing.table_session_id !== session.id) {
-            const err = new AppError(
-              'IDEMPOTENCY_KEY_REUSED',
-              'Chave de idempotência já usada em outra sessão.',
-              409
-            );
-            const { statusCode, body } = errorResponse(err);
-            return reply.code(statusCode).send(body);
-          }
-          const orderItems = await listOrderItems(session.store_id, existing.id);
-          const stations = await getOrderStations(session.store_id, existing.id);
-          return reply.code(200).send({
-            replayed: true,
-            order: {
-              id: existing.id,
-              status: existing.status,
-              tableSessionId: existing.table_session_id,
-              createdAt: existing.created_at,
-            },
-            items: orderItems.map((it) => ({
-              id: it.id,
-              productName: it.product_name,
-              quantity: it.quantity,
-              station: it.station,
-              status: it.status,
-            })),
-            stations: stations || [],
-          });
-        }
-      }
-
-      const snapshot = await getCartItemsForCheckout(session.store_id, session.id);
-      if (snapshot.version !== parsed.data.expectedVersion) {
-        throw new CartConflictError(snapshot.version);
-      }
-
-      const result = await createOrder(session.store_id, {
-        tableSessionId: session.id,
-        channel: 'TABLE',
-        notes: parsed.data.notes ?? null,
+      const result = await checkoutCart(session.store_id, session.id, {
+        expectedVersion: parsed.data.expectedVersion,
         idempotencyKey,
-        items: snapshot.items,
+        notes: parsed.data.notes ?? null,
       });
 
-      // Só limpa se não foi replay de idempotência
+      // Efeito colateral só DEPOIS do commit.
       if (!result.replayed) {
-        try {
-          await clearCart(session.store_id, session.id, snapshot.version);
-        } catch (clearErr) {
-          // pedido já criado — não falha o checkout se clear conflitar
-          request.log?.warn({ err: clearErr }, 'cart clear after checkout failed');
-        }
-
         publishStoreOrderEvent(session.store_id, {
           type: 'order.created',
           order: {
@@ -323,8 +278,7 @@ async function cartRoutes(app) {
         });
       }
 
-      const statusCode = result.replayed ? 200 : 201;
-      return reply.code(statusCode).send({
+      return reply.code(result.replayed ? 200 : 201).send({
         replayed: result.replayed,
         order: {
           id: result.order.id,
@@ -332,21 +286,20 @@ async function cartRoutes(app) {
           tableSessionId: result.order.table_session_id,
           createdAt: result.order.created_at,
         },
-        items: result.items.map((it) => ({
+        items: (result.items || []).map((it) => ({
           id: it.id,
           productName: it.product_name,
           quantity: it.quantity,
           station: it.station,
           status: it.status,
+          addonsTotal: Number(it.addons_total) || 0,
         })),
         stations: result.stations || [],
+        cartVersion: result.version,
       });
     } catch (err) {
       const mapped = mapCartError(err);
-      if (mapped) {
-        const { statusCode, body } = errorResponse(mapped);
-        return reply.code(statusCode).send(body);
-      }
+      if (mapped) return send(reply, mapped);
       throw err;
     }
   });

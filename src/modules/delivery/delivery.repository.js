@@ -133,8 +133,13 @@ export async function quoteDelivery(storeId, { zoneId, subtotal }) {
 }
 
 /**
- * Cria pedido DELIVERY + registro de endereço em transação.
+ * Cria pedido DELIVERY + registro de endereço NA MESMA transação.
  * items: mesmo formato de createOrder
+ *
+ * O pedido e o `delivery_orders` são gravados juntos via `afterInsert`:
+ * se o endereço/zona falhar, o pedido também não existe (nada de pedido órfão
+ * sem entrega). Retry com a mesma Idempotency-Key devolve o pedido completo,
+ * incluindo o registro de entrega.
  */
 export async function createDeliveryOrder(
   storeId,
@@ -149,12 +154,103 @@ export async function createDeliveryOrder(
   }
 ) {
   const { createOrder } = await import('../orders/orders.repository.js');
+  const { withTransaction } = await import('../../infrastructure/db.js');
 
   const zone = await findZoneById(storeId, zoneId);
   if (!zone || !zone.isActive) {
     throw new DeliveryError('ZONE_NOT_FOUND', 'Zona de entrega não disponível.');
   }
 
+  if (!address?.street || !address?.city) {
+    throw new DeliveryError('ADDRESS_REQUIRED', 'Endereço incompleto (rua e cidade).');
+  }
+  if (!customerName?.trim()) {
+    throw new DeliveryError('CUSTOMER_REQUIRED', 'Nome do cliente é obrigatório.');
+  }
+
+  // Pré-checagem amigável de subtotal (o pedido valida tudo de novo na tx).
+  const subtotal = await computeDeliverySubtotal(storeId, items);
+  if (subtotal < zone.minOrderAmount) {
+    throw new DeliveryError(
+      'MIN_ORDER_NOT_MET',
+      `Pedido mínimo desta zona é R$ ${Number(zone.minOrderAmount).toFixed(2)}.`
+    );
+  }
+
+  const quote = {
+    subtotal,
+    deliveryFee: zone.fee,
+    total: Math.round((subtotal + Number(zone.fee)) * 100) / 100,
+    etaMinutesMin: zone.etaMinutesMin,
+    etaMinutesMax: zone.etaMinutesMax,
+  };
+
+  return withTransaction(async (client) => {
+    let createdDelivery = null;
+
+    const result = await createOrder(
+      storeId,
+      {
+        tableSessionId: null,
+        channel: 'DELIVERY',
+        notes: notes ?? null,
+        idempotencyKey,
+        items,
+      },
+      {
+        tx: client,
+        afterInsert: async (c, order) => {
+          const { rows } = await c.query(
+            `INSERT INTO delivery_orders
+              (order_id, store_id, zone_id, customer_name, customer_phone,
+               street, number, complement, neighborhood, city, state, postal_code,
+               delivery_fee, eta_minutes_min, eta_minutes_max, notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+             RETURNING *`,
+            [
+              order.id,
+              storeId,
+              zone.id,
+              customerName.trim(),
+              customerPhone,
+              address.street,
+              address.number ?? null,
+              address.complement ?? null,
+              address.neighborhood ?? null,
+              address.city,
+              address.state ?? null,
+              address.postalCode ?? null,
+              zone.fee,
+              zone.etaMinutesMin,
+              zone.etaMinutesMax,
+              notes ?? null,
+            ]
+          );
+          createdDelivery = rows[0];
+        },
+      }
+    );
+
+    if (result.replayed) {
+      const existing = await getDeliveryByOrderId(storeId, result.order.id, {
+        client,
+      });
+      return { ...result, delivery: existing, quote: null };
+    }
+
+    return {
+      ...result,
+      delivery: mapDelivery(createdDelivery),
+      quote,
+    };
+  });
+}
+
+/**
+ * Subtotal de delivery com adicionais e com validação estrita de adicionais
+ * (adicional inválido → erro, nunca desconto silencioso).
+ */
+async function computeDeliverySubtotal(storeId, items = []) {
   const productIds = [...new Set(items.map((i) => i.productId))];
   const { rows: products } = await query(
     `SELECT id, price, is_available, is_active
@@ -173,88 +269,28 @@ export async function createDeliveryOrder(
     if (!prod.is_available) {
       throw new DeliveryError('PRODUCT_UNAVAILABLE', 'Produto indisponível.');
     }
+
     let unit = Number(prod.price);
-    if (item.addonIds?.length) {
+    const addonIds = [...new Set(item.addonIds || [])];
+    if (addonIds.length) {
       const { rows: addons } = await query(
-        `SELECT price FROM product_addons
+        `SELECT id, price FROM product_addons
          WHERE store_id = $1 AND product_id = $2 AND id = ANY($3::uuid[]) AND is_active = TRUE`,
-        [storeId, item.productId, item.addonIds]
+        [storeId, item.productId, addonIds]
       );
-      unit += addons.reduce((s, a) => s + Number(a.price), 0);
+      if (addons.length !== addonIds.length) {
+        throw new DeliveryError('ADDON_INVALID', 'Adicional inválido para este produto.');
+      }
+      unit += addons.reduce((sum, a) => sum + Number(a.price), 0);
     }
     subtotal += unit * item.quantity;
   }
-  subtotal = Math.round(subtotal * 100) / 100;
-
-  if (subtotal < zone.minOrderAmount) {
-    throw new DeliveryError(
-      'MIN_ORDER_NOT_MET',
-      `Pedido mínimo desta zona é R$ ${Number(zone.minOrderAmount).toFixed(2)}.`
-    );
-  }
-
-  if (!address?.street || !address?.city) {
-    throw new DeliveryError('ADDRESS_REQUIRED', 'Endereço incompleto (rua e cidade).');
-  }
-  if (!customerName?.trim()) {
-    throw new DeliveryError('CUSTOMER_REQUIRED', 'Nome do cliente é obrigatório.');
-  }
-
-  const result = await createOrder(storeId, {
-    tableSessionId: null,
-    channel: 'DELIVERY',
-    notes: notes ?? null,
-    idempotencyKey,
-    items,
-  });
-
-  if (result.replayed) {
-    const existing = await getDeliveryByOrderId(storeId, result.order.id);
-    return { ...result, delivery: existing };
-  }
-
-  const { rows } = await query(
-    `INSERT INTO delivery_orders
-      (order_id, store_id, zone_id, customer_name, customer_phone,
-       street, number, complement, neighborhood, city, state, postal_code,
-       delivery_fee, eta_minutes_min, eta_minutes_max, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-     RETURNING *`,
-    [
-      result.order.id,
-      storeId,
-      zone.id,
-      customerName.trim(),
-      customerPhone,
-      address.street,
-      address.number ?? null,
-      address.complement ?? null,
-      address.neighborhood ?? null,
-      address.city,
-      address.state ?? null,
-      address.postalCode ?? null,
-      zone.fee,
-      zone.etaMinutesMin,
-      zone.etaMinutesMax,
-      notes ?? null,
-    ]
-  );
-
-  return {
-    ...result,
-    delivery: mapDelivery(rows[0]),
-    quote: {
-      subtotal,
-      deliveryFee: zone.fee,
-      total: Math.round((subtotal + zone.fee) * 100) / 100,
-      etaMinutesMin: zone.etaMinutesMin,
-      etaMinutesMax: zone.etaMinutesMax,
-    },
-  };
+  return Math.round(subtotal * 100) / 100;
 }
 
-export async function getDeliveryByOrderId(storeId, orderId) {
-  const { rows } = await query(
+export async function getDeliveryByOrderId(storeId, orderId, { client = null } = {}) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
     `SELECT * FROM delivery_orders WHERE order_id = $1 AND store_id = $2`,
     [orderId, storeId]
   );

@@ -25,6 +25,78 @@ import auditRoutes from './modules/audit/audit-routes.js';
 import { AppError, errorResponse } from './shared/errors.js';
 
 /**
+ * Tratamento global de erros.
+ *
+ * PRECISA ser registrado ANTES das rotas: o Fastify resolve o error handler no
+ * contexto em que a rota foi registrada, então um `setErrorHandler` chamado
+ * depois de `app.register(...)` não se aplica a elas (o 500 padrão vazava
+ * stack/erro de banco).
+ */
+function registerErrorHandling(app) {
+  // GOLDEN_RULES: nunca vazar 500 em UUID malformado / erro de cliente.
+  // Erros do próprio Fastify (400/415/429) preservam o status original.
+  app.setErrorHandler((err, request, reply) => {
+    if (err?.code === '22P02') {
+      return reply.code(400).send({
+        error: {
+          code: 'INVALID_ID',
+          message: 'Identificador inválido.',
+        },
+      });
+    }
+
+    if (err instanceof AppError) {
+      const { statusCode, body } = errorResponse(err);
+      return reply.code(statusCode).send(body);
+    }
+
+    if (err?.statusCode && err.statusCode < 500) {
+      const status = err.statusCode;
+      const message =
+        status === 404
+          ? 'Rota não encontrada.'
+          : status === 429
+            ? 'Muitas requisições.'
+            : status === 415
+              ? 'Content-Type não suportado.'
+              : status === 413
+                ? 'Payload muito grande.'
+                : 'Requisição inválida.';
+      // Códigos estáveis para o cliente: nunca expor códigos internos do
+      // runtime (FST_ERR_*) nem detalhes de banco.
+      const codeByStatus = {
+        400: 'BAD_REQUEST',
+        404: 'NOT_FOUND',
+        413: 'PAYLOAD_TOO_LARGE',
+        415: 'UNSUPPORTED_CONTENT_TYPE',
+        429: 'RATE_LIMITED',
+      };
+      const code = codeByStatus[status] || 'BAD_REQUEST';
+      return reply.code(status).send({ error: { code, message } });
+    }
+
+    // 5xx: loga com stack trace no servidor e responde genérico (sem stack).
+    request.log?.error({ err }, 'unhandled error');
+
+    return reply.code(500).send({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Erro interno do servidor.',
+      },
+    });
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    return reply.code(404).send({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Rota não encontrada.',
+      },
+    });
+  });
+}
+
+/**
  * @param {{ logger?: boolean | object }} [opts]
  */
 export async function buildApp(opts = {}) {
@@ -37,34 +109,43 @@ export async function buildApp(opts = {}) {
         : opts.logger ?? {
             level: isProd ? 'info' : 'warn',
           },
+    // Sem trustProxy o rate limit usa o IP do proxy em produção (todos os
+    // clientes viram um só). Configure TRUST_PROXY=1 atrás de um proxy confiável.
+    trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : false,
   });
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
   });
 
-  // CORS: credentials needs explicit Origin or reflection.
-  // When CORS_ORIGIN / FRONTEND_ORIGIN is unset in production, reflect request
-  // Origin so SPA login cookies work. Prefer setting the env in real deploys.
-  const corsOriginEnv = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN;
-  let corsOrigin;
-  if (corsOriginEnv) {
-    corsOrigin = corsOriginEnv.split(',').map((s) => s.trim()).filter(Boolean);
-  } else if (isProd) {
-    if (!globalThis.__corsOriginWarned) {
-      console.warn(
-        '[cors] CORS_ORIGIN / FRONTEND_ORIGIN not set. Reflecting request Origin. Set the env to your frontend URL(s) for production.'
-      );
-      globalThis.__corsOriginWarned = true;
-    }
-    corsOrigin = true;
-  } else {
-    corsOrigin = true;
+  // CORS fail-closed: em produção a lista de origens é obrigatória e NUNCA
+  // refletimos o Origin do request (com credentials:true isso seria um
+  // open redirect de sessão).
+  const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (isProd && origins.length === 0) {
+    throw new Error(
+      'CORS_ORIGIN é obrigatório em produção (lista de origens separada por vírgula).'
+    );
+  }
+
+  if (isProd && !process.env.COOKIE_SECRET) {
+    throw new Error('COOKIE_SECRET é obrigatório em produção.');
   }
 
   await app.register(cors, {
-    origin: corsOrigin,
+    origin: isProd ? origins : true,
     credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'X-Tenant-Slug',
+      'Idempotency-Key',
+      'X-Signature',
+    ],
   });
 
   await app.register(cookie, {
@@ -75,6 +156,9 @@ export async function buildApp(opts = {}) {
     max: 1000,
     timeWindow: '1 minute',
   });
+
+  // Erros antes das rotas: ver comentário em registerErrorHandling().
+  registerErrorHandling(app);
 
   await app.register(tenantPlugin);
   await app.register(authPlugin);
@@ -91,25 +175,6 @@ export async function buildApp(opts = {}) {
   await app.register(permissionsRoutes);
   await app.register(crmRoutes);
   await app.register(auditRoutes);
-
-  // GOLDEN_RULES: never leak 500 on malformed UUID / invalid input syntax
-  app.setErrorHandler((err, request, reply) => {
-    if (err?.code === '22P02') {
-      return reply.code(400).send({
-        error: {
-          code: 'INVALID_ID',
-          message: 'Identificador inválido.',
-        },
-      });
-    }
-    if (err instanceof AppError) {
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
-    }
-    request.log?.error({ err }, 'unhandled error');
-    const { statusCode, body } = errorResponse(err);
-    return reply.code(statusCode).send(body);
-  });
 
   app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
 

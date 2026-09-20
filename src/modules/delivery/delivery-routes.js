@@ -12,6 +12,7 @@ import {
 } from './delivery.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { auditRequest } from '../audit/audit-context.js';
 
 const zoneBodySchema = z.object({
   name: z.string().min(1).max(120),
@@ -122,6 +123,12 @@ async function deliveryRoutes(app) {
       }
       try {
         const zone = await createZone(request.storeId, parsed.data);
+        await auditRequest(request, {
+          action: 'delivery.zone_created',
+          resource: 'delivery_zone',
+          resourceId: zone.id,
+          metadata: { name: zone.name, fee: zone.fee },
+        });
         return reply.code(201).send({ zone });
       } catch (err) {
         const mapped = mapDeliveryError(err);
@@ -152,6 +159,12 @@ async function deliveryRoutes(app) {
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
+        await auditRequest(request, {
+          action: 'delivery.zone_updated',
+          resource: 'delivery_zone',
+          resourceId: zone.id,
+          metadata: { fields: Object.keys(parsed.data) },
+        });
         return { zone };
       } catch (err) {
         const mapped = mapDeliveryError(err);
@@ -216,6 +229,20 @@ async function deliveryRoutes(app) {
         });
 
         if (!result.replayed) {
+          await auditRequest(request, {
+            action: 'delivery.order_created',
+            resource: 'order',
+            resourceId: result.order.id,
+            metadata: {
+              zoneId: result.delivery?.zoneId ?? null,
+              // sem endereço completo: apenas bairro/cidade
+              city: result.delivery?.address?.city ?? null,
+              neighborhood: result.delivery?.address?.neighborhood ?? null,
+              deliveryFee: result.delivery?.deliveryFee ?? null,
+              items: (result.items || []).length,
+            },
+          });
+
           publishStoreOrderEvent(request.storeId, {
             type: 'order.created',
             order: {

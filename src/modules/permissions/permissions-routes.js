@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import { z } from 'zod';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { auditRequest } from '../audit/audit-context.js';
 import { PERMISSIONS } from './catalog.js';
 import {
   listRolePermissions,
@@ -72,6 +73,12 @@ async function permissionsRoutes(app) {
 
       try {
         const keys = await setRolePermissions(request.storeId, role, parsedBody.data.permissions);
+        await auditRequest(request, {
+          action: 'permissions.updated',
+          resource: 'role_permissions',
+          resourceId: role,
+          metadata: { role, permissions: keys },
+        });
         return {
           storeId: request.storeId,
           role,

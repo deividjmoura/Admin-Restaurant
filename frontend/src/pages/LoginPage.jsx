@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { setTenantSlug } from '../api/client';
+import { setTenantSlug, getTenant } from '../api/client';
 import { Button, Card, ErrorBox } from '../components/Layout';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const [email, setEmail] = useState('owner@demo.local');
-  const [password, setPassword] = useState('troque-esta-senha');
-  const [tenant, setTenant] = useState('demo');
+  // Nada de credencial default no bundle: campos começam vazios.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [tenant, setTenant] = useState(getTenant() || '');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
