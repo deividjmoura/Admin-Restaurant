@@ -15,18 +15,46 @@ function getSecret() {
 }
 
 /**
- * Cookie options shared by set/clear.
- * In production (cross-origin SPA + API) we need sameSite=none + secure
- * so the browser accepts and sends the httpOnly session cookie.
+ * Política de SameSite do cookie de sessão.
+ *
+ * Arquitetura recomendada (e default): SPA servida na MESMA origem da API
+ * (proxy /api → backend). Nesse caso `SameSite=Lax` é suficiente e muito mais
+ * seguro, porque 'none' expõe o cookie a requisições cross-site.
+ *
+ * Se por algum motivo o frontend precisa ficar em outro domínio, é obrigatório
+ * declarar `COOKIE_SAMESITE=none` explicitamente — e nesse caso `Secure` passa a
+ * ser obrigatório (o browser rejeita SameSite=None sem Secure).
  */
+function resolveSameSite() {
+  const raw = String(process.env.COOKIE_SAMESITE || '').trim().toLowerCase();
+  if (raw === 'none' || raw === 'lax' || raw === 'strict') return raw;
+  return 'lax';
+}
+
 function cookieOptions(maxAge) {
+  const sameSite = resolveSameSite();
+  const crossSite = sameSite === 'none';
+
+  if (crossSite && !isProd && process.env.COOKIE_ALLOW_INSECURE_NONE === 'true') {
+    // Apenas para desenvolvimento em http://localhost com cookie cross-site.
+    return withMaxAge(
+      { path: '/', httpOnly: true, secure: false, sameSite },
+      maxAge
+    );
+  }
+
+  // Em produção o cookie NUNCA é inseguro.
   const opts = {
     path: '/',
     httpOnly: true,
-    secure: isProd,
-    // 'none' is required for cross-site credentialed requests (frontend on another domain)
-    sameSite: isProd ? 'none' : 'lax',
+    secure: crossSite ? true : isProd,
+    sameSite,
   };
+
+  return withMaxAge(opts, maxAge);
+}
+
+function withMaxAge(opts, maxAge) {
   if (maxAge !== undefined) opts.maxAge = maxAge;
   return opts;
 }

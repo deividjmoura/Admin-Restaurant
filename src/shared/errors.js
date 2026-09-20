@@ -27,8 +27,9 @@ export function errorResponse(err) {
     };
   }
 
-  // Erro inesperado
-  console.error(err);
+  // Erro inesperado: NÃO logamos aqui de novo — o handler do Fastify já
+  // registra com o contexto da requisição (log.error). Duplicar poluía o log
+  // com stack traces de erros já reportados.
   return {
     statusCode: 500,
     body: {
