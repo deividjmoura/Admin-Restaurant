@@ -12,7 +12,8 @@ async function getOpenSessionForStore(storeId, sessionId, client = null) {
   const { rows } = await q(
     `SELECT id, store_id, table_id, status, cart_version, opened_at
      FROM table_sessions
-     WHERE id = $1 AND store_id = $2`,
+     WHERE id = $1 AND store_id = $2
+     ${client ? 'FOR UPDATE' : ''}`,
     [sessionId, storeId]
   );
   const session = rows[0];
@@ -26,11 +27,12 @@ async function getOpenSessionForStore(storeId, sessionId, client = null) {
 /**
  * Lê carrinho completo + versão atual.
  */
-export async function getCart(storeId, sessionId) {
-  const session = await getOpenSessionForStore(storeId, sessionId);
+export async function getCart(storeId, sessionId, { client = null } = {}) {
+  const run = client ? client.query.bind(client) : query;
+  const session = await getOpenSessionForStore(storeId, sessionId, client);
   if (!session) return null;
 
-  const { rows: items } = await query(
+  const { rows: items } = await run(
     `SELECT ci.id, ci.product_id, ci.quantity, ci.notes, ci.created_at, ci.updated_at,
             p.name AS product_name, p.price AS unit_price, p.is_available, p.is_active
      FROM cart_items ci
@@ -50,7 +52,7 @@ export async function getCart(storeId, sessionId) {
   }
 
   const itemIds = items.map((i) => i.id);
-  const { rows: addons } = await query(
+  const { rows: addons } = await run(
     `SELECT cia.cart_item_id, cia.addon_id, pa.name, pa.price
      FROM cart_item_addons cia
      INNER JOIN product_addons pa ON pa.id = cia.addon_id AND pa.store_id = cia.store_id
@@ -273,15 +275,127 @@ export async function clearCart(storeId, sessionId, expectedVersion) {
   }
 
   return withTransaction(async (client) => {
-    const session = await getOpenSessionForStore(storeId, sessionId, client);
-    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    const result = await clearCartInTx(client, storeId, sessionId, expectedVersion);
+    if (!result) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    return result;
+  });
+}
 
-    await client.query(
-      `DELETE FROM cart_items WHERE session_id = $1 AND store_id = $2`,
+/**
+ * Esvazia o carrinho dentro de uma transação JÁ aberta.
+ * @returns {{ version: number }|null}
+ */
+export async function clearCartInTx(client, storeId, sessionId, expectedVersion) {
+  const session = await getOpenSessionForStore(storeId, sessionId, client);
+  if (!session) return null;
+
+  await client.query(
+    `DELETE FROM cart_items WHERE session_id = $1 AND store_id = $2`,
+    [sessionId, storeId]
+  );
+  const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
+  return { version: newVersion };
+}
+
+export { bumpVersion };
+
+/**
+ * Checkout ATÔMICO do carrinho.
+ *
+ * Tudo acontece em uma única transação:
+ *   1. lock da sessão (FOR UPDATE) + validação de status/cart_version;
+ *   2. replay de Idempotency-Key dentro da mesma transação;
+ *   3. leitura do carrinho;
+ *   4. createOrder({ tx }) — sem abrir transação aninhada;
+ *   5. limpeza do carrinho + incremento de cart_version.
+ *
+ * Se qualquer passo falhar (inclusive a limpeza), TUDO volta atrás: nunca
+ * sobra pedido órfão com carrinho intacto nem carrinho limpo sem pedido.
+ */
+export async function checkoutCart(
+  storeId,
+  sessionId,
+  { expectedVersion = null, idempotencyKey = null, notes = null } = {}
+) {
+  const { createOrder, findOrderByIdempotencyKey, listOrderItems } = await import(
+    '../orders/orders.repository.js'
+  );
+
+  return withTransaction(async (client) => {
+    const { rows: sessionRows } = await client.query(
+      `SELECT id, store_id, table_id, status, cart_version, opened_at
+       FROM table_sessions
+       WHERE id = $1 AND store_id = $2
+       FOR UPDATE`,
       [sessionId, storeId]
     );
-    const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
-    return { version: newVersion };
+    const session = sessionRows[0];
+    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+
+    // 1) Idempotência ANTES de qualquer validação de estado: um retry do mesmo
+    //    checkout (rede caiu depois do commit) devolve o MESMO pedido, mesmo que
+    //    o carrinho já tenha sido limpo ou a versão tenha mudado.
+    if (idempotencyKey) {
+      const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey, {
+        client,
+      });
+      if (existing) {
+        if (existing.table_session_id !== session.id) {
+          throw new CartError(
+            'IDEMPOTENCY_KEY_REUSED',
+            'Chave de idempotência já usada em outra sessão.'
+          );
+        }
+        const items = await listOrderItems(storeId, existing.id, { client });
+        return {
+          replayed: true,
+          order: existing,
+          items,
+          stations: [...new Set(items.map((i) => i.station))],
+          version: session.cart_version,
+        };
+      }
+    }
+
+    // 2) Só a partir daqui o estado da sessão/carrinho importa.
+    if (session.status !== 'open') {
+      throw new CartError('SESSION_CLOSED', 'Sessão fechada.');
+    }
+
+    if (
+      expectedVersion !== undefined &&
+      expectedVersion !== null &&
+      Number(session.cart_version) !== Number(expectedVersion)
+    ) {
+      throw new CartConflictError(session.cart_version);
+    }
+
+    const snapshot = await getCartItemsForCheckout(storeId, sessionId, { client });
+
+    const result = await createOrder(
+      storeId,
+      {
+        tableSessionId: session.id,
+        channel: 'TABLE',
+        notes: notes ?? null,
+        idempotencyKey,
+        items: snapshot.items,
+      },
+      { tx: client }
+    );
+
+    if (result.replayed) {
+      return { ...result, version: session.cart_version };
+    }
+
+    const cleared = await clearCartInTx(
+      client,
+      storeId,
+      sessionId,
+      session.cart_version
+    );
+
+    return { ...result, version: cleared?.version ?? session.cart_version };
   });
 }
 
@@ -289,8 +403,8 @@ export async function clearCart(storeId, sessionId, expectedVersion) {
  * Snapshot dos itens do carrinho no formato do createOrder.
  * Throws CartError — never returns null (avoids TypeError in checkout route).
  */
-export async function getCartItemsForCheckout(storeId, sessionId) {
-  const cart = await getCart(storeId, sessionId);
+export async function getCartItemsForCheckout(storeId, sessionId, { client = null } = {}) {
+  const cart = await getCart(storeId, sessionId, { client });
   if (!cart) {
     throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
   }
