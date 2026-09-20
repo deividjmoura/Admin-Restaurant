@@ -143,3 +143,6 @@ npm run web:build
 
 Sem `DATABASE_URL` os testes de integração são marcados como *skipped* — o CI
 exige a contagem mínima com o Postgres disponível.
+
+Verificação dos riscos residuais (script automatizado + passos manuais):
+**[VERIFY-RESIDUAL-RISKS.md](VERIFY-RESIDUAL-RISKS.md)**.

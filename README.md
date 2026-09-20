@@ -82,6 +82,8 @@ Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa)
 Hardening de segurança (webhooks assinados, CORS fail-closed, totais com
 adicionais, atomicidade de checkout/delivery, sessões de QR e auditoria):
 **[docs/SECURITY.md](docs/SECURITY.md)**.
+Verificação dos riscos residuais (script + playbook manual):
+**[docs/VERIFY-RESIDUAL-RISKS.md](docs/VERIFY-RESIDUAL-RISKS.md)**.
 
 ---
 
