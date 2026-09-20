@@ -1,4 +1,5 @@
 import { query, withTransaction } from '../../infrastructure/db.js';
+import { paymentsTotal } from '../../infrastructure/metrics.js';
 import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
 import { findOrderById } from '../orders/orders.repository.js';
@@ -314,6 +315,11 @@ export async function createPayment(
         JSON.stringify(metadata || {}),
       ]
     );
+    paymentsTotal.inc({
+      store_id: storeId,
+      method,
+      outcome: 'created',
+    });
     return { payment: mapPayment(rows[0]), replayed: false };
   } catch (err) {
     if (err.code === '23505' && idempotencyKey) {
@@ -356,6 +362,11 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
        RETURNING *`,
       [paymentId, storeId, JSON.stringify(metadata)]
     );
+    paymentsTotal.inc({
+      store_id: storeId,
+      method: row.method,
+      outcome: 'confirmed',
+    });
     return { payment: mapPayment(updated[0]), alreadyPaid: false };
   });
 }
@@ -397,6 +408,11 @@ export async function refundPayment(storeId, paymentId, { reason = null, actorUs
         }),
       ]
     );
+    paymentsTotal.inc({
+      store_id: storeId,
+      method: row.method,
+      outcome: 'refunded',
+    });
     return { payment: mapPayment(updated[0]), alreadyRefunded: false };
   });
 }

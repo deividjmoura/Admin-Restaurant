@@ -8,39 +8,19 @@
  *  - sempre com contexto: tenant (storeId), ator, ip, user-agent.
  */
 import { audit as writeAuditBestEffort } from './audit.repository.js';
-
-/** Chaves nunca persistidas em metadata de auditoria. */
-const SENSITIVE_KEY_RE =
-  /(pass(word)?|senha|token|secret|segredo|authorization|auth|card|cartao|cartão|cvv|cvc|pan|iban|pix|chave|payload|cookie|signature|assinatura|hash)/i;
-
-/** Profundidade máxima para não gravar estruturas gigantes. */
-const MAX_DEPTH = 5;
-const MAX_STRING = 500;
+import {
+  SENSITIVE_KEY_RE,
+  redactSecrets,
+} from '../../shared/redact.js';
 
 /**
  * Remove campos sensíveis e trunca strings antes de gravar.
+ * A regra vive em `shared/redact.js` — é a MESMA usada pelos logs estruturados
+ * (issue #106), então auditoria e log não divergem sobre o que é segredo.
  * Exportado para teste de regressão (nada de segredo em audit_logs).
  */
 export function sanitizeAuditMetadata(value, depth = 0) {
-  if (depth > MAX_DEPTH) return '[deep]';
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') {
-    return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}…` : value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (Array.isArray(value)) {
-    return value.map((v) => sanitizeAuditMetadata(v, depth + 1));
-  }
-  if (typeof value === 'object') {
-    const out = {};
-    for (const [key, val] of Object.entries(value)) {
-      out[key] = SENSITIVE_KEY_RE.test(key)
-        ? '[redacted]'
-        : sanitizeAuditMetadata(val, depth + 1);
-    }
-    return out;
-  }
-  return String(value);
+  return redactSecrets(value, depth);
 }
 
 /**

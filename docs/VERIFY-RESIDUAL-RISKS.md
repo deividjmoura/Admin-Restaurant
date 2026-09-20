@@ -25,7 +25,7 @@ NODE_ENV=test DATABASE_URL="$DATABASE_URL" node scripts/verify-hardening.mjs
 # esperado: 7/7 checagens OK  (exit code 0)
 ```
 
-Checagens cobertas: migrações 0019–0021 + guarda `MIN_TESTS=141`,
+Checagens cobertas: migrações 0019–0021 + guarda `MIN_TESTS=171`,
 `webhook-referencia-externa`, `referencia-global-unica`, `pix-chave-plataforma`,
 `auditoria-best-effort`, `rate-limit-em-memoria`, `paineis-403`.
 
@@ -184,12 +184,12 @@ Verificação manual no navegador (5 passos):
 ```bash
 git log --oneline -10                    # deve conter os 8 commits do PR
 npm run db:migrate                       # esperado: "Nenhuma migration pendente"
-npm run test:suite                       # esperado: 141/141 + check-tap mínimo 141
+npm run test:suite                       # esperado: 171/171 + check-tap mínimo 171
 npm run test:guard -- .tap/suite.tap     # esperado: OK
 npm run web:build                        # esperado: build sem erro
 gh pr checks 151                         # Backend/Frontend/Vercel = pass
 ```
 
-Critério de aceite: **141 testes, 0 falhas, 0 skipped** e guard verde com mínimo
-141. Qualquer número menor indica que a suíte sumiu/não rodou — investigar antes
+Critério de aceite: **171 testes, 0 falhas, 0 skipped** e guard verde com mínimo
+171. Qualquer número menor indica que a suíte sumiu/não rodou — investigar antes
 de considerar o merge bom.

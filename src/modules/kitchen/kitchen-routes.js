@@ -111,6 +111,9 @@ async function kitchenRoutes(app) {
         storeId
       );
 
+      // Latência de stream não pertence ao histograma HTTP (conexão fica aberta
+      // por horas): o onResponse observa como `stream: true`.
+      request.isStream = true;
       reply.hijack();
 
       // Preserva os headers já calculados (CORS, Helmet, …) e só então
@@ -146,7 +149,7 @@ async function kitchenRoutes(app) {
           return;
         }
         send(payload.type || 'order', { ...payload, stationFilter: station });
-      });
+      }, { station });
 
       const heartbeat = setInterval(() => {
         try {
@@ -156,13 +159,24 @@ async function kitchenRoutes(app) {
         }
       }, 25000);
 
+      let closed = false;
       const cleanup = () => {
+        if (closed) return;
+        closed = true;
         clearInterval(heartbeat);
         unsubscribe();
       };
 
       request.raw.on('close', cleanup);
-      request.raw.on('error', cleanup);
+      request.raw.on('error', (err) => {
+        // Stream é conexão longa: o erro de socket precisa aparecer no log com
+        // o contexto da loja (issue #106) — sem isso a cozinha "cai" em silêncio.
+        request.log?.warn(
+          { err, event: 'sse.stream_error', storeId, station },
+          'sse stream error'
+        );
+        cleanup();
+      });
     }
   );
 }

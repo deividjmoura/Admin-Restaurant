@@ -22,6 +22,11 @@ import storeRoutes from './modules/tenancy/store-routes.js';
 import permissionsRoutes from './modules/permissions/permissions-routes.js';
 import crmRoutes from './modules/crm/crm-routes.js';
 import auditRoutes from './modules/audit/audit-routes.js';
+import opsRoutes from './modules/ops/ops-routes.js';
+import requestContext, { sanitizeRequestId } from './infrastructure/request-context.js';
+import { buildLoggerOptions, SERVICE_NAME, SERVICE_VERSION } from './infrastructure/logger.js';
+import { startEventLoopSampler, stopEventLoopSampler, observeAppError } from './infrastructure/metrics.js';
+import { randomUUID } from 'node:crypto';
 import { AppError, errorResponse } from './shared/errors.js';
 
 /**
@@ -47,6 +52,12 @@ function registerErrorHandling(app) {
 
     if (err instanceof AppError) {
       const { statusCode, body } = errorResponse(err);
+      observeAppError({
+        code: err.code,
+        route: request.routeOptions?.url || request.url?.split('?')[0] || 'unmatched',
+        status: statusCode,
+        storeId: request.storeId || null,
+      });
       return reply.code(statusCode).send(body);
     }
 
@@ -76,7 +87,16 @@ function registerErrorHandling(app) {
     }
 
     // 5xx: loga com stack trace no servidor e responde genérico (sem stack).
-    request.log?.error({ err }, 'unhandled error');
+    observeAppError({
+      code: 'INTERNAL_ERROR',
+      route: request.routeOptions?.url || request.url?.split('?')[0] || 'unmatched',
+      status: 500,
+      storeId: request.storeId || null,
+    });
+    request.log?.error(
+      { err, event: 'http.error', status: 500 },
+      'unhandled error'
+    );
 
     return reply.code(500).send({
       error: {
@@ -97,18 +117,79 @@ function registerErrorHandling(app) {
 }
 
 /**
- * @param {{ logger?: boolean | object }} [opts]
+ * Resolve a opção de logger do Fastify preservando o padrão estruturado
+ * (issue #106): `{ level }` simples ganha formatters/redact/base; opções pino
+ * completas (com `formatters`) ou uma instância (`loggerInstance`) passam direto.
+ *
+ * @param {{ logger?: boolean | object, loggerInstance?: object }} opts
+ */
+export function resolveLoggerConfig(opts = {}) {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (opts.logger === false) return { logger: false };
+
+  if (opts.loggerInstance) {
+    // Instância pronta (ex.: logger em memória nos testes de observabilidade).
+    return { loggerInstance: opts.loggerInstance };
+  }
+
+  if (opts.logger && typeof opts.logger === 'object') {
+    const alreadyConfigured =
+      opts.logger.formatters || opts.logger.redact || opts.logger.base;
+    return {
+      logger: alreadyConfigured
+        ? opts.logger
+        : buildLoggerOptions({
+            level: opts.logger.level || (isProd ? 'info' : 'debug'),
+          }),
+    };
+  }
+
+  return { logger: buildLoggerOptions({ level: isProd ? 'info' : 'debug' }) };
+}
+
+/**
+ * O access log é nosso (onResponse em request-context.js, com route pattern,
+ * statusClass, storeId, userId e durationMs) — o log por requisição do Fastify
+ * fica desligado para não duplicar linha.
+ *
+ * `logController` é a API do Fastify ≥ 5.12; `disableRequestLogging` é o
+ * fallback para versões anteriores (o pacote declara `^5.2.1`).
+ */
+function resolveRequestLoggingOption() {
+  // `requestIdLogLabel: 'requestId'`: o binding automático do Fastify já sai com
+  // o nome que o playbook de observabilidade documenta (nada de `reqId` + `requestId`).
+  const LogController = Fastify.LogController;
+  if (typeof LogController === 'function') {
+    return {
+      logController: new LogController({
+        disableRequestLogging: true,
+        requestIdLogLabel: 'requestId',
+      }),
+    };
+  }
+  return { disableRequestLogging: true, requestIdLogLabel: 'requestId' };
+}
+
+/**
+ * Id de correlação da requisição: `x-request-id` do proxy quando válido, UUID
+ * caso contrário. Validar aqui (e não só no hook) impede que um cabeçalho
+ * forjado entre em log — log injection é vetor real em observabilidade.
+ */
+function requestIdGenerator(rawRequest) {
+  return sanitizeRequestId(rawRequest?.headers?.['x-request-id']) || randomUUID();
+}
+
+/**
+ * @param {{ logger?: boolean | object, loggerInstance?: object }} [opts]
  */
 export async function buildApp(opts = {}) {
   const isProd = process.env.NODE_ENV === 'production';
 
   const app = Fastify({
-    logger:
-      opts.logger === false
-        ? false
-        : opts.logger ?? {
-            level: isProd ? 'info' : 'warn',
-          },
+    ...resolveLoggerConfig(opts),
+    ...resolveRequestLoggingOption(),
+    genReqId: requestIdGenerator,
     // Sem trustProxy o rate limit usa o IP do proxy em produção (todos os
     // clientes viram um só). Configure TRUST_PROXY=1 atrás de um proxy confiável.
     trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : false,
@@ -160,6 +241,7 @@ export async function buildApp(opts = {}) {
   // Erros antes das rotas: ver comentário em registerErrorHandling().
   registerErrorHandling(app);
 
+  await app.register(requestContext);
   await app.register(tenantPlugin);
   await app.register(authPlugin);
   await app.register(menuRoutes);
@@ -175,29 +257,17 @@ export async function buildApp(opts = {}) {
   await app.register(permissionsRoutes);
   await app.register(crmRoutes);
   await app.register(auditRoutes);
+  // /health, /ready e /metrics (issue #106) vivem num módulo só.
+  await app.register(opsRoutes);
 
-  app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
-
-  app.get('/ready', async (_request, reply) => {
-    try {
-      const { pool } = await import('./infrastructure/db.js');
-      const r = await pool.query('SELECT 1 AS ok');
-      if (!r.rows[0]) {
-        return reply.code(503).send({ status: 'not_ready', db: false });
-      }
-      return { status: 'ready', db: true, ts: new Date().toISOString() };
-    } catch (err) {
-      return reply.code(503).send({
-        status: 'not_ready',
-        db: false,
-        error: process.env.NODE_ENV === 'production' ? 'db_unavailable' : String(err.message),
-      });
-    }
+  startEventLoopSampler();
+  app.addHook('onClose', async () => {
+    stopEventLoopSampler();
   });
 
   app.get('/', async (request) => ({
-    name: 'Admin-Restaurant',
-    version: '0.1.0',
+    name: SERVICE_NAME,
+    version: SERVICE_VERSION,
     message: 'SaaS multi-tenant para lanchonetes — em construção',
     tenant: request.store
       ? { id: request.store.id, slug: request.store.slug, name: request.store.name }

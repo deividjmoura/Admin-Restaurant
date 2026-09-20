@@ -117,7 +117,7 @@ npm run test:suite              # migrations + suíte completa + guarda de conta
 >
 > `npm run test:suite` cuida disso por você: aborta com exit 2 sem `DATABASE_URL`, aplica as
 > migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
-> ignorado ou menos testes que `MIN_TESTS` (baseline **141**). Use-o em vez de `npm test`.
+> ignorado ou menos testes que `MIN_TESTS` (baseline **171**). Use-o em vez de `npm test`.
 
 Baseline na `main` (`cd435de` + esta): **38 testes · 10 suítes · 0 fail · 0 skipped** (~53 s).
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
@@ -179,6 +179,9 @@ confiável, isolada, auditável e extensível.
 | `npm test` sem `DATABASE_URL` no shell | verde falso com `skipped 13` → use `npm run test:suite` (recusa) |
 | `npm run db:seed` | imprime `[db] …` entre os `token=` — é log, não erro |
 | Comentários de rota em `payments-routes.js` | o confirm está documentado como `PATCH`; a rota é `POST` |
+| `/metrics` | endpoint **da plataforma** (rótulos agregam `store_id` de todas as lojas): exige `METRICS_TOKEN` (Bearer) ou super admin; sem os dois responde `404`. Nunca expor no painel do lojista |
+| `/ready` com 503 | check crítico falhou (`database` ou `migrations` — a última migration de `migrations/` precisa estar em `schema_migrations`). Rode `npm run db:migrate` |
+| Log em desenvolvimento | JSON estruturado (uma linha por evento). `LOG_LEVEL`, `LOG_ACCESS`, `LOG_DB_QUERIES` controlam o volume; o runner de testes já silencia o log de query |
 
 ---
 
@@ -189,7 +192,9 @@ confiável, isolada, auditável e extensível.
 - [ ] `npm run test:suite`: `fail 0` **e** `skipped 0` (e o check **CI** verde no PR)
 - [ ] Autorização e isolamento tenant/store revisados
 - [ ] Migration (se houver) reversível e documentada
-- [ ] Logs e erros relevantes observáveis
+- [ ] Logs e erros relevantes observáveis (JSON com `requestId`/`storeId`/`userId`;
+      métrica nova registrada em `src/infrastructure/metrics.js` quando fizer sentido —
+      ver [`OBSERVABILITY.md`](./OBSERVABILITY.md))
 - [ ] API documentada quando houve mudança de contrato
 - [ ] Frontend com estados de loading, erro, vazio e sucesso (quando aplicável)
 - [ ] Idempotência/concorrência avaliadas

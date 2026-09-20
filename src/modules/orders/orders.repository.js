@@ -1,5 +1,9 @@
 import { query, withTransaction } from '../../infrastructure/db.js';
 import {
+  ordersCreatedTotal,
+  orderTransitionsTotal,
+} from '../../infrastructure/metrics.js';
+import {
   canTransition,
   canTransitionItem,
   deriveOrderStatus,
@@ -438,6 +442,14 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
     await afterInsert(client, order, createdItems);
   }
 
+  // Métrica de negócio (issue #106): pedidos/s por loja e canal. Contada no fim
+  // da transação — rollback depois daqui só acontece se o COMMIT falhar.
+  ordersCreatedTotal.inc({
+    store_id: storeId,
+    channel: order.channel || 'TABLE',
+    outcome: 'created',
+  });
+
   return {
     order,
     items: createdItems,
@@ -466,6 +478,12 @@ async function replayResult(client, storeId, existing) {
      WHERE store_id = $1 AND order_id = $2`,
     [storeId, existing.id]
   );
+  ordersCreatedTotal.inc({
+    store_id: storeId,
+    channel: existing.channel || 'TABLE',
+    outcome: 'replayed',
+  });
+
   return {
     order: existing,
     items: orderItems,
@@ -548,6 +566,11 @@ export async function transitionOrderStatus(storeId, orderId, nextStatus) {
     if (!current) return null;
 
     if (!canTransition(current.status, next)) {
+      orderTransitionsTotal.inc({
+        from: current.status,
+        to: next,
+        outcome: 'rejected',
+      });
       throw new OrderError(
         'INVALID_STATUS_TRANSITION',
         `Transição inválida: ${current.status} → ${next}.`,
@@ -571,12 +594,19 @@ export async function transitionOrderStatus(storeId, orderId, nextStatus) {
 
     if (!rows[0]) {
       // Outra requisição mudou o status entre a leitura e o UPDATE.
+      orderTransitionsTotal.inc({
+        from: current.status,
+        to: next,
+        outcome: 'conflict',
+      });
       throw new OrderError(
         'STATUS_CONFLICT',
         'O pedido foi alterado por outra operação. Recarregue e tente novamente.',
         { expected: current.status, requested: next }
       );
     }
+
+    orderTransitionsTotal.inc({ from: current.status, to: next, outcome: 'applied' });
 
     if (next === 'CANCELLED') {
       await cancelActiveItems(client, storeId, orderId);

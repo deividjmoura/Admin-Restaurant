@@ -122,12 +122,31 @@ Ordem em `src/modules/tenancy/resolve-tenant.js`:
 | 14 | Isolamento | seção 5 | `404` / `404` / `400` / `401` |
 | 15 | Testes | `npm run test:suite` com `DATABASE_URL` | `pass 38 · fail 0 · skipped 0` |
 
-### 3.1 Health
+### 3.1 Health / ready / métricas
 
 ```bash
+curl -s $API/health
+# {"status":"ok","service":"admin-restaurant","version":"0.1.0","uptimeSeconds":12,…}
+
 curl -s $API/ready
-# {"status":"ready","db":true,"ts":"2026-09-19T18:41:05.434Z"}
+# {"status":"ready","db":true,"degraded":false,"durationMs":14,"checks":[
+#   {"name":"database","critical":true,"ok":true,…},
+#   {"name":"migrations","critical":true,"ok":true,…},     ← schema em dia?
+#   {"name":"db_pool","critical":false,"ok":true,…}]}
+# 503 se algum check CRÍTICO falhar (banco fora ou migration pendente)
+
+curl -s $API/ready/checks     # quais dependências estão plugadas
+
+# Métricas (endpoint da plataforma — exige METRICS_TOKEN ou super admin):
+curl -s -H "authorization: Bearer $METRICS_TOKEN" $API/metrics | head -20
+# sem token → 401 (token configurado) ou 404 (sem token e sem super admin)
+
+# Correlação de log: o id volta no header e aparece em todas as linhas do pedido
+curl -s -D- -o /dev/null -H 'x-request-id: smoke-001' $API/api/menu | grep -i x-request-id
 ```
+
+Detalhe dos campos de log, métricas expostas e alertas sugeridos:
+[`OBSERVABILITY.md`](./OBSERVABILITY.md).
 
 ### 3.2 Login staff (cookie)
 
@@ -329,7 +348,7 @@ por isso `# tests 38` e não 10.
 
 > O CI (`.github/workflows/ci.yml`) roda esta mesma verificação em todo PR contra `main`:
 > Postgres 18 de serviço → `npm run db:seed` → `npm run test:suite`, que só aceita
-> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (141).
+> `fail 0` **e** `skipped 0` **e** `tests ≥ MIN_TESTS` (171).
 
 ---
 

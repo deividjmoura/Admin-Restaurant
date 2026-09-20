@@ -14,6 +14,7 @@ import {
   readSessionCookie,
 } from './session.js';
 import { auditSafe } from '../audit/index.js';
+import { bindRequestLog } from '../../infrastructure/request-context.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 import { createHash } from 'node:crypto';
 
@@ -92,6 +93,11 @@ async function authPlugin(app) {
           name: user.name,
           isSuperAdmin: user.is_super_admin,
         };
+        // Log estruturado com o ator (e-mail NUNCA: é PII — o logger redige).
+        bindRequestLog(request, {
+          userId: user.id,
+          isSuperAdmin: user.is_super_admin || undefined,
+        });
       }
     } catch {
       request.user = null;
@@ -134,6 +140,7 @@ async function authPlugin(app) {
     }
 
     request.storeRole = membership.role;
+    bindRequestLog(request, { role: membership.role });
   });
 
   /**
@@ -160,6 +167,7 @@ async function authPlugin(app) {
       // SUPER_ADMIN não bypassa isolamento (precisa tenant) mas tem todas as permissões
       if (request.user.isSuperAdmin) {
         request.storeRole = 'OWNER';
+        bindRequestLog(request, { role: 'SUPER_ADMIN' });
         return;
       }
 

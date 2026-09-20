@@ -1,8 +1,10 @@
 import fp from 'fastify-plugin';
 import { resolveStoreFromRequest, resolveTenantFromQuery } from './resolve-tenant.js';
+import { bindRequestLog } from '../../infrastructure/request-context.js';
 import { errorResponse, AppError } from '../../shared/errors.js';
 
-const SKIP_PREFIXES = ['/health', '/ready'];
+// Rotas de plataforma: não têm tenant (probes e métricas — issue #106).
+const SKIP_PREFIXES = ['/health', '/ready', '/metrics'];
 
 function shouldSkipTenant(url) {
   const path = url.split('?')[0];
@@ -12,9 +14,19 @@ function shouldSkipTenant(url) {
 /**
  * Plugin Fastify: resolve o tenant e anexa em request.store / request.storeId.
  */
+/** De onde veio o tenant: host/custom_domain/header — nunca do body. */
+function resolveTenantSource(request, store) {
+  const headerSlug = request.headers?.['x-tenant-slug'];
+  if (typeof headerSlug === 'string' && headerSlug.trim() === store.slug) return 'header';
+  const querySlug = request.query?.tenant;
+  if (typeof querySlug === 'string' && querySlug.trim() === store.slug) return 'query';
+  return 'host';
+}
+
 async function tenantPlugin(app) {
   app.decorateRequest('store', null);
   app.decorateRequest('storeId', null);
+  app.decorateRequest('tenantSource', null);
 
   app.addHook('onRequest', async (request, reply) => {
     if (shouldSkipTenant(request.url)) {
@@ -26,6 +38,12 @@ async function tenantPlugin(app) {
       if (store) {
         request.store = store;
         request.storeId = store.id;
+        request.tenantSource = resolveTenantSource(request, store);
+        bindRequestLog(request, {
+          storeId: store.id,
+          storeSlug: store.slug,
+          tenantSource: request.tenantSource,
+        });
       }
     } catch (err) {
       if (err instanceof AppError) {
@@ -48,6 +66,12 @@ async function tenantPlugin(app) {
         if (store) {
           request.store = store;
           request.storeId = store.id;
+          request.tenantSource = 'query';
+          bindRequestLog(request, {
+            storeId: store.id,
+            storeSlug: store.slug,
+            tenantSource: 'query',
+          });
         }
       } catch (err) {
         if (err instanceof AppError) {
