@@ -75,9 +75,11 @@ export async function makeUserWithRole(
     passwordHash: await hashPassword(password),
     name: `User ${role}`,
     isSuperAdmin,
+    isPlatformOwner: isSuperAdmin,
   });
   if (storeId) await addStoreUser({ storeId, userId: user.id, role });
-  const cookie = `ar_session=${await signSessionToken(user, { type: 'store', storeId, role })}`;
+  const sessionType = storeId ? 'store' : 'platform';
+  const cookie = `ar_session=${await signSessionToken(user, { type: sessionType, storeId, role })}`;
   return { user, cookie, password };
 }
 

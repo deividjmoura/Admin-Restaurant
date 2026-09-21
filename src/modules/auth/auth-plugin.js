@@ -100,18 +100,20 @@ async function authPlugin(app) {
       const user = await findUserById(userId);
       if (user && user.is_active) {
         request.session = session;
+        const isPlatformOwner = Boolean(user.is_platform_owner || user.is_super_admin);
         request.user = {
           id: user.id,
           email: user.email,
           name: user.name,
-          isPlatformOwner: user.is_platform_owner,
+          isPlatformOwner,
+          isSuperAdmin: Boolean(user.is_super_admin || user.is_platform_owner),
           type: session.type,
           role: session.role,
         };
         bindRequestLog(request, {
           userId: user.id,
           role: session.role,
-          isPlatformOwner: user.is_platform_owner || undefined,
+          isPlatformOwner: isPlatformOwner || undefined,
         });
       }
     } catch {
@@ -288,7 +290,7 @@ async function authPlugin(app) {
             ? await getStoreRole(user.id, request.storeId)
             : null;
         if (
-          (type === 'platform' && !user.is_platform_owner) ||
+          (type === 'platform' && !user.is_platform_owner && !user.is_super_admin) ||
           (type === 'store' && !membership?.is_active)
         ) {
           await auditLoginFailure(request, {

@@ -114,7 +114,7 @@ const reportQuery = z.object({
 
 /** Gaveta é do operador: STAFF só a própria; OWNER/MANAGER qualquer da loja. */
 function canOperateSession(request, session) {
-  if (request.user?.isSuperAdmin) return true;
+  if (request.user?.isSuperAdmin || request.user?.isPlatformOwner) return true;
   if (session.operatorId === request.user?.id) return true;
   return ['OWNER', 'MANAGER'].includes(request.storeRole);
 }
@@ -154,7 +154,7 @@ async function cashRoutes(app) {
       if (invalid) return invalid;
 
       const operatorId = parsed.data.operatorId || request.user.id;
-      if (operatorId !== request.user.id && !['OWNER', 'MANAGER'].includes(request.storeRole) && !request.user.isSuperAdmin) {
+      if (operatorId !== request.user.id && !['OWNER', 'MANAGER'].includes(request.storeRole) && !(request.user.isSuperAdmin || request.user.isPlatformOwner)) {
         return sendError(
           reply,
           new AppError(
@@ -219,7 +219,7 @@ async function cashRoutes(app) {
     { preHandler: [app.requireTenant, app.requirePermission('cashier.cash.read')] },
     async (request, reply) => {
       const isManager =
-        request.user?.isSuperAdmin || ['OWNER', 'MANAGER'].includes(request.storeRole);
+        request.user?.isSuperAdmin || request.user?.isPlatformOwner || ['OWNER', 'MANAGER'].includes(request.storeRole);
       const operatorId = isManager
         ? request.query?.operatorId || null
         : request.user.id;
@@ -247,7 +247,7 @@ async function cashRoutes(app) {
     { preHandler: [app.requireTenant, app.requirePermission('cashier.cash.read')] },
     async (request, reply) => {
       const isManager =
-        request.user?.isSuperAdmin || ['OWNER', 'MANAGER'].includes(request.storeRole);
+        request.user?.isSuperAdmin || request.user?.isPlatformOwner || ['OWNER', 'MANAGER'].includes(request.storeRole);
       const operatorId =
         isManager && request.query?.operatorId
           ? String(request.query.operatorId)

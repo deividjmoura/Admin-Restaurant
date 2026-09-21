@@ -109,8 +109,8 @@ async function opsRoutes(app) {
           request.log?.warn({ event: 'metrics.unauthorized' }, 'metrics access denied');
           return reply.code(statusCode).send(body);
         }
-      } else if (!request.user?.isSuperAdmin) {
-        // Sem token de infra: só super admin. Para qualquer outro, 404 — não
+      } else if (!request.user?.isSuperAdmin && !request.user?.isPlatformOwner) {
+        // Sem token de infra: só super admin / platform owner. Para qualquer outro, 404 — não
         // confirmamos a existência do endpoint.
         return reply
           .code(404)

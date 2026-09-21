@@ -22,11 +22,13 @@ export async function findUserById(id) {
 }
 
 export async function createUser({ email, passwordHash, name, isSuperAdmin = false, isPlatformOwner = false }) {
+  const superAdmin = Boolean(isSuperAdmin || isPlatformOwner);
+  const platformOwner = Boolean(isPlatformOwner || isSuperAdmin);
   const { rows } = await query(
     `INSERT INTO users (email, password_hash, name, is_super_admin, is_platform_owner)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, email, name, is_super_admin, is_platform_owner, is_active, created_at, updated_at`,
-    [email, passwordHash, name, isSuperAdmin, isPlatformOwner]
+    [email, passwordHash, name, superAdmin, platformOwner]
   );
   return rows[0];
 }
