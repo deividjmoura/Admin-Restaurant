@@ -2,12 +2,20 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 const nav = [
   { to: '/admin', label: 'Dashboard' },
   { to: '/admin/menu', label: 'Cardápio' },
   { to: '/admin/tables', label: 'Mesas' },
+  { to: '/cashier', label: 'Caixa' },
 ];
 
 export default function MenuAdminPage() {
@@ -15,6 +23,7 @@ export default function MenuAdminPage() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('10');
   const [categoryId, setCategoryId] = useState('');
@@ -27,11 +36,15 @@ export default function MenuAdminPage() {
     setProducts(p.products || []);
     setCategories(c.categories || []);
     if (!categoryId && c.categories?.[0]) setCategoryId(c.categories[0].id);
+    setLoaded(true);
   }
 
   useEffect(() => {
     if (!user) return;
-    load().catch(setError);
+    load().catch((err) => {
+      setError(err);
+      setLoaded(true);
+    });
   }, [user]);
 
   if (loading) return <Spinner />;
@@ -104,6 +117,17 @@ export default function MenuAdminPage() {
           <Button type="submit">Adicionar</Button>
         </form>
       </Card>
+
+      {!loaded && <Spinner />}
+
+      {loaded && products.length === 0 && (
+        <EmptyState
+          title="Nenhum produto"
+          description="Crie categorias e produtos para o cardápio da loja."
+          icon="📋"
+        />
+      )}
+
       <div className="space-y-2">
         {products.map((p) => (
           <Card key={p.id} className="flex justify-between items-center gap-3">
