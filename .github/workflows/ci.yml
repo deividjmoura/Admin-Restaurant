@@ -91,7 +91,7 @@ jobs:
           git checkout -B $BRANCH
           mkdir -p .tap
           cp .tap/suite.tap .tap/failure-${{ github.run_id }}.tap || echo "no tap to copy"
-          git add .tap/failure-${{ github.run_id }}.tap || true
+          git add -f .tap/failure-${{ github.run_id }}.tap || true
           git commit -m "ci: failure TAP ${{ github.run_id }} ${{ github.sha }}" || echo "no commit"
           git push origin $BRANCH --force || echo "push failed"
 
