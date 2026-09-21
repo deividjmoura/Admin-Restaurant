@@ -4,7 +4,7 @@
  */
 
 const baseDomain = () => (process.env.BASE_DOMAIN || 'localhost').trim().toLowerCase();
-export const RESERVED_SLUGS = ['www', 'app', 'platform'];
+export const RESERVED_SLUGS = ['www', 'app', 'platform', 'api', 'admin', 'static', 'cdn', 'mail'];
 
 export function isApexHost(host) {
   const h = normalizeHost(host);

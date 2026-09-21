@@ -151,7 +151,10 @@ function requestIdGenerator(rawRequest) {
  * @param {{ logger?: boolean | object, loggerInstance?: object }} [opts]
  */
 export async function buildApp(opts = {}) {
-  const isProd = process.env.NODE_ENV === 'production';
+  // Fail-closed: secrets fracos/ausentes e NODE_ENV inválido derrubam o boot.
+  const { getConfig } = await import('./config.js');
+  const config = getConfig();
+  const isProd = config.isProd;
 
   const app = Fastify({
     ...resolveLoggerConfig(opts),
@@ -169,20 +172,6 @@ export async function buildApp(opts = {}) {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (isProd && origins.length === 0) {
-    throw new Error(
-      'CORS_ORIGIN é obrigatório em produção (lista de origens separada por vírgula).'
-    );
-  }
-
-  if (isProd && !process.env.COOKIE_SECRET) {
-    throw new Error('COOKIE_SECRET é obrigatório em produção.');
-  }
-
-  if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
-    throw new Error('JWT_SECRET é obrigatório em produção (mínimo 32 caracteres).');
-  }
-
   await app.register(cors, {
     delegator: (request, cb) =>
       cb(null, {
@@ -190,6 +179,7 @@ export async function buildApp(opts = {}) {
           ? request.headers.origin || false
           : false,
         credentials: true,
+        maxAge: 86400,
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders: [
           'Content-Type',
@@ -202,7 +192,7 @@ export async function buildApp(opts = {}) {
   });
 
   await app.register(cookie, {
-    secret: process.env.COOKIE_SECRET || 'dev-cookie-secret-change-me',
+    secret: config.COOKIE_SECRET,
   });
 
   await app.register(rateLimit, {
