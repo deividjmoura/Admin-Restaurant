@@ -18,6 +18,7 @@ import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
 import { findOrderById } from '../orders/orders.repository.js';
 import { isPaidEvent, redactWebhookPayload } from './webhook-auth.js';
+import { createExternalPaymentIntent } from './provider-adapter.js';
 
 // Reexportado para compatibilidade
 export { AMOUNT_TOLERANCE, toCents, round2, hasCentPrecision };
@@ -202,7 +203,7 @@ export function resolveProviderContext(store, { method, amount, provider = null,
   }
 
   if (method === 'CARD') {
-    resolvedProvider = provider || 'provider_pending';
+    resolvedProvider = provider || process.env.CARD_PROVIDER || 'mock_card';
   }
 
   return { provider: resolvedProvider, pixCopyPaste };
@@ -331,6 +332,25 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
         idempotencyKey,
       });
 
+      let finalProvider = resolvedProvider;
+      let finalProviderPaymentId = providerPaymentId ?? null;
+      let finalMetadata = { ...(metadata || {}) };
+
+      if (method === 'CARD' && !finalProviderPaymentId) {
+        const intent = await createExternalPaymentIntent({
+          method,
+          amount,
+          storeId,
+          idempotencyKey,
+          provider: provider || finalProvider,
+        });
+        if (intent) {
+          finalProvider = intent.provider;
+          finalProviderPaymentId = intent.providerPaymentId;
+          finalMetadata = { ...finalMetadata, ...intent.metadata };
+        }
+      }
+
       const row = await insertPaymentRow(client, {
         storeId,
         orderId,
@@ -338,11 +358,11 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
         method,
         amount,
         status: 'PENDING',
-        provider: resolvedProvider,
-        providerPaymentId,
+        provider: finalProvider,
+        providerPaymentId: finalProviderPaymentId,
         idempotencyKey,
         pixCopyPaste,
-        metadata,
+        metadata: finalMetadata,
       });
 
       paymentsTotal.inc({ store_id: storeId, method, outcome: 'created' });
