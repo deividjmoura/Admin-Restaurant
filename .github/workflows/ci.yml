@@ -65,6 +65,35 @@ jobs:
         env:
           SKIP_MIGRATE: '1'   # já aplicado no passo anterior
 
+      - name: Show TAP report on failure
+        if: failure()
+        run: |
+          echo "=== TAP REPORT ==="
+          cat .tap/suite.tap || echo "no tap file"
+          echo "=== END TAP ==="
+          echo "=== check-tap output ==="
+          cat .tap/suite.tap | node scripts/check-tap.mjs || true
+          echo "=== FAILED TESTS ==="
+          grep -E "^not ok" .tap/suite.tap || echo "no not ok lines"
+          echo "=== END FAILED ==="
+
+      - name: Comment PR with failures
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let tap = '';
+            try { tap = fs.readFileSync('.tap/suite.tap','utf8'); } catch(e) { tap = 'no tap file'; }
+            const fails = tap.split('\n').filter(l=>l.startsWith('not ok')).slice(0,100).join('\n');
+            const body = `Backend suite failed.\n\n**Failed tests (first 100):**\n\`\`\`\n${fails || 'none'}\n\`\`\`\n\n**TAP tail:**\n\`\`\`\n${tap.slice(-4000)}\n\`\`\``;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
       - name: Upload TAP report on failure
         if: failure()
         uses: actions/upload-artifact@v4
