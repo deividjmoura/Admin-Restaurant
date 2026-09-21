@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { usePolling } from '../../hooks/usePolling';
@@ -9,6 +9,7 @@ import {
   Button,
   Spinner,
   ConnectionStatus,
+  EmptyState,
 } from '../../components/Layout';
 
 const STAFF_NAV = [
@@ -51,13 +52,19 @@ function timeAgo(iso) {
   return `${h}h ${min % 60}min`;
 }
 
-export default function KitchenPage({ station = 'KITCHEN' }) {
+function resolveStation(propStation, searchParams) {
+  const fromQuery = (searchParams.get('station') || '').toUpperCase();
+  if (fromQuery === 'BAR' || fromQuery === 'KITCHEN') return fromQuery;
+  return propStation === 'BAR' ? 'BAR' : 'KITCHEN';
+}
+
+export default function KitchenPage({ station: propStation = 'KITCHEN' }) {
   const { user, loading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const station = resolveStation(propStation, searchParams);
   const [actionError, setActionError] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  // Falhas de polling nunca são engolidas: 401 desloga, 429 avisa,
-  // 5xx/rede mostram banner de conexão perdida e a aba oculta pausa o poll.
   const {
     data,
     error: pollError,
@@ -71,7 +78,6 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
   });
 
   const orders = data?.orders || [];
-  // Falha de ação tem prioridade, mas o erro de polling nunca é engolido.
   const error = actionError || pollError;
 
   if (loading) return <Spinner />;
@@ -134,15 +140,10 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
         {!loaded && <Spinner />}
 
         {loaded && activeOrders.length === 0 && (
-          <Card className="text-center py-10">
-            <p className="text-3xl mb-2" aria-hidden>
-              ✓
-            </p>
-            <p className="font-medium text-stone-800">Fila vazia</p>
-            <p className="text-sm text-stone-500 mt-1">
-              Novos pedidos da mesa aparecem aqui automaticamente.
-            </p>
-          </Card>
+          <EmptyState
+            title="Fila vazia"
+            description="Novos pedidos da mesa aparecem aqui automaticamente."
+          />
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
