@@ -1,8 +1,8 @@
 # Hardening de segurança e integridade
 
 Resumo executável das correções críticas (webhooks, CORS, totais financeiros,
-atomicidade, sessões, realtime e auditoria). Cada item tem teste de regressão em
-`test/isolation/`.
+atomicidade, sessões, realtime, auditoria e **caixa físico**). Cada item tem
+teste de regressão em `test/isolation/`.
 
 ---
 
@@ -119,6 +119,8 @@ atomicidade, sessões, realtime e auditoria). Cada item tem teste de regressão 
 - Filtro de evento é sempre do servidor: tenant + estação + permissão
   (`payment.*` exige `payments.read`, `session.closed` exige
   `cashier.sessions.read`).
+- Rotas de cozinha opt-in `allowTenantQuery` para `?tenant=` (EventSource não
+  envia header); autorização continua em `requireStoreAccess`.
 
 ## 10. Auditoria
 
@@ -131,25 +133,6 @@ atomicidade, sessões, realtime e auditoria). Cada item tem teste de regressão 
   payload bruto de webhook, cookies e assinaturas viram `[redacted]`.
 - Leitura apenas para o **OWNER** da loja, paginada e filtrável; a trilha é
   append-only (DELETE bloqueado por trigger no banco).
-
----
-
-## Rodando os testes
-
-```bash
-npm ci
-npm run db:migrate && npm run db:seed
-npm run test:suite   # suíte completa + guarda de contagem
-npm run test:guard
-npm run web:build
-```
-
-Sem `DATABASE_URL` os testes de integração são marcados como *skipped* — o CI
-exige a contagem mínima com o Postgres disponível.
-
-Verificação dos riscos residuais (script automatizado + passos manuais):
-**[VERIFY-RESIDUAL-RISKS.md](VERIFY-RESIDUAL-RISKS.md)**.
-
 
 ## 11. Contextos de entrada (2026-09-21)
 
@@ -189,3 +172,47 @@ inverso) verifica no outro contexto; mix de bearer com cookie staff é 403.
   bearer como atalho.
 
 Contrato, erros e deploy em [DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md).
+
+## 13. Caixa físico (gaveta) — issues #107–#110
+
+Referência completa: [src/modules/cash/README.md](../src/modules/cash/README.md).
+
+- **Uma gaveta aberta por operador/loja** (índice único parcial). Segunda abertura
+  → `409 CASH_SESSION_ALREADY_OPEN` com a sessão existente no corpo.
+- **`cash_movements` append-only** no banco (trigger rejeita UPDATE/DELETE).
+  Correção só via `ADJUSTMENT` com motivo — histórico de dinheiro não é editável.
+- **Troco só no servidor** (`tenderedAmount − amount`). O front pode estimar;
+  a API é a fonte da verdade.
+- **Pagamento combinado** atômico (`split_group` + uma `Idempotency-Key`); soma
+  validada após `FOR UPDATE` no alvo → `409 AMOUNT_EXCEEDS_DUE` sob concorrência.
+- **Isolamento:** toda query com `store_id`; recurso de outra loja → **404**
+  (nunca 403). STAFF só a própria gaveta; **não** tem `cashier.cash.close`.
+  OWNER/MANAGER fecham qualquer gaveta da loja.
+- **UI** (`/cashier`) esconde “Fechar gaveta” para STAFF usando `role` de
+  `/api/me`; a API continua sendo a autoridade (403 se forçado).
+- Dinheiro sem gaveta aberta: venda não bloqueia por padrão
+  (`cashMovement: null` + warning); `CASH_REQUIRE_OPEN_SESSION=1` torna
+  obrigatório → 409.
+- Fechamento exige `countedAmount` (`400 CASH_COUNT_REQUIRED`); relatório de
+  reconciliação deriva do ledger (não de um número solto).
+
+Testes: `test/isolation/cash-session.test.js`,
+`test/isolation/cash-payments.test.js`.
+
+---
+
+## Rodando os testes
+
+```bash
+npm ci
+npm run db:migrate && npm run db:seed
+npm run test:suite   # suíte completa + guarda de contagem
+npm run test:guard
+npm run web:build
+```
+
+Sem `DATABASE_URL` os testes de integração são marcados como *skipped* — o CI
+exige a contagem mínima com o Postgres disponível.
+
+Verificação dos riscos residuais (script automatizado + passos manuais):
+**[VERIFY-RESIDUAL-RISKS.md](VERIFY-RESIDUAL-RISKS.md)**.
