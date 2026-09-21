@@ -77,6 +77,21 @@ jobs:
           grep -E "^not ok" .tap/suite.tap | head -n 200 || echo "no not ok lines"
           echo "=== END FAILED ==="
 
+      - name: Push TAP to ci-debug branch
+        if: failure()
+        run: |
+          set -e
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@local"
+          BRANCH="ci-debug"
+          git fetch origin $BRANCH || true
+          git checkout -B $BRANCH
+          mkdir -p .tap
+          cp .tap/suite.tap .tap/failure-${{ github.run_id }}.tap || echo "no tap to copy"
+          git add .tap/failure-${{ github.run_id }}.tap || true
+          git commit -m "ci: failure TAP ${{ github.run_id }} ${{ github.sha }}" || echo "no commit"
+          git push origin $BRANCH --force || echo "push failed"
+
       - name: Upload TAP report on failure
         if: failure()
         uses: actions/upload-artifact@v4
