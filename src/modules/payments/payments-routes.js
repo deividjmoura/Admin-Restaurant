@@ -18,6 +18,7 @@ import {
   verifyHmac,
   webhookSecret,
 } from './webhook-auth.js';
+import { findForbiddenCardField } from './provider-adapter.js';
 import { mapCashError } from '../cash/cash.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { auditRequest } from '../audit/audit-context.js';
@@ -51,6 +52,7 @@ const PAYMENT_ERROR_STATUS = {
   WEBHOOK_INVALID: 400,
   WEBHOOK_PROVIDER_UNKNOWN: 404,
   WEBHOOK_SIGNATURE_INVALID: 401,
+  CARD_DATA_FORBIDDEN: 400,
   SPLIT_EMPTY: 400,
   SPLIT_TOO_MANY: 400,
   VALIDATION_ERROR: 400,
@@ -92,6 +94,20 @@ async function paymentsRoutes(app) {
     '/api/payments',
     { preHandler: [app.requireCustomerOrPermission('payments.create')] },
     async (request, reply) => {
+      // Fail-closed: qualquer campo de cartão no body → 400 antes do zod.
+      const forbidden = findForbiddenCardField(request.body);
+      if (forbidden) {
+        return sendError(
+          reply,
+          new AppError(
+            'CARD_DATA_FORBIDDEN',
+            'Dados de cartão não são aceitos nesta API. Use o provider externo; confirmação via webhook.',
+            400,
+            { field: forbidden }
+          )
+        );
+      }
+
       const parsed = createSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return sendError(
@@ -132,6 +148,7 @@ async function paymentsRoutes(app) {
               amount: result.payment.amount,
               orderId: result.payment.orderId,
               sessionId: result.payment.sessionId,
+              provider: result.payment.provider,
             },
           });
 
@@ -257,7 +274,13 @@ async function paymentsRoutes(app) {
           cashMovement: result.cashMovement ?? null,
           warnings:
             result.payment.method === 'CASH' && !result.cashMovement
-              ? [{ code: 'CASH_WITHOUT_SESSION', message: 'Nenhuma sessão de caixa aberta para lançar o dinheiro.' }]
+              ? [
+                  {
+                    code: 'CASH_WITHOUT_SESSION',
+                    message:
+                      'Nenhuma sessão de caixa aberta para lançar o dinheiro.',
+                  },
+                ]
               : [],
         };
       } catch (err) {
@@ -338,10 +361,20 @@ async function paymentsRoutes(app) {
           );
         }
 
-        if (!verifyHmac(request.rawBody, readSignatureHeader(request.headers), secret)) {
+        if (
+          !verifyHmac(
+            request.rawBody,
+            readSignatureHeader(request.headers),
+            secret
+          )
+        ) {
           return sendError(
             reply,
-            new AppError('WEBHOOK_SIGNATURE_INVALID', 'Assinatura inválida.', 401)
+            new AppError(
+              'WEBHOOK_SIGNATURE_INVALID',
+              'Assinatura inválida.',
+              401
+            )
           );
         }
 
@@ -350,7 +383,11 @@ async function paymentsRoutes(app) {
         if (!event.externalEventId) {
           return sendError(
             reply,
-            new AppError('WEBHOOK_INVALID', 'externalEventId (ou id) é obrigatório.', 400)
+            new AppError(
+              'WEBHOOK_INVALID',
+              'externalEventId (ou id) é obrigatório.',
+              400
+            )
           );
         }
 
@@ -396,7 +433,9 @@ async function paymentsRoutes(app) {
             duplicate: result.duplicate,
             mismatched: Boolean(result.mismatched),
             eventId: result.event?.id || null,
-            payment: result.payment ? { id: result.payment.id, status: result.payment.status } : null,
+            payment: result.payment
+              ? { id: result.payment.id, status: result.payment.status }
+              : null,
           };
         } catch (err) {
           const mapped = mapPaymentError(err);
