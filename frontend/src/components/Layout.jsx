@@ -131,6 +131,24 @@ export function Banner({ tone = 'warning', children }) {
 }
 
 /**
+ * Estado vazio padronizado para painéis de operação e admin.
+ * Use em fila vazia, lista sem itens, etc.
+ */
+export function EmptyState({ title, description, icon = '✓' }) {
+  return (
+    <Card className="text-center py-10">
+      <p className="text-3xl mb-2" aria-hidden>
+        {icon}
+      </p>
+      <p className="font-medium text-stone-800">{title}</p>
+      {description && (
+        <p className="text-sm text-stone-500 mt-1">{description}</p>
+      )}
+    </Card>
+  );
+}
+
+/**
  * Estado de conexão dos painéis de operação: nunca falha em silêncio.
  * `offline` (5xx/rede) pede atenção; `rateLimited` explica o 429.
  */
