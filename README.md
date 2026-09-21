@@ -89,19 +89,53 @@ Verificação dos riscos residuais (script + playbook manual):
 
 ---
 
-## Fases de implementação
+## Roadmap & Fases
 
-Veja as [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues) e os Epics:
+Veja o plano de longo prazo, status atual (`main` vs PR #152) e triagem de issues
+em **[docs/ROADMAP.md](docs/ROADMAP.md)**. Resumo das 10 fases:
 
-1. Fundação + Multi-tenancy (isolamento)
-2. Cardápio + Cache
-3. Mesas + QR + Sessões
-4. Pedidos + Idempotência
-5. Cozinha + Realtime
-6. Delivery
-7. Pagamentos
-8. Dashboard
-9. Operação (filas, impressão, observabilidade, backup)
+1. Fundação + Multi-tenancy (isolamento) — ✅ estável
+2. Cardápio + Cache — ✅ estável
+3. Mesas + QR + Sessões — ✅ estável
+4. Pedidos + Idempotência — ✅ estável
+5. Cozinha + Realtime — 🟡 cliente (Parte B) / realtime pendente
+6. Delivery — 🟡 contrato pronto
+7. Pagamentos — 🔴 em andamento (PR #152, fora da Parte B)
+8. Dashboard — 🟢 Parte B (cliente)
+9. Operação (filas, impressão, observabilidade, backup) — 🟡 parcial
+10. Growth (CRM, cupons, fidelidade, IA/WhatsApp) — ⚪ planejado
+
+Epics e issues abertas: [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues).
+
+## Demo pública (Vercel)
+
+A SPA é um único build com 3 contextos de entrada resolvidos pelo **hostname**
+(ver [`docs/ENTRY-CONTEXTS.md`](docs/ENTRY-CONTEXTS.md)):
+
+| Host (BASE_DOMAIN=localhost) | Contexto | Entrada |
+|------------------------------|----------|---------|
+| `localhost:5173` / `www.` | marketing | Landing + lead + orientação de acesso |
+| `app.localhost:5173` | platform | Administração do SaaS (`/platform/login`) |
+| `demo.localhost:5173` | store | Staff da loja demo + cliente via QR |
+
+**Rodar localmente (precisa do backend + Postgres):**
+
+```bash
+cp .env.example .env            # defina DATABASE_URL, JWT_SECRET, COOKIE_SECRET, STAFF_SEED_PASSWORD
+npm ci && npm run db:migrate && npm run db:seed
+npm run dev                     # API :3000
+npm ci --prefix frontend && npm run web   # SPA :5173 (proxy /api → :3000)
+# Acesse http://demo.localhost:5173/login  (staff) ou http://localhost:5173 (landing)
+```
+
+Credenciais de seed (troque em produção): `owner@demo.local` / `demo-senha-local`.
+O token de mesa (customer QR) é impresso pelo `db:seed` (`token=...`) e abre
+`/m/<token>` no host da loja. Smoke de ponta a ponta (API): [`docs/SMOKE.md`](docs/SMOKE.md).
+
+**Deploy Vercel:** SPA estático; `frontend/vercel.json` já faz o **fallback SPA**
+(`/(.*)` → `/index.html`). Mantenha `VITE_BASE_DOMAIN` igual ao domínio da API e
+`VITE_API_URL` vazio (mesma origem via proxy de borda). Não reutilize
+`VITE_TENANT_SLUG` fixo.
 
 ---
 

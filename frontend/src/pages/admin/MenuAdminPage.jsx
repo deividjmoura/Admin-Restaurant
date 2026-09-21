@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import { Shell, Card, Button, Spinner, ErrorBox, EmptyState } from '../../components/Layout';
 
 const nav = [
   { to: '/admin', label: 'Dashboard' },
@@ -105,6 +105,12 @@ export default function MenuAdminPage() {
         </form>
       </Card>
       <div className="space-y-2">
+        {products.length === 0 && (
+          <EmptyState
+            title="Nenhum produto cadastrado"
+            description="Crie o primeiro produto acima para abrir o cardápio."
+          />
+        )}
         {products.map((p) => (
           <Card key={p.id} className="flex justify-between items-center gap-3">
             <div>

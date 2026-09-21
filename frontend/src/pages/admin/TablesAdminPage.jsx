@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import { Shell, Card, Button, Spinner, ErrorBox, EmptyState } from '../../components/Layout';
 
 const nav = [
   { to: '/admin', label: 'Dashboard' },
@@ -60,6 +60,12 @@ export default function TablesAdminPage() {
         </form>
       </Card>
       <div className="space-y-2">
+        {tables.length === 0 && (
+          <EmptyState
+            title="Nenhuma mesa cadastrada"
+            description="Crie a primeira mesa acima; o QR de cada mesa é gerado automaticamente."
+          />
+        )}
         {tables.map((t) => (
           <Card key={t.id}>
             <div className="flex justify-between gap-2">

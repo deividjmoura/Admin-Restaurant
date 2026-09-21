@@ -111,6 +111,27 @@ export function ErrorBox({ error }) {
   );
 }
 
+/**
+ * Estado vazio padronizado: ícone opcional + título + descrição.
+ * Usado por todas as listas/painéis quando não há dados.
+ */
+export function EmptyState({ title, description, icon = '✓' }) {
+  if (!title) return null;
+  return (
+    <Card className="text-center py-10">
+      {icon && (
+        <p className="text-3xl mb-2" aria-hidden>
+          {icon}
+        </p>
+      )}
+      <p className="font-medium text-stone-800">{title}</p>
+      {description && (
+        <p className="text-sm text-stone-500 mt-1">{description}</p>
+      )}
+    </Card>
+  );
+}
+
 export function Banner({ tone = 'warning', children }) {
   if (!children) return null;
   const tones = {

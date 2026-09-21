@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { usePolling } from '../../hooks/usePolling';
@@ -56,6 +56,14 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
   const [actionError, setActionError] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
+  // Estação pode vir da rota (/kitchen → KITCHEN, /bar → BAR) ou da query
+  // ?station=KITCHEN|BAR (útil para demo/ligação direta). A query tem prioridade.
+  const [searchParams] = useSearchParams();
+  const rawStation = (searchParams.get('station') || '').toUpperCase();
+  const stationQuery =
+    rawStation === 'KITCHEN' || rawStation === 'BAR' ? rawStation : null;
+  const effectiveStation = stationQuery || station;
+
   // Falhas de polling nunca são engolidas: 401 desloga, 429 avisa,
   // 5xx/rede mostram banner de conexão perdida e a aba oculta pausa o poll.
   const {
@@ -65,7 +73,7 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
     offline,
     rateLimited,
     reload,
-  } = usePolling(`/api/kitchen/orders?station=${station}`, {
+  } = usePolling(`/api/kitchen/orders?station=${effectiveStation}`, {
     intervalMs: 4000,
     enabled: Boolean(user),
   });
@@ -80,12 +88,12 @@ export default function KitchenPage({ station = 'KITCHEN' }) {
       <Navigate
         to="/login"
         replace
-        state={{ from: station === 'BAR' ? '/bar' : '/kitchen' }}
+        state={{ from: effectiveStation === 'BAR' ? '/bar' : '/kitchen' }}
       />
     );
   }
 
-  const title = station === 'BAR' ? 'Bar' : 'Cozinha';
+  const title = effectiveStation === 'BAR' ? 'Bar' : 'Cozinha';
 
   async function advanceItem(itemId, status) {
     setBusyId(itemId);

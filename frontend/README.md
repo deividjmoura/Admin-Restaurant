@@ -30,6 +30,30 @@ Configurar DNS/TLS, CORS contextual, redirect www e fallback SPA na borda.
 [Contratos, bootstrap, implantação e limites](../docs/ENTRY-CONTEXTS.md).
 
 
+## Demo (fluxo pela UI)
+
+Pré-requisito: backend em `:3000` com `db:seed` (cria `demo` + credenciais). O
+Vite faz proxy `/api` preservando o Host. Use `BASE_DOMAIN=localhost`.
+
+1. **Landing** — `http://localhost:5173/` (marketing). Formulário de lead + link
+   "Já sou cliente" → `/login`.
+2. **Staff (loja demo)** — `http://demo.localhost:5173/login` → entre com
+   `owner@demo.local` / seed. Redireciona conforme o papel:
+   - `/kitchen` (KITCHEN) e `/bar` (BAR) — fila em polling 4s, `?station=` override.
+   - `/waiter` — entrega itens prontos.
+   - `/cashier` — fecha mesas (snapshot; ledger de dinheiro é PR #152).
+   - `/admin` — dashboard (métricas, série diária, live, refresh 30s).
+3. **Cliente (QR)** — pegue o `token=` do `db:seed` e abra
+   `http://demo.localhost:5173/m/<token>` → cardápio → carrinho → **Fazer pedido**.
+   O pedido aparece em `/kitchen` e `/waiter` da loja.
+4. **Plataforma** — `http://app.localhost:5173/platform/login` (OWNER da
+   plataforma) → gestão de lojas/leads.
+
+> `http://localhost:5173/dev` abre o launcher só no build **DEV** (não é entrada de
+> produção). Sem backend, apenas Landing e `/dev` funcionam offline.
+
+Confira o checklist de API em [`../docs/SMOKE.md`](../docs/SMOKE.md).
+
 ## Customer QR
 
 O client `api/customer.js` faz a troca QR e envia bearer customer com
