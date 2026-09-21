@@ -1,6 +1,7 @@
 # Roadmap — Admin-Restaurant
 
-> Fonte viva do plano de evolução. Issues seguem este documento. Atualizado após rebase PR #152 sobre main `520f6be` (Redis + caixa + observabilidade).
+> Fonte viva do plano de evolução. Issues seguem este documento.
+> **Política explícita (2026-09-21):** não há mais “demo pública”. O projeto é tratado como **produção** multi-tenant desde já. Seed local (`db:seed`) existe só para desenvolvimento e testes; não há loja/feature/ambiente chamado “demo” como objetivo de produto.
 
 ## Estado atual (2026-09-21)
 
@@ -27,41 +28,43 @@
 - [x] Pedidos idempotentes + transição de status + totais com adicionais
 - [x] Cozinha KDS por estação + SSE + allowTenantQuery para EventSource
 
-### Onda 2 — Delivery + Checkout (fechada em main 520f6be)
+### Onda 2 — Delivery + Checkout (fechada)
 - [x] Delivery providers/adapters + cart/checkout com Idempotency-Key
 - [x] Customer checkout session (delivery) — TOKEN com hash, TTL, revogação, saldo com frete
 - [x] Isolamento customer vs staff (CONTEXT_FORBIDDEN)
 
-### Onda 3 — Caixa + Pagamentos robustos (fechada no rebase PR #152)
+### Onda 3 — Caixa + Pagamentos robustos (fechada)
 - [x] Gaveta única por operador/loja (409 CASH_SESSION_ALREADY_OPEN)
 - [x] Ledger append-only + ADJUSTMENT para correção
 - [x] Pagamento combinado (split_group) + troco server-side
 - [x] Estorno idempotente (REFUNDED + movimento REFUND)
 - [x] Relatório de fechamento com reconciliation
 - [x] CASH_REQUIRE_OPEN_SESSION e CASH_COUNT_REQUIRED opcionais
-- [x] 0025_cash_sessions + 0026_cash_permissions (renumeradas de 0022/0023)
+- [x] 0025_cash_sessions + 0026_cash_permissions
 
-### Onda 4 — Observabilidade + Redis (fechada no rebase)
+### Onda 4 — Observabilidade + Redis (fechada)
 - [x] Logs estruturados + redact + request-context + x-request-id
 - [x] /health, /ready, /metrics + METRICS_TOKEN
 - [x] Métricas HTTP, DB, SSE, pedidos, pagamentos, caixa
 - [x] Redis opcional para cache + pub/sub + futuro rate-limit distribuído
 - [x] store-events com Redis channel store:{id}:orders + fallback in-memory
 
-### Onda 5 — Frontend demo pública estável (em andamento — Parte B)
+### Onda 5 — Frontend de produção (em andamento)
 - [ ] Polir telas: dashboard com série diária, prep time, live ops (loading/error/vazio/sucesso)
 - [ ] Cozinha KDS com breakdown por estação + reconexão SSE
 - [ ] Caixa: abertura/fechamento + ledger + relatório
 - [ ] Entry-contexts no frontend (marketing vs plataforma vs loja) — já tem VITE_BASE_DOMAIN
 - [ ] Build deve passar: `npm ci --prefix frontend && npm run build --prefix frontend`
+- [ ] Sem atalhos ou rotas “só para demo”; tudo orientado a operação real
 
-### Onda 6 — Redução de issues + hardening final (Parte B)
+### Onda 6 — Hardening e limpeza
 - [ ] Fechar issues de Onda 1–4 já entregues (SEC, POS, KDS, DELIVERY, OBS)
 - [ ] Atualizar SMOKE.md + SECURITY.md + VERIFY-RESIDUAL-RISKS.md com caixa + observabilidade
 - [ ] Revisar permissões novas (cashier.cash.*) em FALLBACK_MATRIX + seed derivado do catálogo
-- [ ] Garantir MIN_TESTS=281 no CI + check-tap
+- [ ] Garantir MIN_TESTS alinhado no CI + check-tap
+- [ ] Remover resíduos de linguagem/UX de “demo” (docs, seed labels, frontend launcher)
 
-### Onda 7 — Futuro (não bloquear demo)
+### Onda 7 — Próximas capacidades (produção)
 - [ ] Rate-limit distribuído via Redis
 - [ ] Fila de impressão/notificação/fiscal com worker + queue_depth metrics
 - [ ] Estoque/insumos/CMV + Financeiro/DRE
@@ -72,8 +75,9 @@
 
 1. Escolha uma Issue de `Onda 5` ou `Onda 6` (label `priority:high` primeiro).
 2. Branch `feat/<area>-<resumo>` + PR draft com `Closes #<número>`.
-3. Rode `npm run test:suite` (fail 0, skipped 0, ≥281) + `npm run build --prefix frontend`.
+3. Rode `npm run test:suite` (fail 0, skipped 0) + `npm run build --prefix frontend`.
 4. Atualize `docs/SMOKE.md` se fluxo mudar.
+5. Não introduza “modo demo”, DEFAULT_STORE_SLUG de conveniência nem URLs/credenciais de demonstração como feature.
 
 ## Operação
 
@@ -92,6 +96,6 @@ psql $DATABASE_URL -f migrations/rollback/0025_cash_sessions.sql
 
 ## Decisões relevantes
 
-- Ver `docs/DECISIONS.md` — entradas de 2026-09-20 (observabilidade, caixa, rebase + Redis).
+- Ver `docs/DECISIONS.md` — entradas de 2026-09-20 (observabilidade, caixa, Redis).
 - `docs/OBSERVABILITY.md` — como usar logs, métricas, health/ready.
 - `src/modules/cash/README.md` e `src/modules/payments/README.md` — detalhes de caixa e pagamento combinado.
