@@ -2,8 +2,9 @@
  * In-memory menu cache, always keyed by store_id.
  * Never share entries across tenants.
  *
- * Later (Phase 9) this can be swapped for Redis with the same key shape:
- *   menu:store:{storeId}
+ * Phase 9: Redis L2 when REDIS_URL is set (fire-and-forget for sync path,
+ * awaitable via async helpers).
+ * Key shape: menu:store:{storeId}
  */
 
 const store = new Map(); // key -> { expiresAt, payload }
@@ -30,14 +31,59 @@ export function setCachedMenu(storeId, payload, ttlMs = DEFAULT_TTL_MS) {
     payload,
     expiresAt: Date.now() + ttlMs,
   });
+  // Fire-and-forget Redis L2
+  import('../../infrastructure/redis.js')
+    .then(({ setCache }) => setCache(keyFor(storeId), payload, ttlMs))
+    .catch(() => {});
 }
 
-/** Invalidate one store (call after any menu mutation). */
 export function invalidateMenuCache(storeId) {
   store.delete(keyFor(storeId));
+  import('../../infrastructure/redis.js')
+    .then(({ delCache }) => delCache(keyFor(storeId)))
+    .catch(() => {});
 }
 
-/** Test / ops helper — does not clear other process memory. */
 export function clearAllMenuCache() {
   store.clear();
+  import('../../infrastructure/redis.js')
+    .then(({ clearAllCache }) => clearAllCache())
+    .catch(() => {});
 }
+
+// Async helpers (Redis-aware)
+export async function getCachedMenuAsync(storeId) {
+  const sync = getCachedMenu(storeId);
+  if (sync) return sync;
+  try {
+    const { getCache } = await import('../../infrastructure/redis.js');
+    const cached = await getCache(keyFor(storeId));
+    if (cached) {
+      store.set(keyFor(storeId), { payload: cached, expiresAt: Date.now() + DEFAULT_TTL_MS });
+      return cached;
+    }
+  } catch {}
+  return null;
+}
+
+export async function setCachedMenuAsync(storeId, payload, ttlMs = DEFAULT_TTL_MS) {
+  setCachedMenu(storeId, payload, ttlMs);
+  try {
+    const { setCache } = await import('../../infrastructure/redis.js');
+    await setCache(keyFor(storeId), payload, ttlMs);
+  } catch {}
+}
+
+export async function invalidateMenuCacheAsync(storeId) {
+  invalidateMenuCache(storeId);
+  try {
+    const { delCache } = await import('../../infrastructure/redis.js');
+    await delCache(keyFor(storeId));
+  } catch {}
+}
+
+// Compat aliases
+export const getCachedMenuSync = getCachedMenu;
+export const setCachedMenuSync = setCachedMenu;
+export const invalidateMenuCacheSync = invalidateMenuCache;
+export const clearAllMenuCacheSync = clearAllMenuCache;

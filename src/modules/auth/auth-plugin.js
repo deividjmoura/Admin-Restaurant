@@ -16,6 +16,7 @@ import {
 } from './session.js';
 import { auditSafe } from '../audit/index.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { bindRequestLog } from '../../infrastructure/request-context.js';
 import { createHash } from 'node:crypto';
 
 const loginSchema = z
@@ -99,14 +100,21 @@ async function authPlugin(app) {
       const user = await findUserById(userId);
       if (user && user.is_active) {
         request.session = session;
+        const isPlatformOwner = Boolean(user.is_platform_owner || user.is_super_admin);
         request.user = {
           id: user.id,
           email: user.email,
           name: user.name,
-          isPlatformOwner: user.is_platform_owner,
+          isPlatformOwner,
+          isSuperAdmin: Boolean(user.is_super_admin || user.is_platform_owner),
           type: session.type,
           role: session.role,
         };
+        bindRequestLog(request, {
+          userId: user.id,
+          role: session.role,
+          isPlatformOwner: isPlatformOwner || undefined,
+        });
       }
     } catch {
       request.user = null;
@@ -169,6 +177,7 @@ async function authPlugin(app) {
     }
     // Live membership is authoritative, including demotions/revocations.
     request.storeRole = membership.role;
+    bindRequestLog(request, { role: membership.role });
   });
 
   app.decorate('requirePermission', function (permissionKey) {
@@ -281,7 +290,7 @@ async function authPlugin(app) {
             ? await getStoreRole(user.id, request.storeId)
             : null;
         if (
-          (type === 'platform' && !user.is_platform_owner) ||
+          (type === 'platform' && !user.is_platform_owner && !user.is_super_admin) ||
           (type === 'store' && !membership?.is_active)
         ) {
           await auditLoginFailure(request, {

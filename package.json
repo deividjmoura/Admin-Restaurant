@@ -20,7 +20,7 @@
     "platform:bootstrap": "node scripts/bootstrap-platform-owner.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.1",
@@ -32,6 +32,7 @@
     "fastify-plugin": "^5.0.1",
     "jose": "^5.9.6",
     "pg": "^8.13.1",
+    "pino": "^10.3.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

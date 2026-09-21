@@ -41,7 +41,7 @@ jobs:
       COOKIE_SECRET: ci-cookie-secret-0000000000000000000000000000
       BASE_DOMAIN: localhost
       STAFF_SEED_PASSWORD: ci-seed-password
-      MIN_TESTS: '223'
+      MIN_TESTS: '281'
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +64,26 @@ jobs:
         run: npm run test:suite
         env:
           SKIP_MIGRATE: '1'   # já aplicado no passo anterior
+
+      - name: Show TAP report on failure
+        if: failure()
+        run: |
+          echo "=== TAP REPORT ==="
+          cat .tap/suite.tap || echo "no tap file"
+          echo "=== END TAP ==="
+          echo "=== check-tap output ==="
+          cat .tap/suite.tap | node scripts/check-tap.mjs || true
+          echo "=== FAILED TESTS ==="
+          grep -E "^not ok" .tap/suite.tap | head -n 200 || echo "no not ok lines"
+          echo "=== END FAILED ==="
+
+      - name: Upload TAP report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tap-report
+          path: .tap/suite.tap
+          if-no-files-found: warn
 
   frontend:
     name: Frontend · build

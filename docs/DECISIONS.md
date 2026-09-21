@@ -198,3 +198,54 @@ anônimo — a autenticação precede qualquer enumeração de canal.
 isolamento, replay, revogação, TTL vivo, atomicidade e saldo com frete;
 migration/rollback 0024 aplicados em banco limpo; build do frontend sem
 alterações. Ver [DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md).
+
+## 2026-09-20 — Observabilidade: logs estruturados, métricas e health/ready (#106)
+
+**Contexto:** sem logs estruturados não dá para saber qual loja falhou; sem métricas não há alerta; sem health/ready o orquestrador não sabe quando tirar a instância de rotação. Cozinha SSE caía em silêncio.
+
+**Decisões:**
+- Logger JSON único (pino) com `requestId`, `storeId`, `userId`, `operation`, `durationMs`; redação de segredos/PII por `src/shared/redact.js` (mesma regra da auditoria).
+- `/health` (liveness rasa) e `/ready` (checks registráveis: database, migrations, pool) → 503 quando crítico falha; `ready/checks` lista checks.
+- `/metrics` Prometheus: `http_requests_total`, `http_request_duration_seconds`, `orders_created_total`, `payments_total`, `cash_movements_total`, `realtime_subscribers`, fila de jobs. Cardinalidade limitada por rota (pattern) e por loja (teto + __other__). Acesso restrito a `METRICS_TOKEN` ou super admin (404 caso contrário).
+- Contexto de requisição (`request-context.js`) com `x-request-id` validado (anti log injection) e access log único por requisição.
+- Instrumentação: HTTP, erros por código estável, queries SQL e pool, SSE (assinantes/eventos), pedidos criados, transições e pagamentos.
+- `server.js`: shutdown gracioso (SIGTERM drena SSE) + handlers de processo.
+- Docs: `docs/OBSERVABILITY.md`; testes em `test/isolation/observability.test.js`.
+
+**Validação:** suíte 171 testes na entrega original, depois 199 com caixa; `LOG_LEVEL`, `METRICS_TOKEN`, `SHUTDOWN_TIMEOUT_MS` opcionais.
+
+## 2026-09-20 — Caixa físico: gaveta, ledger append-only e pagamento combinado (#107–#110)
+
+**Contexto:** o restaurante recebia dinheiro sem registro de gaveta: não havia como saber quanto deveria estar no caixa no fim do turno, suprimentos/sangrias sumiam, estorno de pagamento em dinheiro não devolvia o valor ao caixa e não era possível pagar um pedido com duas formas (parte em dinheiro, parte no PIX). O pagamento também tinha corrida: o "valor devido" era lido fora da transação, o que permitia cobrar o mesmo pedido duas vezes em requisições simultâneas.
+
+**Decisões:**
+- **Uma gaveta aberta por operador/loja**, garantida por índice único parcial (`cash_sessions WHERE status = 'open'`), não por checagem em código. Abrir a segunda devolve `409 CASH_SESSION_ALREADY_OPEN` com a sessão existente.
+- **`cash_movements` é append-only no banco** (trigger rejeita UPDATE/DELETE). Correção se faz com movimento de `ADJUSTMENT` (com `direction` e motivo obrigatório), nunca reescrevendo o passado.
+- **Todo efeito de caixa acontece na transação do pagamento.** A gaveta é travada com `SELECT ... FOR UPDATE` e o pagamento é criado/confirmado dentro da mesma transação.
+- **Pagamento combinado é um grupo atômico** (`split_group`): vários métodos no mesmo alvo, uma `Idempotency-Key`, tudo ou nada. A soma é validada contra o devido **depois** de travar o alvo (`lockPaymentTarget`), então `409 AMOUNT_EXCEEDS_DUE` substitui o sobrepagamento por corrida.
+- **Troco é derivado no servidor** (`recebido − valor`). Aceitar troco do cliente permitiria fechar gaveta com número inventado.
+- **Estorno é idempotente por `(payment_id, type)`** e nunca apaga o pagamento: vira `REFUNDED` + movimento `REFUND` de saída. Retry devolve `alreadyRefunded: true` sem duplicar dinheiro.
+- **Dinheiro sem gaveta aberta não bloqueia a venda**, mas volta como `cashMovement: null` + warning `CASH_WITHOUT_SESSION`. Estabelecimento que exige gaveta ligada usa `CASH_REQUIRE_OPEN_SESSION=1` (vira `409`).
+- **Fechamento exige contagem** (`CASH_COUNT_REQUIRED`) e é idempotente; o relatório devolve `reconciliation` derivada do ledger (opening, cashSales, supplies, adjustments, withdrawals, refunds, expected, counted, difference).
+- **STAFF não fecha gaveta** (`cashier.cash.close` é de OWNER/MANAGER) e só opera a própria gaveta; gerente opera qualquer gaveta da loja. Recurso de outra loja continua sendo **404**, nunca 403.
+- **Permissões novas entram em três lugares coerentes**: catálogo (`FALLBACK_MATRIX`), migration de backfill e seed de loja nova — o seed passou a ser **derivado do catálogo** (antes duplicava a lista em SQL e permissão nova valia só para OWNER).
+- **Migrations 0025/0026** (renumeradas de 0022/0023 da PR #152 porque 0022-0024 já ocupadas por entry-contexts e delivery checkout). Rollbacks em `migrations/rollback/`.
+
+**Validação:** `test/isolation/cash-session.test.js` (17) e `cash-payments.test.js` (11) — idempotência, RBAC, isolamento cross-tenant, corrida de cobrança dupla, ledger imutável, reconciliação. Suíte após rebase: 223 + 58 = 281+.
+
+## 2026-09-21 — Rebase PR #152 sobre main + Redis + Cozinha realtime estável
+
+**Contexto:** PR #152 (observabilidade + caixa) foi criada antes dos contextos por host e delivery checkout. Ao mesmo tempo, precisávamos fechar fases críticas: cozinha realtime estável, dashboard mais robusto, pagamentos com frete e caixa, e camada Redis para cache e pub/sub multi-instância.
+
+**Decisões:**
+- Rebase: renumerar `0022_cash_sessions` → `0025_cash_sessions` e `0023_cash_permissions` → `0026_cash_permissions`, mantendo DOWN em comentários + rollback separado. Resolver conflitos em `payments.repository` (frete no `amountDue` + split payments + customer checks), `catalog.js` (delivery.checkout.revoke + cashier.cash.*), `app.js` (entry-contexts + observabilidade), `db.js` (métricas), `tenant-plugin` (bindRequestLog + SKIP /metrics).
+- **Redis opcional:** `src/infrastructure/redis.js` com `REDIS_URL` — quando ausente, fallback in-memory. Usado para: cache de cardápio (`menu-cache.js` com L1 local + L2 Redis), pub/sub realtime (`store-events.js` publica no Redis e assina para multi-instância), futuro rate-limit distribuído. `REDIS_ENABLED=0` desliga mesmo com URL. Sem dependência dura: tenta `redis` ou `ioredis` via import dinâmico, senão memory.
+- **Cozinha realtime estável:** `store-events.js` agora tem `publishStoreOrderEvent` que publica no Redis quando disponível e despacha localmente; `subscribeStoreOrders` garante assinatura Redis por loja + métricas `realtime_subscribers` por estação; `kitchen-routes.js` marca `request.isStream = true` para não poluir histograma HTTP, heartbeat 25s, cleanup idempotente e log de `sse.stream_error`.
+- **Dashboard:** `reports-routes.js` já tinha summary, top-products, live. Mantido; frontend será polido em outra frente para mostrar série diária, prep time e live ops com estados de loading/error/vazio.
+- **Pagamentos robustos:** merge de frete (`delivery_fee` no `amountDue`) + split payments atômico + cash ledger na mesma transação + troco derivado server-side + idempotência por `(store_id, idempotency_key)` e por `(payment_id, type)`.
+- **Suíte:** após rebase, `MIN_TESTS` sobe de 223 para 281+ (223 + 28 cash + 30 observability). `npm run test:suite` deve continuar `fail 0, skipped 0`.
+
+**Operação:** `npm ci && npm run db:migrate && npm run db:seed && npm run test:suite`. Opcional: `REDIS_URL=redis://localhost:6379 npm run dev`. Rollback de 0025/0026 remove tabelas de caixa e colunas de pagamento, sem tocar delivery checkout.
+
+**Docs:** `docs/OBSERVABILITY.md`, `src/modules/cash/README.md`, `src/modules/payments/README.md`, `docs/ROADMAP.md` (a criar na frente B).
+

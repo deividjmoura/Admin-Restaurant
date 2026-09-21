@@ -18,20 +18,11 @@ import {
   verifyHmac,
   webhookSecret,
 } from './webhook-auth.js';
+import { mapCashError } from '../cash/cash.repository.js';
 import { publishStoreOrderEvent } from '../realtime/store-events.js';
 import { auditRequest } from '../audit/audit-context.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
-/**
- * Schema público de criação de pagamento.
- *
- * `metadata` foi REMOVIDO: era um canal para o cliente injetar dados internos
- * (payload de webhook, dados de cartão, flags de confirmação). O que o servidor
- * grava em metadata é gerado por ele mesmo.
- *
- * `provider` / `providerPaymentId` também não são aceitos aqui: apenas fluxos
- * internos (integração com provider) podem registrá-los.
- */
 const createSchema = z
   .object({
     amount: z.number().positive().max(1_000_000),
@@ -60,13 +51,19 @@ const PAYMENT_ERROR_STATUS = {
   WEBHOOK_INVALID: 400,
   WEBHOOK_PROVIDER_UNKNOWN: 404,
   WEBHOOK_SIGNATURE_INVALID: 401,
+  SPLIT_EMPTY: 400,
+  SPLIT_TOO_MANY: 400,
+  VALIDATION_ERROR: 400,
 };
 
 export function mapPaymentError(err) {
   if (!(err instanceof PaymentError)) return null;
-  const status =
-    err.details?.statusCode ?? PAYMENT_ERROR_STATUS[err.code] ?? 400;
+  const status = err.details?.statusCode ?? PAYMENT_ERROR_STATUS[err.code] ?? 400;
   return new AppError(err.code, err.message, status, err.details);
+}
+
+function mapPaymentOrCashError(err) {
+  return mapPaymentError(err) || mapCashError(err);
 }
 
 function sendError(reply, err) {
@@ -74,8 +71,14 @@ function sendError(reply, err) {
   return reply.code(statusCode).send(body);
 }
 
+const confirmSchema = z
+  .object({
+    cashSessionId: z.string().uuid().optional().nullable(),
+    tenderedAmount: z.number().min(0).max(1_000_000).optional().nullable(),
+  })
+  .strict('Campo não aceito na confirmação de pagamento.');
+
 async function paymentsRoutes(app) {
-  /** Público (tenant): config PIX mascarada */
   app.get(
     '/api/payments/pix-config',
     { preHandler: [app.requireTenant] },
@@ -85,7 +88,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /** Criar pagamento (cliente ou caixa) */
   app.post(
     '/api/payments',
     { preHandler: [app.requireCustomerOrPermission('payments.create')] },
@@ -94,17 +96,12 @@ async function paymentsRoutes(app) {
       if (!parsed.success) {
         return sendError(
           reply,
-          new AppError(
-            'VALIDATION_ERROR',
-            'Payload de pagamento inválido.',
-            400,
-            {
-              issues: parsed.error.issues.map((i) => ({
-                path: i.path.join('.'),
-                message: i.message,
-              })),
-            }
-          )
+          new AppError('VALIDATION_ERROR', 'Payload de pagamento inválido.', 400, {
+            issues: parsed.error.issues.map((i) => ({
+              path: i.path.join('.'),
+              message: i.message,
+            })),
+          })
         );
       }
 
@@ -156,17 +153,13 @@ async function paymentsRoutes(app) {
           payment: toPublicPayment(result.payment),
         });
       } catch (err) {
-        const mapped = mapPaymentError(err);
+        const mapped = mapPaymentOrCashError(err);
         if (mapped) return sendError(reply, mapped);
         throw err;
       }
     }
   );
 
-  /**
-   * Detalhe público do pagamento — shape mínimo.
-   * Nunca devolve metadata, providerPaymentId, idempotencyKey nem dados da loja.
-   */
   app.get(
     '/api/payments/:id',
     { preHandler: [app.requireCustomerOrPermission('payments.read')] },
@@ -183,7 +176,6 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /** Listar por sessão ou pedido (staff — shape completo) */
   app.get(
     '/api/payments',
     { preHandler: [app.requireTenant, app.requirePermission('payments.read')] },
@@ -197,30 +189,37 @@ async function paymentsRoutes(app) {
     }
   );
 
-  /**
-   * Caixa confirma pagamento (PIX informado / dinheiro / card presencial).
-   * POST /api/payments/:id/confirm
-   */
   app.post(
     '/api/payments/:id/confirm',
     {
-      preHandler: [
-        app.requireTenant,
-        app.requirePermission('payments.confirm'),
-      ],
+      preHandler: [app.requireTenant, app.requirePermission('payments.confirm')],
     },
     async (request, reply) => {
-      try {
-        const result = await confirmPayment(
-          request.storeId,
-          request.params.id,
-          {
-            metadata: {
-              confirmedBy: request.user?.id || null,
-              confirmedAt: new Date().toISOString(),
-            },
-          }
+      const parsed = confirmSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendError(
+          reply,
+          new AppError('VALIDATION_ERROR', 'Payload de confirmação inválido.', 400, {
+            issues: parsed.error.issues.map((issue) => ({
+              path: issue.path.join('.'),
+              message: issue.message,
+            })),
+          })
         );
+      }
+
+      const { cashSessionId, tenderedAmount } = parsed.data;
+
+      try {
+        const result = await confirmPayment(request.storeId, request.params.id, {
+          metadata: {
+            confirmedBy: request.user?.id || null,
+            confirmedAt: new Date().toISOString(),
+          },
+          cashSessionId: cashSessionId ?? null,
+          actorUserId: request.user?.id ?? null,
+          tenderedAmount: tenderedAmount ?? null,
+        });
         if (!result) {
           return sendError(
             reply,
@@ -252,19 +251,23 @@ async function paymentsRoutes(app) {
           });
         }
 
-        return { alreadyPaid: result.alreadyPaid, payment: result.payment };
+        return {
+          alreadyPaid: result.alreadyPaid,
+          payment: result.payment,
+          cashMovement: result.cashMovement ?? null,
+          warnings:
+            result.payment.method === 'CASH' && !result.cashMovement
+              ? [{ code: 'CASH_WITHOUT_SESSION', message: 'Nenhuma sessão de caixa aberta para lançar o dinheiro.' }]
+              : [],
+        };
       } catch (err) {
-        const mapped = mapPaymentError(err);
+        const mapped = mapPaymentOrCashError(err);
         if (mapped) return sendError(reply, mapped);
         throw err;
       }
     }
   );
 
-  /**
-   * Estorno (OWNER). Nunca remove o pagamento: muda status para REFUNDED,
-   * preservando o rastro financeiro.
-   */
   app.post(
     '/api/payments/:id/refund',
     {
@@ -275,6 +278,7 @@ async function paymentsRoutes(app) {
         const result = await refundPayment(request.storeId, request.params.id, {
           reason: request.body?.reason ?? null,
           actorUserId: request.user?.id ?? null,
+          cashSessionId: request.body?.cashSessionId ?? null,
         });
         if (!result) {
           return sendError(
@@ -295,24 +299,16 @@ async function paymentsRoutes(app) {
         return {
           alreadyRefunded: result.alreadyRefunded,
           payment: result.payment,
+          cashMovement: result.cashMovement ?? null,
         };
       } catch (err) {
-        const mapped = mapPaymentError(err);
+        const mapped = mapPaymentOrCashError(err);
         if (mapped) return sendError(reply, mapped);
         throw err;
       }
     }
   );
 
-  /**
-   * Webhooks — escopo ENCAPSULADO com parser que preserva o corpo bruto.
-   *
-   * O parser é local ao escopo: rotas fora daqui continuam usando o parser
-   * JSON padrão do Fastify.
-   *
-   * Ordem obrigatória: provider conhecido → assinatura HMAC válida → só então
-   * normalizar/gravar o evento. Um payload não assinado nunca toca o banco.
-   */
   await app.register(async (scope) => {
     scope.addContentTypeParser(
       'application/json',
@@ -332,50 +328,29 @@ async function paymentsRoutes(app) {
       '/api/payments/webhooks/:provider',
       { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } },
       async (request, reply) => {
-        const provider = String(request.params.provider || '')
-          .trim()
-          .toLowerCase();
+        const provider = String(request.params.provider || '').trim().toLowerCase();
 
         const secret = webhookSecret(provider);
         if (!secret) {
           return sendError(
             reply,
-            new AppError(
-              'WEBHOOK_PROVIDER_UNKNOWN',
-              'Provider não habilitado.',
-              404
-            )
+            new AppError('WEBHOOK_PROVIDER_UNKNOWN', 'Provider não habilitado.', 404)
           );
         }
 
-        if (
-          !verifyHmac(
-            request.rawBody,
-            readSignatureHeader(request.headers),
-            secret
-          )
-        ) {
+        if (!verifyHmac(request.rawBody, readSignatureHeader(request.headers), secret)) {
           return sendError(
             reply,
-            new AppError(
-              'WEBHOOK_SIGNATURE_INVALID',
-              'Assinatura inválida.',
-              401
-            )
+            new AppError('WEBHOOK_SIGNATURE_INVALID', 'Assinatura inválida.', 401)
           );
         }
 
-        // Só depois da assinatura válida o body é considerado.
         const event = normalizeProviderEvent(provider, request.body || {});
 
         if (!event.externalEventId) {
           return sendError(
             reply,
-            new AppError(
-              'WEBHOOK_INVALID',
-              'externalEventId (ou id) é obrigatório.',
-              400
-            )
+            new AppError('WEBHOOK_INVALID', 'externalEventId (ou id) é obrigatório.', 400)
           );
         }
 
@@ -387,7 +362,6 @@ async function paymentsRoutes(app) {
             providerPaymentId: event.providerPaymentId,
             amount: event.amount,
             payload: request.body || {},
-            // dado NÃO confiável: usado só para diagnóstico de divergência
             bodyStoreId: event.storeIdFromBody,
           });
 
@@ -422,9 +396,7 @@ async function paymentsRoutes(app) {
             duplicate: result.duplicate,
             mismatched: Boolean(result.mismatched),
             eventId: result.event?.id || null,
-            payment: result.payment
-              ? { id: result.payment.id, status: result.payment.status }
-              : null,
+            payment: result.payment ? { id: result.payment.id, status: result.payment.status } : null,
           };
         } catch (err) {
           const mapped = mapPaymentError(err);

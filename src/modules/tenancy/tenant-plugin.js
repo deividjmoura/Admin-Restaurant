@@ -1,24 +1,30 @@
 import fp from 'fastify-plugin';
 import { resolveStoreFromRequest, resolveTenantFromQuery } from './resolve-tenant.js';
 import { errorResponse, AppError } from '../../shared/errors.js';
-
 import { isApexHost, isPlatformHost } from './tenant-host.js';
+import { bindRequestLog } from '../../infrastructure/request-context.js';
 
-const SKIP_PREFIXES = ['/health', '/ready', '/api/public/health'];
+const SKIP_PREFIXES = ['/health', '/ready', '/metrics', '/api/public/health'];
 
 function shouldSkipTenant(url) {
   const path = url.split('?')[0];
   return SKIP_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
-/**
- * Plugin Fastify: resolve o tenant e anexa em request.store / request.storeId.
- */
+function resolveTenantSource(request, store) {
+  const headerSlug = request.headers?.['x-tenant-slug'];
+  if (typeof headerSlug === 'string' && headerSlug.trim() === store.slug) return 'header';
+  const querySlug = request.query?.tenant;
+  if (typeof querySlug === 'string' && querySlug.trim() === store.slug) return 'query';
+  return 'host';
+}
+
 async function tenantPlugin(app) {
   app.decorateRequest('store', null);
   app.decorateRequest('storeId', null);
   app.decorateRequest('isPlatform', false);
   app.decorateRequest('isMarketing', false);
+  app.decorateRequest('tenantSource', null);
 
   app.addHook('onRequest', async (request, reply) => {
     request.isPlatform = isPlatformHost(request.headers.host);
@@ -32,6 +38,14 @@ async function tenantPlugin(app) {
       if (store) {
         request.store = store;
         request.storeId = store.id;
+        request.tenantSource = resolveTenantSource(request, store);
+        try {
+          bindRequestLog(request, {
+            storeId: store.id,
+            storeSlug: store.slug,
+            tenantSource: request.tenantSource,
+          });
+        } catch {}
       }
     } catch (err) {
       if (err instanceof AppError) {
@@ -43,16 +57,20 @@ async function tenantPlugin(app) {
   });
 
   app.decorate('requireTenant', async function requireTenant(request, reply) {
-    // SSE same-origin resolves the store by Host without a query. Only a
-    // permitted dev/controlled transport host can use the route's query opt-in;
-    // reserved marketing/platform hosts can never be converted into tenants.
-    // Query is transport, not authorization: token scope + membership still apply.
     if (!request.storeId) {
       try {
         const store = await resolveTenantFromQuery(request);
         if (store) {
           request.store = store;
           request.storeId = store.id;
+          request.tenantSource = 'query';
+          try {
+            bindRequestLog(request, {
+              storeId: store.id,
+              storeSlug: store.slug,
+              tenantSource: 'query',
+            });
+          } catch {}
         }
       } catch (err) {
         if (err instanceof AppError) {
@@ -63,8 +81,20 @@ async function tenantPlugin(app) {
       }
     }
 
-    if (request.storeId && request.session &&
-        (request.session.type !== 'store' || request.session.storeId !== request.storeId)) {
+    if (
+      request.storeId &&
+      request.session &&
+      request.session.type !== 'store' &&
+      request.session.type !== 'platform'
+    ) {
+      // Customer sessions are allowed but don't satisfy requireTenant for staff routes
+      // Staff check is done in requireStoreAccess; here we only check context mismatch for store type
+      if (request.session.type === 'store' && request.session.storeId !== request.storeId) {
+        throw new AppError('CONTEXT_FORBIDDEN', 'Sessão incompatível com a loja.', 403);
+      }
+    }
+
+    if (request.storeId && request.session && request.session.type === 'store' && request.session.storeId !== request.storeId) {
       throw new AppError('CONTEXT_FORBIDDEN', 'Sessão incompatível com a loja.', 403);
     }
 

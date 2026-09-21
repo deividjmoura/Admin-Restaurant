@@ -80,32 +80,27 @@ export async function setRolePermissions(storeId, role, permissionKeys) {
   });
 }
 
+/**
+ * Semeia as permissões padrão de uma loja nova.
+ *
+ * A fonte de verdade é `FALLBACK_MATRIX` (catalog.js) — o mesmo conjunto que o
+ * fallback usa quando a loja ainda não tem mapeamento. Antes cada papel tinha a
+ * lista duplicada em SQL aqui e no catálogo, e permissão nova (ex.: caixa,
+ * issue #107) só valia em um dos dois lados.
+ */
 export async function ensureDefaultRolePermissions(storeId) {
-  // Called when a store is created, to seed defaults if not exists
   const { rows } = await query(`SELECT COUNT(*)::int as cnt FROM role_permissions WHERE store_id=$1`, [storeId]);
   if (rows[0].cnt > 0) return false;
-  // Insert via SQL that mimics migration backfill
-  // OWNER all
-  await query(
-    `INSERT INTO role_permissions (store_id, role, permission_id)
-     SELECT $1, 'OWNER', id FROM permissions ON CONFLICT DO NOTHING`,
-    [storeId]
-  );
-  await query(
-    `INSERT INTO role_permissions (store_id, role, permission_id)
-     SELECT $1, 'MANAGER', id FROM permissions WHERE key <> 'permissions.manage' ON CONFLICT DO NOTHING`,
-    [storeId]
-  );
-  await query(
-    `INSERT INTO role_permissions (store_id, role, permission_id)
-     SELECT $1, 'KITCHEN', id FROM permissions WHERE key IN ('kitchen.orders.read','orders.items.status.write','orders.read','waiter.ready.read') ON CONFLICT DO NOTHING`,
-    [storeId]
-  );
-  await query(
-    `INSERT INTO role_permissions (store_id, role, permission_id)
-     SELECT $1, 'STAFF', id FROM permissions WHERE key IN ('orders.create','kitchen.orders.read','orders.items.status.write','orders.read','waiter.ready.read','waiter.items.deliver','cashier.sessions.read','cashier.sessions.close','tables.read','payments.read','payments.create','payments.confirm','delivery.zones.read') ON CONFLICT DO NOTHING`,
-    [storeId]
-  );
+
+  for (const [role, keys] of Object.entries(FALLBACK_MATRIX)) {
+    if (!keys?.length) continue;
+    await query(
+      `INSERT INTO role_permissions (store_id, role, permission_id)
+       SELECT $1, $2, id FROM permissions WHERE key = ANY($3::text[])
+       ON CONFLICT DO NOTHING`,
+      [storeId, role, keys]
+    );
+  }
   return true;
 }
 
