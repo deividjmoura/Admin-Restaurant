@@ -9,6 +9,7 @@ import {
   Button,
   Spinner,
   ConnectionStatus,
+  EmptyState,
 } from '../../components/Layout';
 
 const STAFF_NAV = [
@@ -74,15 +75,10 @@ export default function WaiterPage() {
         {!loaded && <Spinner />}
 
         {loaded && items.length === 0 && (
-          <Card className="text-center py-10">
-            <p className="text-3xl mb-2" aria-hidden>
-              ✓
-            </p>
-            <p className="font-medium text-stone-800">Nada para entregar</p>
-            <p className="text-sm text-stone-500 mt-1">
-              Itens marcados como prontos na cozinha/bar aparecem aqui.
-            </p>
-          </Card>
+          <EmptyState
+            title="Nada para entregar"
+            description="Itens marcados como prontos na cozinha/bar aparecem aqui."
+          />
         )}
 
         <div className="space-y-3">
