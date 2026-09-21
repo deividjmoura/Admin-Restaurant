@@ -63,7 +63,7 @@ describe('fila da cozinha e SSE (integration)', () => {
     const address = await ensureAddress();
     const url = new URL(`/api/kitchen/events?station=${station}`, address);
     const response = await fetch(url, {
-      headers: headers(store.slug, cookie),
+      headers: { 'x-tenant-slug': store.slug, cookie },
     });
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -87,7 +87,7 @@ describe('fila da cozinha e SSE (integration)', () => {
   }
 
   const headers = (slug, cookie) => ({
-    'x-tenant-slug': slug,
+    host: `${slug}.localhost`,
     ...(cookie ? { cookie } : {}),
   });
 

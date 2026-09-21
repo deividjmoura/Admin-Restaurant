@@ -12,6 +12,7 @@
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { customerHeaders } from '../helpers/fixtures.js';
 import { skipWithoutDb, hasDatabase } from '../helpers/env.js';
 
 describe('Idempotency-Key entre sessões (regressão)', () => {
@@ -23,6 +24,7 @@ describe('Idempotency-Key entre sessões (regressão)', () => {
   let sessionB = null;
   const key = `idem-cross-${Date.now().toString(36)}`;
   let orderAId = null;
+  const customerAuth = {};
 
   before(async () => {
     if (!hasDatabase()) return;
@@ -65,6 +67,8 @@ describe('Idempotency-Key entre sessões (regressão)', () => {
     const tableB = await createTable(store.id, { number: 2 });
     sessionA = await openOrGetSession(store.id, tableA.id);
     sessionB = await openOrGetSession(store.id, tableB.id);
+    customerAuth[sessionA.id] = await customerHeaders(app, store, tableA);
+    customerAuth[sessionB.id] = await customerHeaders(app, store, tableB);
   });
 
   after(async () => {
@@ -78,7 +82,7 @@ describe('Idempotency-Key entre sessões (regressão)', () => {
     app.inject({
       method: 'POST',
       url,
-      headers: { 'x-tenant-slug': store.slug, 'content-type': 'application/json', ...headers },
+      headers: { ...customerAuth[body.tableSessionId], 'content-type': 'application/json', ...headers },
       payload: body,
     });
 

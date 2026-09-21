@@ -1,3 +1,8 @@
+import {
+  assertCustomerSession,
+  assertSessionScope,
+  assertOrderScope,
+} from '../customer/customer-session.js';
 import { query, withTransaction } from '../../infrastructure/db.js';
 import {
   canTransition,
@@ -48,7 +53,11 @@ export async function findOrderById(storeId, orderId, { client = null } = {}) {
   return rows[0] ?? null;
 }
 
-export async function findOrderByProviderExternal(storeId, provider, externalId) {
+export async function findOrderByProviderExternal(
+  storeId,
+  provider,
+  externalId
+) {
   if (!externalId) return null;
   const { rows } = await query(
     `SELECT ${ORDER_COLS}
@@ -59,7 +68,11 @@ export async function findOrderByProviderExternal(storeId, provider, externalId)
   return rows[0] ?? null;
 }
 
-export async function findOrderByIdempotencyKey(storeId, key, { client = null } = {}) {
+export async function findOrderByIdempotencyKey(
+  storeId,
+  key,
+  { client = null } = {}
+) {
   if (!key) return null;
   const { rows } = await runnerOf(client)(
     `SELECT ${ORDER_COLS}
@@ -94,7 +107,11 @@ export async function listOrderItems(storeId, orderId, { client = null } = {}) {
  * Itens de um pedido com adicionais — usado no replay do checkout e nos
  * detalhes de pedido (o total da linha inclui adicionais).
  */
-export async function listOrderItemsWithAddons(storeId, orderId, { client = null } = {}) {
+export async function listOrderItemsWithAddons(
+  storeId,
+  orderId,
+  { client = null } = {}
+) {
   const items = await listOrderItems(storeId, orderId, { client });
   if (!items.length) return [];
 
@@ -232,7 +249,17 @@ export async function listKitchenOrders(storeId, opts = {}) {
  * @param {object} input
  * @param {null | ((client: import('pg').PoolClient, order: object, items: object[]) => Promise<void>)} afterInsert
  */
-async function createOrderInTx(client, storeId, input, afterInsert) {
+async function createOrderInTx(
+  client,
+  storeId,
+  input,
+  afterInsert,
+  customer = null
+) {
+  assertSessionScope(customer, storeId, input.tableSessionId);
+  await assertCustomerSession(customer, client.query.bind(client), {
+    lock: true,
+  });
   const {
     tableSessionId = null,
     channel = 'TABLE',
@@ -256,7 +283,10 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
     );
     session = rows[0] ?? null;
     if (!session) {
-      throw new OrderError('SESSION_NOT_FOUND', 'Sessão não encontrada nesta loja.');
+      throw new OrderError(
+        'SESSION_NOT_FOUND',
+        'Sessão não encontrada nesta loja.'
+      );
     }
     if (session.status !== 'open') {
       throw new OrderError('SESSION_CLOSED', 'Sessão de mesa já está fechada.');
@@ -295,7 +325,10 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
   for (const item of items) {
     const p = productMap.get(item.productId);
     if (!p || !p.is_active) {
-      throw new OrderError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.');
+      throw new OrderError(
+        'PRODUCT_NOT_FOUND',
+        'Produto não encontrado nesta loja.'
+      );
     }
     if (!p.is_available) {
       throw new OrderError('PRODUCT_UNAVAILABLE', 'Produto indisponível.', {
@@ -328,9 +361,13 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
       [storeId, item.productId, uniqueAddonIds]
     );
     if (addons.length !== uniqueAddonIds.length) {
-      throw new OrderError('ADDON_INVALID', 'Adicional inválido para este produto.', {
-        productId: item.productId,
-      });
+      throw new OrderError(
+        'ADDON_INVALID',
+        'Adicional inválido para este produto.',
+        {
+          productId: item.productId,
+        }
+      );
     }
     addonsByItemIndex.set(index, addons);
   }
@@ -383,9 +420,8 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
 
     const addons = addonsByItemIndex.get(index) || [];
     const addonsTotal =
-      Math.round(
-        addons.reduce((sum, a) => sum + Number(a.price), 0) * 100
-      ) / 100;
+      Math.round(addons.reduce((sum, a) => sum + Number(a.price), 0) * 100) /
+      100;
 
     const { rows: itemRows } = await client.query(
       `INSERT INTO order_items
@@ -421,7 +457,8 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
       addons_total: Number(orderItem.addons_total) || 0,
       line_total:
         Math.round(
-          (Number(orderItem.unit_price) + (Number(orderItem.addons_total) || 0)) *
+          (Number(orderItem.unit_price) +
+            (Number(orderItem.addons_total) || 0)) *
             orderItem.quantity *
             100
         ) / 100,
@@ -447,11 +484,7 @@ async function createOrderInTx(client, storeId, input, afterInsert) {
 }
 
 function assertSameSession(existing, tableSessionId) {
-  if (
-    existing.table_session_id &&
-    tableSessionId &&
-    existing.table_session_id !== tableSessionId
-  ) {
+  if ((existing.table_session_id ?? null) !== (tableSessionId ?? null)) {
     throw new OrderError(
       'IDEMPOTENCY_KEY_REUSED',
       'Chave de idempotência já usada em outra sessão.'
@@ -486,20 +519,27 @@ async function replayResult(client, storeId, existing) {
  * aberta: o pedido participa da transação do chamador e um erro em `afterInsert`
  * desfaz tudo junto.
  */
-export async function createOrder(storeId, input, { tx = null, afterInsert = null } = {}) {
+export async function createOrder(
+  storeId,
+  input,
+  { tx = null, afterInsert = null, customer = null } = {}
+) {
   if (tx) {
-    return createOrderInTx(tx, storeId, input, afterInsert);
+    return createOrderInTx(tx, storeId, input, afterInsert, customer);
   }
 
   try {
     return await withTransaction((client) =>
-      createOrderInTx(client, storeId, input, afterInsert)
+      createOrderInTx(client, storeId, input, afterInsert, customer)
     );
   } catch (err) {
     // Conflitos de unicidade fora do alvo de idempotência (ex.: external_id).
     if (err.code === '23505') {
       if (input?.idempotencyKey) {
-        const existing = await findOrderByIdempotencyKey(storeId, input.idempotencyKey);
+        const existing = await findOrderByIdempotencyKey(
+          storeId,
+          input.idempotencyKey
+        );
         if (existing) {
           assertSameSession(existing, input.tableSessionId);
           return replayResult(queryRunner(), storeId, existing);
@@ -534,18 +574,50 @@ function queryRunner() {
  * Duas transições concorrentes: a segunda encontra o status já alterado
  * (FOR UPDATE serializa) e recebe 409 em vez de sobrescrever.
  */
-export async function transitionOrderStatus(storeId, orderId, nextStatus) {
+export async function transitionOrderStatus(
+  storeId,
+  orderId,
+  nextStatus,
+  { customer = null } = {}
+) {
   const next = String(nextStatus || '').toUpperCase();
 
   return withTransaction(async (client) => {
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
+    await assertOrderScope(
+      customer,
+      storeId,
+      orderId,
+      client.query.bind(client)
+    );
     const { rows: currentRows } = await client.query(
-      `SELECT id, status FROM orders
+      `SELECT id, status, created_at FROM orders
        WHERE id = $1 AND store_id = $2
        FOR UPDATE`,
       [orderId, storeId]
     );
     const current = currentRows[0];
     if (!current) return null;
+    if (customer && !CUSTOMER_CANCELABLE.has(current.status)) {
+      throw new OrderError(
+        'CANCEL_NOT_ALLOWED',
+        'Cancelamento não permitido neste status.',
+        { status: current.status }
+      );
+    }
+    if (
+      customer &&
+      Date.now() - new Date(current.created_at).getTime() >
+        CUSTOMER_CANCEL_WINDOW_MS
+    ) {
+      throw new OrderError(
+        'CANCEL_NOT_ALLOWED',
+        'Prazo de cancelamento esgotado.',
+        { reason: 'window', windowSeconds: CUSTOMER_CANCEL_WINDOW_MS / 1000 }
+      );
+    }
 
     if (!canTransition(current.status, next)) {
       throw new OrderError(
@@ -605,7 +677,11 @@ async function cancelActiveItems(client, storeId, orderId) {
 
 export { cancelActiveItems };
 
-export async function cancelOrderAsCustomer(storeId, orderId, { actor = 'customer' } = {}) {
+export async function cancelOrderAsCustomer(
+  storeId,
+  orderId,
+  { actor = 'customer', customer = null } = {}
+) {
   const order = await findOrderById(storeId, orderId);
   if (!order) return null;
 
@@ -620,14 +696,18 @@ export async function cancelOrderAsCustomer(storeId, orderId, { actor = 'custome
   if (actor === 'customer') {
     const age = Date.now() - new Date(order.created_at).getTime();
     if (age > CUSTOMER_CANCEL_WINDOW_MS) {
-      throw new OrderError('CANCEL_NOT_ALLOWED', 'Prazo de cancelamento esgotado.', {
-        reason: 'window',
-        windowSeconds: CUSTOMER_CANCEL_WINDOW_MS / 1000,
-      });
+      throw new OrderError(
+        'CANCEL_NOT_ALLOWED',
+        'Prazo de cancelamento esgotado.',
+        {
+          reason: 'window',
+          windowSeconds: CUSTOMER_CANCEL_WINDOW_MS / 1000,
+        }
+      );
     }
   }
 
-  return transitionOrderStatus(storeId, orderId, 'CANCELLED');
+  return transitionOrderStatus(storeId, orderId, 'CANCELLED', { customer });
 }
 
 /** Cancela um pedido pelo staff (sem janela de tempo). */
@@ -649,7 +729,11 @@ export async function getOrderStations(storeId, orderId) {
 // Item-level status (cozinha / garçom)
 // ---------------------------------------------------------------------------
 
-export async function findOrderItemById(storeId, itemId, { client = null } = {}) {
+export async function findOrderItemById(
+  storeId,
+  itemId,
+  { client = null } = {}
+) {
   const { rows } = await runnerOf(client)(
     `SELECT ${ITEM_COLS}
      FROM order_items
@@ -724,7 +808,12 @@ export async function transitionOrderItemStatus(storeId, itemId, nextStatus) {
  * Deriva e aplica o status do pedido a partir dos status dos itens.
  * Não usa mais heurística: o alvo vem de `deriveOrderStatus()`.
  */
-async function syncOrderStatusFromItems(client, storeId, orderId, currentStatus) {
+async function syncOrderStatusFromItems(
+  client,
+  storeId,
+  orderId,
+  currentStatus
+) {
   const { rows: items } = await client.query(
     `SELECT status FROM order_items
      WHERE order_id = $1 AND store_id = $2`,
@@ -750,7 +839,10 @@ async function syncOrderStatusFromItems(client, storeId, orderId, currentStatus)
   return rows[0] ?? null;
 }
 
-export async function listReadyItems(storeId, { station = null, limit = 100 } = {}) {
+export async function listReadyItems(
+  storeId,
+  { station = null, limit = 100 } = {}
+) {
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 200);
   const params = [storeId];
   let stationFilter = '';
@@ -847,7 +939,8 @@ export async function getSessionSummary(storeId, sessionId) {
     // Pedido cancelado não gera consumo, mesmo que o item não esteja marcado.
     if (it.status === 'CANCELLED' || it.order_status === 'CANCELLED') continue;
     const addons = Number(it.addons_total) || 0;
-    const line = Math.round((Number(it.unit_price) + addons) * it.quantity * 100) / 100;
+    const line =
+      Math.round((Number(it.unit_price) + addons) * it.quantity * 100) / 100;
     itemCount += it.quantity;
     totalAmount += line;
     if (it.status === 'DELIVERED') deliveredAmount += line;
@@ -870,7 +963,10 @@ export async function getSessionSummary(storeId, sessionId) {
   return {
     session: mapSession(session),
     orders: orders
-      .filter((o) => o.status !== 'CANCELLED' || (itemsByOrder.get(o.id) || []).length > 0)
+      .filter(
+        (o) =>
+          o.status !== 'CANCELLED' || (itemsByOrder.get(o.id) || []).length > 0
+      )
       .map((o) => ({
         id: o.id,
         status: o.status,

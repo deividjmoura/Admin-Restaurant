@@ -18,27 +18,51 @@ Toda query, cache, evento, fila e assinatura realtime é scoped por tenant.
 5. **Filas** — jobs carregam `store_id` e workers respeitam
 6. **Frontend** — nunca é camada de segurança
 
-## Resolução de tenant
+## Contextos de entrada (2026-09-21)
 
-```
-loja1.seudominio.com  →  store = loja1
-```
+| Entrada | Host | Identidade / dados |
+|---|---|---|
+| Marketing | apex / www | Anônimo; somente landing e leads, nenhum tenant |
+| Platform | app / platform | JWT `type=platform`, `PLATFORM_OWNER`; gestão global explícita |
+| Store | `{slug}.BASE_DOMAIN` / custom domain | JWT `type=store`, `storeId` e membership; somente aquela loja |
+| Customer | `/m/:token` no host da loja | JWT customer vinculado à loja/mesa/sessão; não é usuário staff |
 
-- Subdomínio é a fonte principal de verdade para o cliente final.
-- Usuário autenticado (staff) tem `store_id` no contexto da sessão/JWT.
-- `SUPER_ADMIN` pode operar cross-tenant apenas em rotas administrativas explícitas e auditáveis.
+O host define o contexto. Apex/www/app/platform nunca viram tenants via header
+ou query. Ordem de resolução de loja: subdomínio → custom domain → header de
+transporte permitido → query apenas em rota com `allowTenantQuery` (SSE).
+Fallbacks de produção exigem host de transporte **e** origem explicitamente
+permitidos; o caminho normal é SPA/API same-origin com proxy preservando `Host`.
 
-Nunca confiar em `store_id` enviado pelo cliente quando o domínio já define o tenant.
+`requirePlatform` exige host platform e token platform. `requireStoreAccess` e
+`requirePermission` exigem storeId do token igual ao host e membership ativa no
+banco. Nenhum `SUPER_ADMIN` tem bypass. JWT A no host B → 403; recurso B buscado
+sob contexto A → 404. `store_id` do cliente nunca define o tenant.
 
-## Papéis
+A migration 0022 acrescenta `users.is_platform_owner` (backfill da flag legada),
+`auth_sessions` para revogação por jti e `leads` sem store_id. Provisionamento de
+store + primeiro OWNER + permissões é transacional. DELETE de loja suspende,
+não apaga histórico. Auditoria de plataforma tem store_id nulo.
 
-| Papel         | Escopo              |
-|---------------|---------------------|
-| SUPER_ADMIN   | Plataforma          |
-| OWNER         | Loja (tudo)         |
-| MANAGER       | Loja (quase tudo)   |
-| KITCHEN       | Pedidos / status    |
-| STAFF         | Operacional básico  |
+No frontend, `resolveEntryContext` só orienta UX: marketing, platform e store têm
+árvores de rotas separadas. Login de loja não tem campo tenant. O launcher fica
+em `/dev` apenas no build DEV. Customer não grava slug em localStorage e separa
+estado de carrinho por token QR.
+
+### Papéis existentes
+
+| Papel | Escopo |
+|---|---|
+| PLATFORM_OWNER | Plataforma; não concede membership de loja |
+| OWNER | Loja (tudo) |
+| MANAGER | Loja (quase tudo) |
+| KITCHEN | Pedidos / status |
+| STAFF | Operacional, incluindo garçom/caixa conforme RBAC |
+
+**Contratos, deploy e rollback:**
+[`ENTRY-CONTEXTS.md`](./ENTRY-CONTEXTS.md). O fluxo mesa/QR usa
+[credenciais customer](./CUSTOMER-SESSIONS.md), distintas de cookies staff.
+Mutações revalidam a sessão sob lock na transação, inclusive antes de replays.
+A migration 0023 acrescenta `orders.create` para escritas staff antes anônimas.
 
 ## Modelo de pastas
 

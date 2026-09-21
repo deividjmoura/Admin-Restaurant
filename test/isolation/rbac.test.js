@@ -92,11 +92,11 @@ describe('RBAC HTTP isolation (integration)', () => {
     return user;
   }
 
-  async function loginViaApp(appInstance, email, password = 'test1234') {
+  async function loginViaApp(appInstance, email, password = 'test1234', store = storeA) {
     const res = await appInstance.inject({
       method: 'POST',
-      url: '/api/auth/login',
-      headers: { 'content-type': 'application/json' },
+      url: '/api/auth/store/login',
+      headers: { 'content-type': 'application/json', host: `${store.slug}.localhost` },
       payload: { email, password },
     });
     assert.equal(res.statusCode, 200, `login failed for ${email}: ${res.body}`);
@@ -173,7 +173,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resOwner = await app.inject({
       method: 'GET',
       url: '/api/admin/products',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookie },
     });
     // OWNER should have menu.products.read
     assert.equal(resOwner.statusCode, 200, `OWNER menu read failed: ${resOwner.body}`);
@@ -181,7 +181,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resKitchen = await app.inject({
       method: 'GET',
       url: '/api/admin/products',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: kitchenCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: kitchenCookie },
     });
     // KITCHEN fallback does NOT have menu.products.read → 403
     assert.equal(resKitchen.statusCode, 403, `KITCHEN should be forbidden on menu: ${resKitchen.body}`);
@@ -197,7 +197,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resStaffWaiter = await app.inject({
       method: 'GET',
       url: '/api/waiter/ready-items',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: staffCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: staffCookie },
     });
     // STAFF should have waiter.ready.read
     assert.equal(resStaffWaiter.statusCode, 200, `STAFF waiter should be allowed: ${resStaffWaiter.body}`);
@@ -205,7 +205,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resStaffReports = await app.inject({
       method: 'GET',
       url: '/api/reports/dashboard',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: staffCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: staffCookie },
     });
     // STAFF should NOT have reports.read → 403
     assert.equal(resStaffReports.statusCode, 403, `STAFF should be forbidden on reports: ${resStaffReports.body}`);
@@ -213,7 +213,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resKitchenReports = await app.inject({
       method: 'GET',
       url: '/api/reports/dashboard',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: kitchenCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: kitchenCookie },
     });
     assert.equal(resKitchenReports.statusCode, 403);
   });
@@ -227,7 +227,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resOwner = await app.inject({
       method: 'GET',
       url: '/api/admin/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookie },
     });
     assert.equal(resOwner.statusCode, 200, `OWNER should list permissions: ${resOwner.body}`);
     const bodyOwner = resOwner.json();
@@ -237,7 +237,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resManager = await app.inject({
       method: 'GET',
       url: '/api/admin/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: managerCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: managerCookie },
     });
     // MANAGER does NOT have permissions.manage (fallback)
     assert.equal(resManager.statusCode, 403, `MANAGER should be forbidden on permissions.manage: ${resManager.body}`);
@@ -245,7 +245,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resStaff = await app.inject({
       method: 'GET',
       url: '/api/admin/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: staffCookie },
+      headers: { host: `${storeA.slug}.localhost`, cookie: staffCookie },
     });
     assert.equal(resStaff.statusCode, 403);
   });
@@ -255,14 +255,14 @@ describe('RBAC HTTP isolation (integration)', () => {
     const ownerCookieA = await loginViaApp(app, ownerUser.email);
     // create owner for storeB
     const ownerB = await createUserWithRole({ email: `ownerB-${suffix}@test.local`, role: 'OWNER', storeId: storeB.id });
-    const ownerCookieB = await loginViaApp(app, ownerB.email);
+    const ownerCookieB = await loginViaApp(app, ownerB.email, 'test1234', storeB);
 
     // initially, STAFF in storeA should not have reports.read
     // we will grant reports.read to STAFF in storeA only
     const beforeA = await app.inject({
       method: 'GET',
       url: '/api/admin/roles/STAFF/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookieA },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookieA },
     });
     assert.equal(beforeA.statusCode, 200);
     const permsA_before = beforeA.json().permissions;
@@ -273,7 +273,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const putRes = await app.inject({
       method: 'PUT',
       url: '/api/admin/roles/STAFF/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookieA, 'content-type': 'application/json' },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookieA, 'content-type': 'application/json' },
       payload: { permissions: newPermsA },
     });
     assert.equal(putRes.statusCode, 200, `PUT should succeed: ${putRes.body}`);
@@ -282,7 +282,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const afterA = await app.inject({
       method: 'GET',
       url: '/api/admin/roles/STAFF/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookieA },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookieA },
     });
     assert.equal(afterA.statusCode, 200);
     assert.ok(afterA.json().permissions.includes('reports.read'));
@@ -291,7 +291,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const afterB = await app.inject({
       method: 'GET',
       url: '/api/admin/roles/STAFF/permissions',
-      headers: { 'x-tenant-slug': storeB.slug, cookie: ownerCookieB },
+      headers: { host: `${storeB.slug}.localhost`, cookie: ownerCookieB },
     });
     assert.equal(afterB.statusCode, 200);
     // storeB STAFF should not have reports.read unless we also set it
@@ -304,7 +304,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     await app.inject({
       method: 'PUT',
       url: '/api/admin/roles/STAFF/permissions',
-      headers: { 'x-tenant-slug': storeA.slug, cookie: ownerCookieA, 'content-type': 'application/json' },
+      headers: { host: `${storeA.slug}.localhost`, cookie: ownerCookieA, 'content-type': 'application/json' },
       payload: { permissions: restore },
     });
 
@@ -320,7 +320,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/kitchen/orders?station=KITCHEN',
-      headers: { 'x-tenant-slug': storeB.slug, cookie: kitchenCookie },
+      headers: { host: `${storeB.slug}.localhost`, cookie: kitchenCookie },
     });
     // should be 403 FORBIDDEN (no access to store B) not 200
     assert.equal(res.statusCode, 403, `cross-tenant should be forbidden: ${res.body}`);
@@ -331,7 +331,7 @@ describe('RBAC HTTP isolation (integration)', () => {
     const resNoAuth = await app.inject({
       method: 'GET',
       url: '/api/admin/products',
-      headers: { 'x-tenant-slug': storeA.slug },
+      headers: { host: `${storeA.slug}.localhost` },
     });
     assert.equal(resNoAuth.statusCode, 401);
 

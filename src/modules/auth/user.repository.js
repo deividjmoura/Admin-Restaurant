@@ -3,7 +3,7 @@ import { query } from '../../infrastructure/db.js';
 export async function findUserByEmail(email) {
   if (!email) return null;
   const { rows } = await query(
-    `SELECT id, email, password_hash, name, is_super_admin, is_active, created_at, updated_at
+    `SELECT id, email, password_hash, name, is_super_admin, is_platform_owner, is_active, created_at, updated_at
      FROM users
      WHERE lower(email) = lower($1)`,
     [email]
@@ -13,7 +13,7 @@ export async function findUserByEmail(email) {
 
 export async function findUserById(id) {
   const { rows } = await query(
-    `SELECT id, email, password_hash, name, is_super_admin, is_active, created_at, updated_at
+    `SELECT id, email, password_hash, name, is_super_admin, is_platform_owner, is_active, created_at, updated_at
      FROM users
      WHERE id = $1`,
     [id]
@@ -21,12 +21,12 @@ export async function findUserById(id) {
   return rows[0] ?? null;
 }
 
-export async function createUser({ email, passwordHash, name, isSuperAdmin = false }) {
+export async function createUser({ email, passwordHash, name, isSuperAdmin = false, isPlatformOwner = false }) {
   const { rows } = await query(
-    `INSERT INTO users (email, password_hash, name, is_super_admin)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, email, name, is_super_admin, is_active, created_at, updated_at`,
-    [email, passwordHash, name, isSuperAdmin]
+    `INSERT INTO users (email, password_hash, name, is_super_admin, is_platform_owner)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, email, name, is_super_admin, is_platform_owner, is_active, created_at, updated_at`,
+    [email, passwordHash, name, isSuperAdmin, isPlatformOwner]
   );
   return rows[0];
 }

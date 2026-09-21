@@ -65,6 +65,9 @@ function mapDeliveryError(err) {
   if (!(err instanceof DeliveryError) && err?.code) {
     // erros de createOrder
     const code = err.code || err.message;
+    if (code === 'IDEMPOTENCY_KEY_REUSED') {
+      return new AppError('IDEMPOTENCY_KEY_REUSED', 'Chave já utilizada em outro contexto.', 409);
+    }
     if (code === 'PRODUCT_NOT_FOUND') {
       return new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.', 404);
     }

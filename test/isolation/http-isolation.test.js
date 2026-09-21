@@ -6,6 +6,7 @@
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { customerHeaders, makeTableSession } from '../helpers/fixtures.js';
 import { skipWithoutDb, hasDatabase } from '../helpers/env.js';
 
 describe('HTTP tenant isolation (integration)', () => {
@@ -15,6 +16,7 @@ describe('HTTP tenant isolation (integration)', () => {
   let storeB = null;
   let orderAId = null;
   let productAId = null;
+  let authA, authB;
 
   before(async () => {
     if (!hasDatabase()) return;
@@ -65,6 +67,8 @@ describe('HTTP tenant isolation (integration)', () => {
       items: [{ productId: productAId, quantity: 1, addonIds: [] }],
     });
     orderAId = created.order.id;
+    authA = await customerHeaders(app, storeA, tableA);
+    authB = await customerHeaders(app, storeB, (await makeTableSession(storeB.id)).table);
   });
 
   after(async () => {
@@ -82,14 +86,14 @@ describe('HTTP tenant isolation (integration)', () => {
     const resA = await app.inject({
       method: 'GET',
       url: `/api/orders/${orderAId}`,
-      headers: { 'x-tenant-slug': storeA.slug },
+      headers: authA,
     });
     assert.equal(resA.statusCode, 200, resA.body);
 
     const resB = await app.inject({
       method: 'GET',
       url: `/api/orders/${orderAId}`,
-      headers: { 'x-tenant-slug': storeB.slug },
+      headers: authB,
     });
     // 404 — não vaza existência do pedido de outra loja
     assert.equal(resB.statusCode, 404, resB.body);
@@ -101,7 +105,7 @@ describe('HTTP tenant isolation (integration)', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/menu?store_id=${storeA.id}`,
-      headers: { 'x-tenant-slug': storeB.slug },
+      headers: { host: `${storeB.slug}.localhost` },
     });
     assert.equal(res.statusCode, 200, res.body);
     const body = res.json();
@@ -136,7 +140,7 @@ describe('HTTP tenant isolation (integration)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/kitchen/orders?station=KITCHEN',
-      headers: { 'x-tenant-slug': storeB.slug },
+      headers: { host: `${storeB.slug}.localhost` },
     });
     assert.ok(
       [401, 403].includes(res.statusCode),

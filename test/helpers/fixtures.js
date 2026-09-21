@@ -77,7 +77,7 @@ export async function makeUserWithRole(
     isSuperAdmin,
   });
   if (storeId) await addStoreUser({ storeId, userId: user.id, role });
-  const cookie = `ar_session=${await signSessionToken(user)}`;
+  const cookie = `ar_session=${await signSessionToken(user, { type: 'store', storeId, role })}`;
   return { user, cookie, password };
 }
 
@@ -89,3 +89,11 @@ export async function dropStores(...storeIds) {
 }
 
 export { hasDatabase };
+
+/** Real QR exchange for customer HTTP tests. */
+export async function customerHeaders(app, store, table) {
+  const host = `${store.slug}.localhost`;
+  const res = await app.inject({ method: 'GET', url: `/api/tables/by-token/${table.public_token}`, headers: { host } });
+  if (res.statusCode !== 200) throw new Error(`QR exchange failed: ${res.body}`);
+  return { host, authorization: `Bearer ${res.json().customerSession.token}` };
+}

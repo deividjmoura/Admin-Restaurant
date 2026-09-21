@@ -2,6 +2,10 @@
  * Carrinho compartilhado da sessão de mesa.
  * Concorrência: optimistic locking via table_sessions.cart_version.
  */
+import {
+  assertCustomerSession,
+  assertSessionScope,
+} from '../customer/customer-session.js';
 import { query, withTransaction } from '../../infrastructure/db.js';
 
 import { CartConflictError, CartError } from './cart-errors.js';
@@ -134,7 +138,8 @@ async function bumpVersion(client, storeId, sessionId, expectedVersion) {
 export async function addCartItem(
   storeId,
   sessionId,
-  { productId, quantity, notes = null, addonIds = [], expectedVersion }
+  { productId, quantity, notes = null, addonIds = [], expectedVersion },
+  { customer = null } = {}
 ) {
   if (expectedVersion === undefined || expectedVersion === null) {
     throw new CartError('VERSION_REQUIRED', 'expectedVersion é obrigatório.');
@@ -144,8 +149,13 @@ export async function addCartItem(
   }
 
   return withTransaction(async (client) => {
+    assertSessionScope(customer, storeId, sessionId);
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
     const session = await getOpenSessionForStore(storeId, sessionId, client);
-    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    if (!session)
+      throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
 
     const { rows: products } = await client.query(
       `SELECT id, name, price, is_available, is_active
@@ -155,7 +165,10 @@ export async function addCartItem(
     );
     const product = products[0];
     if (!product || !product.is_active) {
-      throw new CartError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.');
+      throw new CartError(
+        'PRODUCT_NOT_FOUND',
+        'Produto não encontrado nesta loja.'
+      );
     }
     if (!product.is_available) {
       throw new CartError('PRODUCT_UNAVAILABLE', 'Produto indisponível.');
@@ -169,7 +182,10 @@ export async function addCartItem(
         [storeId, productId, uniqueAddonIds]
       );
       if (addons.length !== uniqueAddonIds.length) {
-        throw new CartError('ADDON_INVALID', 'Adicional inválido para este produto.');
+        throw new CartError(
+          'ADDON_INVALID',
+          'Adicional inválido para este produto.'
+        );
       }
     }
 
@@ -190,7 +206,12 @@ export async function addCartItem(
       );
     }
 
-    const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
+    const newVersion = await bumpVersion(
+      client,
+      storeId,
+      sessionId,
+      expectedVersion
+    );
     return { cartItemId, version: newVersion };
   });
 }
@@ -202,22 +223,29 @@ export async function updateCartItem(
   storeId,
   sessionId,
   itemId,
-  { quantity, notes, expectedVersion }
+  { quantity, notes, expectedVersion },
+  { customer = null } = {}
 ) {
   if (expectedVersion === undefined || expectedVersion === null) {
     throw new CartError('VERSION_REQUIRED', 'expectedVersion é obrigatório.');
   }
 
   return withTransaction(async (client) => {
+    assertSessionScope(customer, storeId, sessionId);
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
     const session = await getOpenSessionForStore(storeId, sessionId, client);
-    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    if (!session)
+      throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
 
     const { rows: items } = await client.query(
       `SELECT id FROM cart_items
        WHERE id = $1 AND session_id = $2 AND store_id = $3`,
       [itemId, sessionId, storeId]
     );
-    if (!items[0]) throw new CartError('CART_ITEM_NOT_FOUND', 'Item não está no carrinho.');
+    if (!items[0])
+      throw new CartError('CART_ITEM_NOT_FOUND', 'Item não está no carrinho.');
 
     if (quantity !== undefined) {
       if (quantity < 1 || quantity > 99) {
@@ -237,7 +265,12 @@ export async function updateCartItem(
       );
     }
 
-    const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
+    const newVersion = await bumpVersion(
+      client,
+      storeId,
+      sessionId,
+      expectedVersion
+    );
     return { version: newVersion };
   });
 }
@@ -245,23 +278,40 @@ export async function updateCartItem(
 /**
  * Remove item do carrinho.
  */
-export async function removeCartItem(storeId, sessionId, itemId, expectedVersion) {
+export async function removeCartItem(
+  storeId,
+  sessionId,
+  itemId,
+  expectedVersion,
+  { customer = null } = {}
+) {
   if (expectedVersion === undefined || expectedVersion === null) {
     throw new CartError('VERSION_REQUIRED', 'expectedVersion é obrigatório.');
   }
 
   return withTransaction(async (client) => {
+    assertSessionScope(customer, storeId, sessionId);
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
     const session = await getOpenSessionForStore(storeId, sessionId, client);
-    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    if (!session)
+      throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
 
     const { rowCount } = await client.query(
       `DELETE FROM cart_items
        WHERE id = $1 AND session_id = $2 AND store_id = $3`,
       [itemId, sessionId, storeId]
     );
-    if (!rowCount) throw new CartError('CART_ITEM_NOT_FOUND', 'Item não está no carrinho.');
+    if (!rowCount)
+      throw new CartError('CART_ITEM_NOT_FOUND', 'Item não está no carrinho.');
 
-    const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
+    const newVersion = await bumpVersion(
+      client,
+      storeId,
+      sessionId,
+      expectedVersion
+    );
     return { version: newVersion };
   });
 }
@@ -269,14 +319,29 @@ export async function removeCartItem(storeId, sessionId, itemId, expectedVersion
 /**
  * Esvazia o carrinho (após checkout ou cancelamento do carrinho).
  */
-export async function clearCart(storeId, sessionId, expectedVersion) {
+export async function clearCart(
+  storeId,
+  sessionId,
+  expectedVersion,
+  { customer = null } = {}
+) {
   if (expectedVersion === undefined || expectedVersion === null) {
     throw new CartError('VERSION_REQUIRED', 'expectedVersion é obrigatório.');
   }
 
   return withTransaction(async (client) => {
-    const result = await clearCartInTx(client, storeId, sessionId, expectedVersion);
-    if (!result) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    assertSessionScope(customer, storeId, sessionId);
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
+    const result = await clearCartInTx(
+      client,
+      storeId,
+      sessionId,
+      expectedVersion
+    );
+    if (!result)
+      throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
     return result;
   });
 }
@@ -285,7 +350,12 @@ export async function clearCart(storeId, sessionId, expectedVersion) {
  * Esvazia o carrinho dentro de uma transação JÁ aberta.
  * @returns {{ version: number }|null}
  */
-export async function clearCartInTx(client, storeId, sessionId, expectedVersion) {
+export async function clearCartInTx(
+  client,
+  storeId,
+  sessionId,
+  expectedVersion
+) {
   const session = await getOpenSessionForStore(storeId, sessionId, client);
   if (!session) return null;
 
@@ -293,7 +363,12 @@ export async function clearCartInTx(client, storeId, sessionId, expectedVersion)
     `DELETE FROM cart_items WHERE session_id = $1 AND store_id = $2`,
     [sessionId, storeId]
   );
-  const newVersion = await bumpVersion(client, storeId, sessionId, expectedVersion);
+  const newVersion = await bumpVersion(
+    client,
+    storeId,
+    sessionId,
+    expectedVersion
+  );
   return { version: newVersion };
 }
 
@@ -315,13 +390,21 @@ export { bumpVersion };
 export async function checkoutCart(
   storeId,
   sessionId,
-  { expectedVersion = null, idempotencyKey = null, notes = null } = {}
+  {
+    expectedVersion = null,
+    idempotencyKey = null,
+    notes = null,
+    customer = null,
+  } = {}
 ) {
-  const { createOrder, findOrderByIdempotencyKey, listOrderItems } = await import(
-    '../orders/orders.repository.js'
-  );
+  const { createOrder, findOrderByIdempotencyKey, listOrderItems } =
+    await import('../orders/orders.repository.js');
 
   return withTransaction(async (client) => {
+    assertSessionScope(customer, storeId, sessionId);
+    await assertCustomerSession(customer, client.query.bind(client), {
+      lock: true,
+    });
     const { rows: sessionRows } = await client.query(
       `SELECT id, store_id, table_id, status, cart_version, opened_at
        FROM table_sessions
@@ -330,15 +413,20 @@ export async function checkoutCart(
       [sessionId, storeId]
     );
     const session = sessionRows[0];
-    if (!session) throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
+    if (!session)
+      throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
 
     // 1) Idempotência ANTES de qualquer validação de estado: um retry do mesmo
     //    checkout (rede caiu depois do commit) devolve o MESMO pedido, mesmo que
     //    o carrinho já tenha sido limpo ou a versão tenha mudado.
     if (idempotencyKey) {
-      const existing = await findOrderByIdempotencyKey(storeId, idempotencyKey, {
-        client,
-      });
+      const existing = await findOrderByIdempotencyKey(
+        storeId,
+        idempotencyKey,
+        {
+          client,
+        }
+      );
       if (existing) {
         if (existing.table_session_id !== session.id) {
           throw new CartError(
@@ -370,7 +458,9 @@ export async function checkoutCart(
       throw new CartConflictError(session.cart_version);
     }
 
-    const snapshot = await getCartItemsForCheckout(storeId, sessionId, { client });
+    const snapshot = await getCartItemsForCheckout(storeId, sessionId, {
+      client,
+    });
 
     const result = await createOrder(
       storeId,
@@ -403,7 +493,11 @@ export async function checkoutCart(
  * Snapshot dos itens do carrinho no formato do createOrder.
  * Throws CartError — never returns null (avoids TypeError in checkout route).
  */
-export async function getCartItemsForCheckout(storeId, sessionId, { client = null } = {}) {
+export async function getCartItemsForCheckout(
+  storeId,
+  sessionId,
+  { client = null } = {}
+) {
   const cart = await getCart(storeId, sessionId, { client });
   if (!cart) {
     throw new CartError('SESSION_NOT_FOUND', 'Sessão não encontrada.');
@@ -413,7 +507,10 @@ export async function getCartItemsForCheckout(storeId, sessionId, { client = nul
   }
   const unavailable = cart.items.filter((i) => !i.isAvailable);
   if (unavailable.length) {
-    throw new CartError('PRODUCT_UNAVAILABLE', 'Há produtos indisponíveis no carrinho.');
+    throw new CartError(
+      'PRODUCT_UNAVAILABLE',
+      'Há produtos indisponíveis no carrinho.'
+    );
   }
   return {
     version: cart.version,

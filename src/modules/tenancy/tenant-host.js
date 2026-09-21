@@ -3,7 +3,18 @@
  * Kept free of DB imports so unit tests run without pg installed.
  */
 
-const BASE_DOMAIN = (process.env.BASE_DOMAIN || 'localhost').toLowerCase();
+const baseDomain = () => (process.env.BASE_DOMAIN || 'localhost').trim().toLowerCase();
+export const RESERVED_SLUGS = ['www', 'app', 'platform'];
+
+export function isApexHost(host) {
+  const h = normalizeHost(host);
+  return h === baseDomain() || h === `www.${baseDomain()}`;
+}
+
+export function isPlatformHost(host) {
+  const h = normalizeHost(host);
+  return h === `app.${baseDomain()}` || h === `platform.${baseDomain()}`;
+}
 
 /**
  * Extrai o host sem porta.
@@ -12,7 +23,7 @@ const BASE_DOMAIN = (process.env.BASE_DOMAIN || 'localhost').toLowerCase();
  */
 export function normalizeHost(hostHeader) {
   if (!hostHeader || typeof hostHeader !== 'string') return '';
-  return hostHeader.split(':')[0].trim().toLowerCase();
+  return hostHeader.trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
 }
 
 /**
@@ -24,11 +35,11 @@ export function extractSubdomainSlug(host) {
   const h = normalizeHost(host);
   if (!h) return null;
 
-  if (h === BASE_DOMAIN || h === `www.${BASE_DOMAIN}`) {
+  if (isApexHost(h) || isPlatformHost(h)) {
     return null;
   }
 
-  const suffix = `.${BASE_DOMAIN}`;
+  const suffix = `.${baseDomain()}`;
   if (h.endsWith(suffix)) {
     const sub = h.slice(0, -suffix.length);
     if (sub && !sub.includes('.')) {
@@ -40,5 +51,5 @@ export function extractSubdomainSlug(host) {
 }
 
 export function getBaseDomain() {
-  return BASE_DOMAIN;
+  return baseDomain();
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, setTenantSlug } from '../../api/client';
+import { customer } from '../../api/customer';
 import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
 
 export default function MenuPage() {
@@ -14,17 +14,8 @@ export default function MenuPage() {
     let cancelled = false;
     (async () => {
       try {
-        let sessionId = sessionStorage.getItem('sessionId');
-        if (!sessionId) {
-          const table = await api(`/api/tables/by-token/${token}`);
-          if (table.storeSlug) setTenantSlug(table.storeSlug);
-          sessionStorage.setItem('sessionId', table.session.id);
-          sessionStorage.setItem(
-            'cartVersion',
-            String(table.session.cartVersion ?? table.session.cart_version ?? 0)
-          );
-        }
-        const data = await api('/api/menu');
+        await customer.ensure(token);
+        const data = await customer.request(token, '/api/menu');
         if (!cancelled) setMenu(data);
       } catch (err) {
         if (!cancelled) setError(err);
@@ -39,27 +30,36 @@ export default function MenuPage() {
     setMsg('');
     setError(null);
     setAddingId(product.id);
-    const sid = sessionStorage.getItem('sessionId');
-    const version = Number(sessionStorage.getItem('cartVersion') || 0);
+    const sid = sessionStorage.getItem(`table:${token}:sessionId`);
+    const version = Number(
+      sessionStorage.getItem(`table:${token}:cartVersion`) || 0
+    );
     try {
-      const res = await api(`/api/sessions/${sid}/cart/items`, {
-        method: 'POST',
-        body: JSON.stringify({
-          productId: product.id,
-          quantity: 1,
-          expectedVersion: version,
-        }),
-      });
+      const res = await customer.request(
+        token,
+        `/api/sessions/${sid}/cart/items`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            productId: product.id,
+            quantity: 1,
+            expectedVersion: version,
+          }),
+        }
+      );
       sessionStorage.setItem(
-        'cartVersion',
+        `table:${token}:cartVersion`,
         String(res.version ?? res.cart?.version ?? version + 1)
       );
       setMsg(`${product.name} adicionado ao carrinho`);
     } catch (err) {
-      if (err.code === 'CART_VERSION_CONFLICT' || err.status === 409) {
+      if (err.code === 'CART_VERSION_CONFLICT') {
         const current = err.data?.error?.details?.currentVersion;
-        if (current != null) sessionStorage.setItem('cartVersion', String(current));
-        setError(new Error('Carrinho atualizado por outra pessoa — toque de novo'));
+        if (current != null)
+          sessionStorage.setItem(`table:${token}:cartVersion`, String(current));
+        setError(
+          new Error('Carrinho atualizado por outra pessoa — toque de novo')
+        );
       } else {
         setError(err);
       }
@@ -72,13 +72,20 @@ export default function MenuPage() {
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
         <ErrorBox error={error} />
+        {error && (
+          <Link className="underline text-sm" to={`/m/${token}`}>
+            Voltar à entrada da mesa
+          </Link>
+        )}
       </div>
     );
   }
   if (!menu) return <Spinner />;
 
   const categories = menu.categories || menu.menu?.categories || [];
-  const empty = categories.length === 0 || categories.every((c) => !(c.products || []).length);
+  const empty =
+    categories.length === 0 ||
+    categories.every((c) => !(c.products || []).length);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-4 space-y-4 pb-24">
@@ -95,6 +102,11 @@ export default function MenuPage() {
         </div>
       )}
       <ErrorBox error={error} />
+      {error && (
+        <Link className="underline text-sm" to={`/m/${token}`}>
+          Voltar à entrada da mesa
+        </Link>
+      )}
 
       {empty && (
         <Card>
@@ -108,7 +120,8 @@ export default function MenuPage() {
             {cat.name}
           </h2>
           {(cat.products || []).map((p) => {
-            const available = p.isAvailable !== false && p.is_available !== false;
+            const available =
+              p.isAvailable !== false && p.is_available !== false;
             return (
               <Card key={p.id} className="flex gap-3 items-start">
                 <div className="flex-1 min-w-0">

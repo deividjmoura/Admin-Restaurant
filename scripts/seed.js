@@ -190,18 +190,18 @@ async function main() {
   const demo = await ensureStore('demo', 'Lanchonete Demo');
   await ensureStore('loja2', 'Burger House');
 
-  const superEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@plataforma.local';
+  const superEmail = process.env.PLATFORM_OWNER_EMAIL || process.env.SUPER_ADMIN_EMAIL || 'admin@plataforma.local';
   let superAdmin = await findUserByEmail(superEmail);
   if (!superAdmin) {
     superAdmin = await createUser({
       email: superEmail,
       passwordHash,
-      name: 'Super Admin',
-      isSuperAdmin: true,
+      name: 'Platform Owner',
+      isPlatformOwner: true,
     });
-    console.log('  ✓ SUPER_ADMIN created:', superEmail);
+    console.log('  ✓ PLATFORM_OWNER created:', superEmail);
   } else {
-    console.log('  SUPER_ADMIN already exists:', superEmail);
+    console.log('  PLATFORM_OWNER already exists:', superEmail);
   }
 
   const ownerEmail = 'owner@demo.local';
@@ -234,7 +234,7 @@ async function main() {
   // Nunca imprimir senhas (nem hashes): o log do seed vai para o CI e para
   // logs de deploy, onde credenciais vazam para qualquer um com acesso de leitura.
   console.log('\nSeed credentials:');
-  console.log(`  SUPER_ADMIN  ${superEmail}   (senha definida em STAFF_SEED_PASSWORD)`);
+  console.log(`  PLATFORM_OWNER  ${superEmail}   (senha definida em STAFF_SEED_PASSWORD)`);
   console.log(`  OWNER(demo)  ${ownerEmail}   (senha definida em STAFF_SEED_PASSWORD)`);
   console.log('  Cozinha: GET /api/kitchen/orders?station=KITCHEN');
   console.log('  Bar:     GET /api/kitchen/orders?station=BAR');

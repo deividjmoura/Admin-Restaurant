@@ -4,6 +4,8 @@ import {
   normalizeHost,
   extractSubdomainSlug,
   getBaseDomain,
+  isApexHost,
+  isPlatformHost,
 } from './tenant-host.js';
 
 export { normalizeHost, extractSubdomainSlug };
@@ -42,6 +44,9 @@ export async function findActiveStoreBySlug(slug) {
 export async function resolveStoreFromRequest(request) {
   const host = normalizeHost(request.headers.host);
 
+  // Reserved entry hosts can NEVER be converted into a store via fallbacks.
+  if (isApexHost(host) || isPlatformHost(host)) return null;
+
   const slug = extractSubdomainSlug(host);
   if (slug) {
     const store = await findBySlug(slug);
@@ -66,7 +71,7 @@ export async function resolveStoreFromRequest(request) {
 
   // Fallback: header (SPA em domínio separado, ou ferramentas como curl/Postman)
   const headerSlug = request.headers['x-tenant-slug'];
-  if (typeof headerSlug === 'string' && headerSlug.trim()) {
+  if (allowsTenantFallback(request) && typeof headerSlug === 'string' && headerSlug.trim()) {
     const store = await findBySlug(headerSlug.trim());
     if (!store) {
       throw new AppError('TENANT_NOT_FOUND', 'Loja não encontrada.', 404);
@@ -85,8 +90,20 @@ export async function resolveStoreFromRequest(request) {
  * `config: { allowTenantQuery: true }`. Nunca global.
  */
 export async function resolveTenantFromQuery(request) {
+  if (!allowsTenantFallback(request)) return null;
   if (!request.routeOptions?.config?.allowTenantQuery) return null;
   const slug = request.query?.tenant;
   if (typeof slug !== 'string' || !slug.trim()) return null;
   return findActiveStoreBySlug(slug.trim());
+}
+
+// Production cross-origin transport is opt-in for BOTH the API host and origin.
+// Origin is transport policy, not authorization; JWT/membership checks still apply.
+export function allowsTenantFallback(request) {
+  const host = normalizeHost(request.headers?.host);
+  if (isApexHost(host) || isPlatformHost(host)) return false;
+  if (process.env.NODE_ENV !== 'production') return true;
+  const hosts = (process.env.TENANT_FALLBACK_HOSTS || '').split(',').map(normalizeHost);
+  const origins = (process.env.TENANT_FALLBACK_ORIGINS || '').split(',').filter(Boolean);
+  return !!host && hosts.includes(host) && origins.includes(request.headers?.origin);
 }

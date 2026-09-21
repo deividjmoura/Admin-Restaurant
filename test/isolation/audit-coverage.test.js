@@ -77,7 +77,7 @@ describe('auditoria — cobertura e tenant (integration)', () => {
   let keepalive = null;
 
   const tenantHeaders = (slug, cookie) => ({
-    'x-tenant-slug': slug,
+    host: `${slug}.localhost`,
     ...(cookie ? { cookie } : {}),
   });
 
@@ -145,8 +145,8 @@ describe('auditoria — cobertura e tenant (integration)', () => {
     const login = (email, password) =>
       app.inject({
         method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'content-type': 'application/json', 'x-tenant-slug': storeA.slug },
+        url: '/api/auth/store/login',
+        headers: { 'content-type': 'application/json', host: `${storeA.slug}.localhost` },
         payload: { email, password },
       });
 
@@ -254,7 +254,9 @@ describe('auditoria — cobertura e tenant (integration)', () => {
     const { createCategory, createProduct } = await import(
       '../../src/modules/menu/menu.repository.js'
     );
-    const { session } = await makeTableSession(storeA.id, { number: 901 });
+    const { table, session } = await makeTableSession(storeA.id, { number: 901 });
+    const { customerHeaders } = await import('../helpers/fixtures.js');
+    const customerAuth = await customerHeaders(app, storeA, table);
     const category = await createCategory(storeA.id, { name: 'Audit cat', sortOrder: 9 });
     const product = await createProduct(storeA.id, {
       categoryId: category.id,
@@ -271,7 +273,7 @@ describe('auditoria — cobertura e tenant (integration)', () => {
     const payRes = await app.inject({
       method: 'POST',
       url: '/api/payments',
-      headers: { 'content-type': 'application/json', ...tenantHeaders(storeA.slug) },
+      headers: { 'content-type': 'application/json', ...customerAuth },
       payload: { amount: 9.9, method: 'CASH', orderId: order.id },
     });
     assert.equal(payRes.statusCode, 201, payRes.body);
