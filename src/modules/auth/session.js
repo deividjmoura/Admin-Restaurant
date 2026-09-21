@@ -1,19 +1,14 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { randomUUID } from 'node:crypto';
 import { query } from '../../infrastructure/db.js';
+import { getConfig } from '../../config.js';
 
 const COOKIE_NAME = 'ar_session';
-const isProd = () => process.env.NODE_ENV === 'production';
 
 export function getSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) {
-    if (isProd()) {
-      throw new Error('JWT_SECRET must be set (min 32 chars) in production');
-    }
-    return new TextEncoder().encode('dev-only-jwt-secret-change-me-32chars!!');
-  }
-  return new TextEncoder().encode(secret);
+  // Fail-closed: getConfig() rejeita secret curto/placeholder em qualquer NODE_ENV.
+  const { JWT_SECRET } = getConfig();
+  return new TextEncoder().encode(JWT_SECRET);
 }
 
 /**
@@ -36,12 +31,13 @@ function resolveSameSite() {
 }
 
 function cookieOptions(maxAge) {
+  const { isProd } = getConfig();
   const sameSite = resolveSameSite();
   const crossSite = sameSite === 'none';
 
   if (
     crossSite &&
-    !isProd() &&
+    !isProd &&
     process.env.COOKIE_ALLOW_INSECURE_NONE === 'true'
   ) {
     // Apenas para desenvolvimento em http://localhost com cookie cross-site.
@@ -55,7 +51,7 @@ function cookieOptions(maxAge) {
   const opts = {
     path: '/',
     httpOnly: true,
-    secure: crossSite ? true : isProd(),
+    secure: crossSite ? true : isProd,
     sameSite,
   };
 
