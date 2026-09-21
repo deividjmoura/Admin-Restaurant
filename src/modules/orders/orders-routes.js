@@ -1,4 +1,8 @@
 import fp from 'fastify-plugin';
+import {
+  assertSessionScope,
+  assertOrderScope,
+} from '../customer/customer-session.js';
 import { z } from 'zod';
 import {
   createOrder,
@@ -82,13 +86,25 @@ function mapOrderError(err) {
         400
       );
     case 'PRODUCT_NOT_FOUND':
-      return new AppError('PRODUCT_NOT_FOUND', 'Produto não encontrado nesta loja.', 404);
+      return new AppError(
+        'PRODUCT_NOT_FOUND',
+        'Produto não encontrado nesta loja.',
+        404
+      );
     case 'PRODUCT_UNAVAILABLE':
       return new AppError('PRODUCT_UNAVAILABLE', 'Produto indisponível.', 409);
     case 'SESSION_NOT_FOUND':
-      return new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada nesta loja.', 404);
+      return new AppError(
+        'SESSION_NOT_FOUND',
+        'Sessão não encontrada nesta loja.',
+        404
+      );
     case 'SESSION_CLOSED':
-      return new AppError('SESSION_CLOSED', 'Sessão de mesa já está fechada.', 409);
+      return new AppError(
+        'SESSION_CLOSED',
+        'Sessão de mesa já está fechada.',
+        409
+      );
     case 'INVALID_STATUS_TRANSITION':
       return new AppError(
         'INVALID_STATUS_TRANSITION',
@@ -117,7 +133,11 @@ function mapOrderError(err) {
         { status: err.status }
       );
     case '23505':
-      return new AppError('CONFLICT', 'Conflito de idempotência. Tente novamente.', 409);
+      return new AppError(
+        'CONFLICT',
+        'Conflito de idempotência. Tente novamente.',
+        409
+      );
     default:
       return null;
   }
@@ -143,15 +163,35 @@ function emitOrder(storeId, type, order, extra = {}) {
 async function ordersRoutes(app) {
   app.post(
     '/api/orders',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireCustomerOrPermission('orders.create')] },
     async (request, reply) => {
       const parsed = createOrderSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
-        const err = new AppError('VALIDATION_ERROR', 'Payload de pedido inválido.', 400, {
-          issues: parsed.error.issues,
-        });
+        const err = new AppError(
+          'VALIDATION_ERROR',
+          'Payload de pedido inválido.',
+          400,
+          {
+            issues: parsed.error.issues,
+          }
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
+      }
+
+      if (request.customer) {
+        if (parsed.data.channel !== 'TABLE')
+          throw new AppError(
+            'FORBIDDEN',
+            'Sessão de mesa não autoriza delivery.',
+            403
+          );
+        parsed.data.tableSessionId ??= request.customer.sessionId;
+        assertSessionScope(
+          request.customer,
+          request.storeId,
+          parsed.data.tableSessionId
+        );
       }
 
       const headerKey = request.headers['idempotency-key'];
@@ -161,18 +201,22 @@ async function ordersRoutes(app) {
         null;
 
       try {
-        const result = await createOrder(request.storeId, {
-          tableSessionId: parsed.data.tableSessionId ?? null,
-          channel: parsed.data.channel,
-          notes: parsed.data.notes ?? null,
-          idempotencyKey,
-          items: parsed.data.items.map((i) => ({
-            productId: i.productId,
-            quantity: i.quantity,
-            notes: i.notes,
-            addonIds: i.addonIds,
-          })),
-        });
+        const result = await createOrder(
+          request.storeId,
+          {
+            tableSessionId: parsed.data.tableSessionId ?? null,
+            channel: parsed.data.channel,
+            notes: parsed.data.notes ?? null,
+            idempotencyKey,
+            items: parsed.data.items.map((i) => ({
+              productId: i.productId,
+              quantity: i.quantity,
+              notes: i.notes,
+              addonIds: i.addonIds,
+            })),
+          },
+          { customer: request.customer }
+        );
 
         if (!result.replayed) {
           await auditRequest(request, {
@@ -234,11 +278,20 @@ async function ordersRoutes(app) {
 
   app.get(
     '/api/orders/:id',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireCustomerOrPermission('orders.read')] },
     async (request, reply) => {
+      await assertOrderScope(
+        request.customer,
+        request.storeId,
+        request.params.id
+      );
       const order = await findOrderById(request.storeId, request.params.id);
       if (!order) {
-        const err = new AppError('ORDER_NOT_FOUND', 'Pedido não encontrado.', 404);
+        const err = new AppError(
+          'ORDER_NOT_FOUND',
+          'Pedido não encontrado.',
+          404
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
@@ -278,12 +331,28 @@ async function ordersRoutes(app) {
 
   app.post(
     '/api/orders/:id/cancel',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireCustomerOrPermission('orders.status.write')] },
     async (request, reply) => {
       try {
-        const order = await cancelOrderAsCustomer(request.storeId, request.params.id);
+        await assertOrderScope(
+          request.customer,
+          request.storeId,
+          request.params.id
+        );
+        const order = await cancelOrderAsCustomer(
+          request.storeId,
+          request.params.id,
+          {
+            customer: request.customer,
+            actor: request.customer ? 'customer' : 'staff',
+          }
+        );
         if (!order) {
-          const err = new AppError('ORDER_NOT_FOUND', 'Pedido não encontrado.', 404);
+          const err = new AppError(
+            'ORDER_NOT_FOUND',
+            'Pedido não encontrado.',
+            404
+          );
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
@@ -317,7 +386,12 @@ async function ordersRoutes(app) {
 
   app.patch(
     '/api/orders/:id/status',
-    { preHandler: [app.requireTenant, app.requirePermission('orders.status.write')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('orders.status.write'),
+      ],
+    },
     async (request, reply) => {
       const parsed = statusSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -333,7 +407,11 @@ async function ordersRoutes(app) {
           parsed.data.status
         );
         if (!order) {
-          const err = new AppError('ORDER_NOT_FOUND', 'Pedido não encontrado.', 404);
+          const err = new AppError(
+            'ORDER_NOT_FOUND',
+            'Pedido não encontrado.',
+            404
+          );
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
@@ -375,11 +453,20 @@ async function ordersRoutes(app) {
    */
   app.patch(
     '/api/orders/items/:itemId/status',
-    { preHandler: [app.requireTenant, app.requirePermission('orders.items.status.write')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('orders.items.status.write'),
+      ],
+    },
     async (request, reply) => {
       const parsed = itemStatusSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
-        const err = new AppError('VALIDATION_ERROR', 'Status de item inválido.', 400);
+        const err = new AppError(
+          'VALIDATION_ERROR',
+          'Status de item inválido.',
+          400
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
@@ -391,7 +478,11 @@ async function ordersRoutes(app) {
           parsed.data.status
         );
         if (!item) {
-          const err = new AppError('ITEM_NOT_FOUND', 'Item não encontrado nesta loja.', 404);
+          const err = new AppError(
+            'ITEM_NOT_FOUND',
+            'Item não encontrado nesta loja.',
+            404
+          );
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
@@ -449,7 +540,12 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/waiter/ready-items',
-    { preHandler: [app.requireTenant, app.requirePermission('waiter.ready.read')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('waiter.ready.read'),
+      ],
+    },
     async (request) => {
       const station = request.query?.station
         ? String(request.query.station).toUpperCase()
@@ -467,7 +563,12 @@ async function ordersRoutes(app) {
    */
   app.patch(
     '/api/waiter/items/:itemId/deliver',
-    { preHandler: [app.requireTenant, app.requirePermission('waiter.items.deliver')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('waiter.items.deliver'),
+      ],
+    },
     async (request, reply) => {
       try {
         const item = await transitionOrderItemStatus(
@@ -476,7 +577,11 @@ async function ordersRoutes(app) {
           'DELIVERED'
         );
         if (!item) {
-          const err = new AppError('ITEM_NOT_FOUND', 'Item não encontrado nesta loja.', 404);
+          const err = new AppError(
+            'ITEM_NOT_FOUND',
+            'Item não encontrado nesta loja.',
+            404
+          );
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
@@ -526,7 +631,12 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/cashier/sessions',
-    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.read')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('cashier.sessions.read'),
+      ],
+    },
     async (request) => {
       const sessions = await listOpenSessions(request.storeId);
       return { storeId: request.storeId, sessions };
@@ -539,11 +649,23 @@ async function ordersRoutes(app) {
    */
   app.get(
     '/api/cashier/sessions/:id',
-    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.read')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('cashier.sessions.read'),
+      ],
+    },
     async (request, reply) => {
-      const summary = await getSessionSummary(request.storeId, request.params.id);
+      const summary = await getSessionSummary(
+        request.storeId,
+        request.params.id
+      );
       if (!summary) {
-        const err = new AppError('SESSION_NOT_FOUND', 'Sessão não encontrada.', 404);
+        const err = new AppError(
+          'SESSION_NOT_FOUND',
+          'Sessão não encontrada.',
+          404
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
@@ -558,7 +680,12 @@ async function ordersRoutes(app) {
    */
   app.post(
     '/api/cashier/sessions/:id/close',
-    { preHandler: [app.requireTenant, app.requirePermission('cashier.sessions.close')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('cashier.sessions.close'),
+      ],
+    },
     async (request, reply) => {
       const session = await closeSession(request.storeId, request.params.id);
       if (!session) {
@@ -575,7 +702,10 @@ async function ordersRoutes(app) {
         action: 'cashier.session_closed',
         resource: 'table_session',
         resourceId: session.id,
-        metadata: { tableId: session.table_id, cartVersion: session.cart_version },
+        metadata: {
+          tableId: session.table_id,
+          cartVersion: session.cart_version,
+        },
       });
 
       publishStoreOrderEvent(request.storeId, {

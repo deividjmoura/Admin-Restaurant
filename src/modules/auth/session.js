@@ -1,12 +1,14 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { randomUUID } from 'node:crypto';
+import { query } from '../../infrastructure/db.js';
 
 const COOKIE_NAME = 'ar_session';
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = () => process.env.NODE_ENV === 'production';
 
-function getSecret() {
+export function getSecret() {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.length < 32) {
-    if (isProd) {
+    if (isProd()) {
       throw new Error('JWT_SECRET must be set (min 32 chars) in production');
     }
     return new TextEncoder().encode('dev-only-jwt-secret-change-me-32chars!!');
@@ -26,7 +28,9 @@ function getSecret() {
  * ser obrigatório (o browser rejeita SameSite=None sem Secure).
  */
 function resolveSameSite() {
-  const raw = String(process.env.COOKIE_SAMESITE || '').trim().toLowerCase();
+  const raw = String(process.env.COOKIE_SAMESITE || '')
+    .trim()
+    .toLowerCase();
   if (raw === 'none' || raw === 'lax' || raw === 'strict') return raw;
   return 'lax';
 }
@@ -35,7 +39,11 @@ function cookieOptions(maxAge) {
   const sameSite = resolveSameSite();
   const crossSite = sameSite === 'none';
 
-  if (crossSite && !isProd && process.env.COOKIE_ALLOW_INSECURE_NONE === 'true') {
+  if (
+    crossSite &&
+    !isProd() &&
+    process.env.COOKIE_ALLOW_INSECURE_NONE === 'true'
+  ) {
     // Apenas para desenvolvimento em http://localhost com cookie cross-site.
     return withMaxAge(
       { path: '/', httpOnly: true, secure: false, sameSite },
@@ -47,7 +55,7 @@ function cookieOptions(maxAge) {
   const opts = {
     path: '/',
     httpOnly: true,
-    secure: crossSite ? true : isProd,
+    secure: crossSite ? true : isProd(),
     sameSite,
   };
 
@@ -59,27 +67,70 @@ function withMaxAge(opts, maxAge) {
   return opts;
 }
 
-/**
- * @param {{ id: string, is_super_admin: boolean }} user
- */
-export async function signSessionToken(user) {
-  const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
-  return new SignJWT({
-    sa: !!user.is_super_admin,
+/** New tokens always carry an explicit authentication plane. */
+export async function signSessionToken(user, context) {
+  if (
+    !context ||
+    !['store', 'platform'].includes(context.type) ||
+    (context.type === 'store' && (!context.storeId || !context.role)) ||
+    (context.type === 'platform' &&
+      (!user.is_platform_owner || context.role !== 'PLATFORM_OWNER'))
+  ) {
+    throw new Error('Explicit authorized session context required');
+  }
+  const id = randomUUID();
+  const token = await new SignJWT({
+    type: context.type,
+    role: context.role,
+    ...(context.type === 'store' ? { storeId: context.storeId } : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(user.id)
+    .setJti(id)
     .setIssuedAt()
-    .setExpirationTime(expiresIn)
+    .setExpirationTime(process.env.JWT_EXPIRES_IN || '7d')
     .sign(getSecret());
+  const { payload } = await jwtVerify(token, getSecret(), {
+    algorithms: ['HS256'],
+  });
+  await query(
+    'INSERT INTO auth_sessions (id, user_id, expires_at) VALUES ($1,$2,to_timestamp($3))',
+    [id, user.id, payload.exp]
+  );
+  return token;
 }
 
 export async function verifySessionToken(token) {
-  const { payload } = await jwtVerify(token, getSecret());
+  const { payload } = await jwtVerify(token, getSecret(), {
+    algorithms: ['HS256'],
+  });
+  if (
+    !payload.sub ||
+    !payload.jti ||
+    !['platform', 'store'].includes(payload.type) ||
+    (payload.type === 'store' && (!payload.storeId || !payload.role)) ||
+    (payload.type === 'platform' &&
+      (payload.role !== 'PLATFORM_OWNER' || payload.storeId))
+  ) {
+    throw new Error('Invalid session context');
+  }
+  const { rows } = await query(
+    `SELECT id FROM auth_sessions
+    WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at > now()`,
+    [payload.jti, payload.sub]
+  );
+  if (!rows.length) throw new Error('Session revoked');
   return {
     userId: payload.sub,
-    isSuperAdmin: !!payload.sa,
+    sessionId: payload.jti,
+    type: payload.type,
+    storeId: payload.storeId,
+    role: payload.role,
   };
+}
+
+export async function revokeSession(id) {
+  await query('UPDATE auth_sessions SET revoked_at=now() WHERE id=$1', [id]);
 }
 
 export function setSessionCookie(reply, token) {

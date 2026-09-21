@@ -1,23 +1,17 @@
-# Auth module
+# Auth
 
-## Schema
-- `users` — global accounts (`is_super_admin`)
-- `store_users` — membership per store + role
+Dois logins, nenhum seletor de tenant:
 
-## Session
-- httpOnly cookie `ar_session` (JWT via `jose`)
-- Password: Node `scrypt` (`salt:hash` hex)
+- `POST /api/auth/platform/login`: host apex/app/platform; exige is_platform_owner.
+- `POST /api/auth/store/login`: host de loja ativa; exige membership ativa.
+- `POST /api/auth/logout`: revoga jti no banco e limpa cookie host-only ar_session.
+- `GET /api/me`: sessão store + host correspondente + membership.
+- `GET /api/platform/me`: sessão platform + host platform + flag atual.
 
-## Routes
-| Method | Path | Auth |
-|--------|------|------|
-| POST | `/api/auth/login` | public |
-| POST | `/api/auth/logout` | public |
-| GET | `/api/auth/me` | required |
+JWTs incluem sub, jti, exp, type, role e storeId apenas para store.
+Tokens antigos sem type não são aceitos; is_super_admin não concede bypass.
+A autorização usa membership/role atual do banco, nunca somente o papel do token.
+Cookies: HttpOnly, Secure em produção, SameSite=Lax por padrão, sem Domain.
 
-## Middlewares
-- `app.requireAuth`
-- `app.requireStoreAccess` — auth + membership on `request.storeId` (SUPER_ADMIN bypass)
-
-## Seed users
-See `scripts/seed.js` (SUPER_ADMIN + OWNER on demo store).
+Contratos, bootstrap, migration, limites e deploy:
+[docs/ENTRY-CONTEXTS.md](../../../docs/ENTRY-CONTEXTS.md).

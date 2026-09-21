@@ -57,7 +57,7 @@ describe('SSE tenant por query — isolamento (regressão)', () => {
       name: 'Cozinha A',
     });
     await addStoreUser({ storeId: storeA.id, userId: user.id, role: 'KITCHEN' });
-    cookieA = `ar_session=${await signSessionToken(user)}`;
+    cookieA = `ar_session=${await signSessionToken(user, { type: 'store', storeId: storeA.id, role: 'KITCHEN' })}`;
   });
 
   after(async () => {
@@ -73,7 +73,7 @@ describe('SSE tenant por query — isolamento (regressão)', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/kitchen/events?station=KITCHEN&probe=1&tenant=${storeA.slug}`,
-      headers: { cookie: cookieA },
+      headers: { host: 'transport.test', cookie: cookieA },
       // host default → nenhum tenant resolvido pelo host/header
     });
 
@@ -90,11 +90,11 @@ describe('SSE tenant por query — isolamento (regressão)', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/kitchen/events?station=KITCHEN&probe=1&tenant=${storeB.slug}`,
-      headers: { cookie: cookieA }, // membro só de A
+      headers: { host: 'transport.test', cookie: cookieA }, // membro só de A
     });
 
     assert.equal(res.statusCode, 403, res.body);
-    assert.equal(res.json().error?.code, 'FORBIDDEN');
+    assert.equal(res.json().error?.code, 'CONTEXT_FORBIDDEN');
   });
 
   it('rota sem opt-in continua ignorando ?tenant=', async (t) => {
@@ -116,7 +116,7 @@ describe('SSE tenant por query — isolamento (regressão)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/kitchen/events?station=BAR&probe=1&tenant=loja-que-nao-existe',
-      headers: { cookie: cookieA },
+      headers: { host: 'transport.test', cookie: cookieA },
     });
 
     assert.equal(res.statusCode, 404, res.body);
@@ -129,7 +129,7 @@ describe('SSE tenant por query — isolamento (regressão)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/kitchen/events?station=KITCHEN&probe=1',
-      headers: { cookie: cookieA },
+      headers: { host: 'transport.test', cookie: cookieA },
     });
 
     assert.equal(res.statusCode, 400, res.body);

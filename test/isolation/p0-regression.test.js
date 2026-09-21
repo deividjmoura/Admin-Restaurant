@@ -7,6 +7,7 @@
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { customerHeaders } from '../helpers/fixtures.js';
 import { skipWithoutDb, hasDatabase } from '../helpers/env.js';
 import { signHmac } from '../../src/modules/payments/webhook-auth.js';
 
@@ -26,6 +27,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
   let table2 = null;
   let session1Id = null;
   let session2Id = null;
+  const customerAuth = {};
 
   before(async () => {
     if (!hasDatabase()) return;
@@ -72,6 +74,8 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
     const s2 = await openOrGetSession(store.id, table2.id);
     session1Id = s1.id;
     session2Id = s2.id;
+    customerAuth[s1.id] = await customerHeaders(app, store, table1);
+    customerAuth[s2.id] = await customerHeaders(app, store, table2);
   });
 
   after(async () => {
@@ -102,6 +106,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       method: 'POST',
       url: '/api/payments/webhooks/mercadopago',
       headers: {
+        host: `${store.slug}.localhost`,
         'content-type': 'application/json',
         'x-signature': signature,
       },
@@ -116,6 +121,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       method: 'POST',
       url: '/api/payments/webhooks/mercadopago',
       headers: {
+        host: `${store.slug}.localhost`,
         'content-type': 'application/json',
         'x-signature': signature,
       },
@@ -137,6 +143,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/tables/by-token/${bad}`,
+        headers: { host: `${store.slug}.localhost` },
       });
       assert.equal(
         res.statusCode,
@@ -153,6 +160,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       const res = await app.inject({
         method: 'GET',
         url: `/api/tables/by-token/${table1.public_token}`,
+        headers: { host: `${store.slug}.localhost` },
       });
       assert.equal(res.statusCode, 200, res.body);
       const body = res.json();
@@ -169,6 +177,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
     const cartRes = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/cart`,
+      headers: customerAuth[sessionId],
     });
     assert.equal(cartRes.statusCode, 200, cartRes.body);
     let version = cartRes.json().version ?? 0;
@@ -176,7 +185,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
     const add = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/cart/items`,
-      headers: { 'content-type': 'application/json' },
+      headers: { ...customerAuth[sessionId], 'content-type': 'application/json' },
       payload: {
         productId,
         quantity: 1,
@@ -194,6 +203,7 @@ describe('P0 regression: webhook / UUID token / checkout idempotency', () => {
       method: 'POST',
       url: `/api/sessions/${sessionId}/cart/checkout`,
       headers: {
+        ...customerAuth[sessionId],
         'content-type': 'application/json',
         ...(key ? { 'idempotency-key': key } : {}),
       },

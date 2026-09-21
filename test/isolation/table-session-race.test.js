@@ -90,7 +90,7 @@ describe('sessões de mesa — concorrência e expiração (integration)', () =>
 
     const responses = await Promise.all(
       Array.from({ length: 5 }, () =>
-        app.inject({ method: 'GET', url: `/api/tables/by-token/${token}` })
+        app.inject({ method: 'GET', url: `/api/tables/by-token/${token}`, headers: { host: `${store.slug}.localhost` } })
       )
     );
     for (const res of responses) {
@@ -112,6 +112,7 @@ describe('sessões de mesa — concorrência e expiração (integration)', () =>
     const res = await app.inject({
       method: 'GET',
       url: `/api/tables/by-token/${token}`,
+      headers: { host: `${store.slug}.localhost` },
     });
     assert.equal(res.statusCode, 200, res.body);
     const body = res.json();
@@ -125,7 +126,7 @@ describe('sessões de mesa — concorrência e expiração (integration)', () =>
     const spoofed = await app.inject({
       method: 'GET',
       url: `/api/tables/by-token/${token}`,
-      headers: { 'x-tenant-slug': otherStore.slug },
+      headers: { host: `${otherStore.slug}.localhost` },
     });
     assert.equal(spoofed.statusCode, 404, spoofed.body);
     assert.equal(spoofed.json().error.code, 'TABLE_NOT_FOUND');
@@ -134,18 +135,19 @@ describe('sessões de mesa — concorrência e expiração (integration)', () =>
     const withHeader = await app.inject({
       method: 'GET',
       url: `/api/tables/by-token/${token}`,
-      headers: { 'x-tenant-slug': store.slug },
+      headers: { host: `${store.slug}.localhost` },
     });
     assert.equal(withHeader.statusCode, 200, withHeader.body);
     assert.equal(withHeader.json().storeId, store.id);
 
-    // sem header, o token resolve a loja da própria mesa
+    // host e token concordam sobre a loja
     assert.equal(res.json().storeSlug, store.slug);
 
     // token inexistente → 404
     const missing = await app.inject({
       method: 'GET',
       url: '/api/tables/by-token/token-inexistente-123',
+      headers: { host: `${store.slug}.localhost` },
     });
     assert.equal(missing.statusCode, 404, missing.body);
   });

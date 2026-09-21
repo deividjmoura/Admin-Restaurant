@@ -146,3 +146,19 @@ exige a contagem mínima com o Postgres disponível.
 
 Verificação dos riscos residuais (script automatizado + passos manuais):
 **[VERIFY-RESIDUAL-RISKS.md](VERIFY-RESIDUAL-RISKS.md)**.
+
+
+## 11. Contextos de entrada (2026-09-21)
+
+Ver [ENTRY-CONTEXTS.md](./ENTRY-CONTEXTS.md) para os contratos atuais. O QR exige
+host da loja ativa; apex/platform não resolvem loja pelo token. Staff JWT precisa
+conter type=store e storeId igual ao host. Plataforma tem JWT próprio, flag e
+host próprios; nenhum bypass is_super_admin permanece. Logout revoga jti no banco.
+Leads não têm store_id. Provisionamento de OWNER e loja é transacional.
+
+**Atualização customer (migration 0023):** IDs de pedido/pagamento/sessão não
+concedem mais acesso ao fluxo mesa. JWT customer com audience própria, host e
+sessão ativa são obrigatórios; staff continua com cookie e RBAC. Revalidação em
+transação impede escrita/replay depois de fechamento. Tokens são revogados por
+expiração, encerramento, troca do QR ou desativação da mesa. Detalhes e fronteira
+com delivery em [CUSTOMER-SESSIONS.md](./CUSTOMER-SESSIONS.md).

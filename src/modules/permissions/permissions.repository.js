@@ -103,7 +103,7 @@ export async function ensureDefaultRolePermissions(storeId) {
   );
   await query(
     `INSERT INTO role_permissions (store_id, role, permission_id)
-     SELECT $1, 'STAFF', id FROM permissions WHERE key IN ('kitchen.orders.read','orders.items.status.write','orders.read','waiter.ready.read','waiter.items.deliver','cashier.sessions.read','cashier.sessions.close','tables.read','payments.read','payments.create','payments.confirm','delivery.zones.read') ON CONFLICT DO NOTHING`,
+     SELECT $1, 'STAFF', id FROM permissions WHERE key IN ('orders.create','kitchen.orders.read','orders.items.status.write','orders.read','waiter.ready.read','waiter.items.deliver','cashier.sessions.read','cashier.sessions.close','tables.read','payments.read','payments.create','payments.confirm','delivery.zones.read') ON CONFLICT DO NOTHING`,
     [storeId]
   );
   return true;

@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: 'menu.addons.write', description: 'Criar/editar/remover adicionais' },
   { key: 'tables.read', description: 'Listar mesas' },
   { key: 'tables.write', description: 'Criar/editar/remover/regenerar token de mesas' },
+  { key: 'orders.create', description: 'Criar pedidos e operar carrinhos' },
   { key: 'orders.read', description: 'Ver pedidos' },
   { key: 'orders.status.write', description: 'Alterar status do pedido' },
   { key: 'orders.items.status.write', description: 'Alterar status de item do pedido' },
@@ -56,6 +57,7 @@ export const FALLBACK_MATRIX = {
     'waiter.ready.read',
   ],
   STAFF: [
+    'orders.create',
     'kitchen.orders.read',
     'orders.items.status.write',
     'orders.read',

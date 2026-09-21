@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, setTenantSlug } from '../../api/client';
+import { customer } from '../../api/customer';
 import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
 
 export default function TableSessionPage() {
@@ -12,13 +12,13 @@ export default function TableSessionPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api(`/api/tables/by-token/${token}`);
+        const res = await customer.exchange(token);
         if (cancelled) return;
-        if (res.storeSlug) setTenantSlug(res.storeSlug);
+
         if (res.session?.id) {
-          sessionStorage.setItem('sessionId', res.session.id);
+          sessionStorage.setItem(`table:${token}:sessionId`, res.session.id);
           sessionStorage.setItem(
-            'cartVersion',
+            `table:${token}:cartVersion`,
             String(res.session.cartVersion ?? res.session.cart_version ?? 0)
           );
         }

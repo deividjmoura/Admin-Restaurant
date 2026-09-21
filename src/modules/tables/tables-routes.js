@@ -1,4 +1,5 @@
 import fp from 'fastify-plugin';
+import { issueCustomerSession } from '../customer/customer-session.js';
 import { z } from 'zod';
 import {
   findTableByPublicToken,
@@ -44,64 +45,91 @@ async function tablesRoutes(app) {
   /**
    * Public: resolve table by QR token and ensure an open session.
    */
-  app.get('/api/tables/by-token/:token', async (request, reply) => {
-    const { token } = request.params;
-    const table = await findTableByPublicToken(token);
+  app.get(
+    '/api/tables/by-token/:token',
+    {
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+      preHandler: [app.requireTenant],
+    },
+    async (request, reply) => {
+      const { token } = request.params;
+      const table = await findTableByPublicToken(request.storeId, token);
 
-    if (!table) {
-      const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
-    }
+      if (!table) {
+        const err = new AppError(
+          'TABLE_NOT_FOUND',
+          'Mesa não encontrada.',
+          404
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
 
-    if (request.storeId && request.storeId !== table.store_id) {
-      const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
-    }
+      if (request.storeId && request.storeId !== table.store_id) {
+        const err = new AppError(
+          'TABLE_NOT_FOUND',
+          'Mesa não encontrada.',
+          404
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
 
-    const session = await openOrGetSession(table.store_id, table.id);
+      const session = await openOrGetSession(table.store_id, table.id);
 
-    // Loja resolvida PELO token da mesa (store_id da própria tabela).
-    // Nunca por body/query do cliente: o QR é a única credencial aqui.
-    const store = await findStoreById(table.store_id);
-    if (!store) {
-      const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
-      const { statusCode, body } = errorResponse(err);
-      return reply.code(statusCode).send(body);
-    }
+      // Loja resolvida PELO token da mesa (store_id da própria tabela).
+      // Nunca por body/query do cliente: o QR é a única credencial aqui.
+      const store = await findStoreById(table.store_id);
+      if (!store) {
+        const err = new AppError(
+          'TABLE_NOT_FOUND',
+          'Mesa não encontrada.',
+          404
+        );
+        const { statusCode, body } = errorResponse(err);
+        return reply.code(statusCode).send(body);
+      }
 
-    if (session.created) {
-      await auditRequest(request, {
+      if (session.created) {
+        await auditRequest(request, {
+          storeId: store.id,
+          action: 'cashier.session_opened',
+          resource: 'table_session',
+          resourceId: session.id,
+          metadata: { tableId: table.id, tableNumber: table.number },
+        });
+      }
+
+      const customerSession = await issueCustomerSession(
+        store.id,
+        table,
+        session
+      );
+      reply.header('Cache-Control', 'no-store');
+      reply.header('Referrer-Policy', 'no-referrer');
+      return {
+        customerSession,
         storeId: store.id,
-        action: 'cashier.session_opened',
-        resource: 'table_session',
-        resourceId: session.id,
-        metadata: { tableId: table.id, tableNumber: table.number },
-      });
+        storeSlug: store.slug,
+        storeName: store.name,
+        table: {
+          id: table.id,
+          number: table.number,
+          label: table.label,
+          publicToken: table.public_token,
+          status: table.status,
+        },
+        session: {
+          id: session.id,
+          status: session.status,
+          openedAt: session.opened_at,
+          cartVersion: session.cart_version ?? 0,
+          expired: Boolean(session.expired),
+          expiredAt: session.expired_at ?? null,
+        },
+      };
     }
-
-    return {
-      storeId: store.id,
-      storeSlug: store.slug,
-      storeName: store.name,
-      table: {
-        id: table.id,
-        number: table.number,
-        label: table.label,
-        publicToken: table.public_token,
-        status: table.status,
-      },
-      session: {
-        id: session.id,
-        status: session.status,
-        openedAt: session.opened_at,
-        cartVersion: session.cart_version ?? 0,
-        expired: Boolean(session.expired),
-        expiredAt: session.expired_at ?? null,
-      },
-    };
-  });
+  );
 
   /** Staff: list active tables */
   app.get(
@@ -176,7 +204,11 @@ async function tablesRoutes(app) {
           parsed.data
         );
         if (!table) {
-          const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
+          const err = new AppError(
+            'TABLE_NOT_FOUND',
+            'Mesa não encontrada.',
+            404
+          );
           const { statusCode, body } = errorResponse(err);
           return reply.code(statusCode).send(body);
         }
@@ -198,7 +230,11 @@ async function tablesRoutes(app) {
           return reply.code(statusCode).send(body);
         }
         if (err.code === 'INVALID_TABLE_STATUS') {
-          const e = new AppError('INVALID_TABLE_STATUS', 'Status inválido.', 400);
+          const e = new AppError(
+            'INVALID_TABLE_STATUS',
+            'Status inválido.',
+            400
+          );
           const { statusCode, body } = errorResponse(e);
           return reply.code(statusCode).send(body);
         }
@@ -213,7 +249,11 @@ async function tablesRoutes(app) {
     async (request, reply) => {
       const existing = await findTableById(request.storeId, request.params.id);
       if (!existing) {
-        const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
+        const err = new AppError(
+          'TABLE_NOT_FOUND',
+          'Mesa não encontrada.',
+          404
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }
@@ -238,7 +278,11 @@ async function tablesRoutes(app) {
         request.params.id
       );
       if (!table) {
-        const err = new AppError('TABLE_NOT_FOUND', 'Mesa não encontrada.', 404);
+        const err = new AppError(
+          'TABLE_NOT_FOUND',
+          'Mesa não encontrada.',
+          404
+        );
         const { statusCode, body } = errorResponse(err);
         return reply.code(statusCode).send(body);
       }

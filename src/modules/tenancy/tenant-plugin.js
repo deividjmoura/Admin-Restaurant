@@ -2,7 +2,9 @@ import fp from 'fastify-plugin';
 import { resolveStoreFromRequest, resolveTenantFromQuery } from './resolve-tenant.js';
 import { errorResponse, AppError } from '../../shared/errors.js';
 
-const SKIP_PREFIXES = ['/health', '/ready'];
+import { isApexHost, isPlatformHost } from './tenant-host.js';
+
+const SKIP_PREFIXES = ['/health', '/ready', '/api/public/health'];
 
 function shouldSkipTenant(url) {
   const path = url.split('?')[0];
@@ -15,8 +17,12 @@ function shouldSkipTenant(url) {
 async function tenantPlugin(app) {
   app.decorateRequest('store', null);
   app.decorateRequest('storeId', null);
+  app.decorateRequest('isPlatform', false);
+  app.decorateRequest('isMarketing', false);
 
   app.addHook('onRequest', async (request, reply) => {
+    request.isPlatform = isPlatformHost(request.headers.host);
+    request.isMarketing = isApexHost(request.headers.host);
     if (shouldSkipTenant(request.url)) {
       return;
     }
@@ -37,11 +43,10 @@ async function tenantPlugin(app) {
   });
 
   app.decorate('requireTenant', async function requireTenant(request, reply) {
-    // Rotas marcadas com `allowTenantQuery: true` aceitam `?tenant=<slug>`.
-    // Motivo: EventSource (SSE) não envia headers, então em deploy de host único
-    // (API servindo a SPA) o browser não tem como mandar X-Tenant-Slug.
-    // A autorização continua no `requireStoreAccess` da rota: quem não é membro
-    // da loja resolve 403 — o query só substitui o *transporte* do slug.
+    // SSE same-origin resolves the store by Host without a query. Only a
+    // permitted dev/controlled transport host can use the route's query opt-in;
+    // reserved marketing/platform hosts can never be converted into tenants.
+    // Query is transport, not authorization: token scope + membership still apply.
     if (!request.storeId) {
       try {
         const store = await resolveTenantFromQuery(request);
@@ -56,6 +61,11 @@ async function tenantPlugin(app) {
         }
         throw err;
       }
+    }
+
+    if (request.storeId && request.session &&
+        (request.session.type !== 'store' || request.session.storeId !== request.storeId)) {
+      throw new AppError('CONTEXT_FORBIDDEN', 'Sessão incompatível com a loja.', 403);
     }
 
     if (!request.storeId) {

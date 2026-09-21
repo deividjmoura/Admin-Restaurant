@@ -1,3 +1,16 @@
+> **Customer QR (migration 0023):** antes de chamar carrinho/pedido/pagamento,
+> troque o QR em `/api/tables/by-token/:token` no host da loja e envie
+> `Authorization: Bearer <customerSession.token>`, sem cookie staff.
+> Só IDs não autorizam mais acesso. Roteiro e erros em
+> [CUSTOMER-SESSIONS.md](./CUSTOMER-SESSIONS.md).
+
+> **Atualização 2026-09-21:** o contrato de login genérico abaixo foi substituído.
+> Para a implantação atual, comece pelo roteiro em
+> [ENTRY-CONTEXTS.md](./ENTRY-CONTEXTS.md#verificação): host de loja nos requests,
+> `/api/auth/store/login` e `/api/auth/platform/login`, JWTs distintos.
+> Headers/query não resolvem tenant em apex/app. Os exemplos históricos abaixo
+> devem usar o host da loja em vez de seleção de tenant no apex.
+
 # SMOKE — API em 5–10 minutos, sem frontend
 
 **A4** · smoke de API ponta a ponta: **login → mesa → pedido → cozinha → caixa**, só com `curl`

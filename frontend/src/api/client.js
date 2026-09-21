@@ -1,25 +1,9 @@
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
-/**
- * Slug do tenant. NUNCA há slug default embutido no bundle: o tenant vem do
- * usuário (URL `?tenant=`, formulário de login ou localStorage). Um default
- * tipo "demo" apontaria o app de produção para uma loja de demonstração.
- */
-const DEFAULT_TENANT = import.meta.env.VITE_TENANT_SLUG || '';
-
-function getTenantSlug() {
-  const params = new URLSearchParams(window.location.search);
-  return (
-    params.get('tenant') || localStorage.getItem('tenantSlug') || DEFAULT_TENANT
-  );
-}
-
-export function setTenantSlug(slug) {
-  if (slug) localStorage.setItem('tenantSlug', slug);
-}
+import { entryContext, devTenant } from '../context/entry-context';
 
 export function getTenant() {
-  return getTenantSlug();
+  return entryContext.type === 'store' ? entryContext.slug || devTenant || window.location.hostname : '';
 }
 
 /** UUID v4 for Idempotency-Key (safe client retries). */
@@ -68,7 +52,7 @@ export class ApiError extends Error {
  * Fetch JSON against API with tenant header + cookies.
  */
 export async function api(path, options = {}) {
-  const tenant = getTenantSlug();
+  const tenant = devTenant;
   const headers = {
     'Content-Type': 'application/json',
     ...(tenant ? { 'X-Tenant-Slug': tenant } : {}),

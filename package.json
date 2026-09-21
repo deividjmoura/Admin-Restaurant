@@ -13,10 +13,11 @@
     "test:suite": "node scripts/run-suite.mjs",
     "test:guard": "node scripts/check-tap.mjs",
     "lint": "echo \"lint placeholder\"",
-    "test:unit": "node --test test/isolation/menu-cache.test.js test/isolation/tenant-resolution.test.js test/isolation/order-scoping.test.js test/isolation/cart-version.test.js test/isolation/pix-static.test.js",
+    "test:unit": "node --test test/isolation/menu-cache.test.js test/isolation/tenant-resolution.test.js test/isolation/order-scoping.test.js test/isolation/cart-version.test.js test/isolation/pix-static.test.js test/isolation/entry-hosts.test.js test/isolation/customer-client.test.js",
     "test:isolation": "node --test test/isolation/**/*.test.js",
     "web": "npm run dev --prefix frontend",
-    "web:build": "npm run build --prefix frontend"
+    "web:build": "npm run build --prefix frontend",
+    "platform:bootstrap": "node scripts/bootstrap-platform-owner.js"
   },
   "engines": {
     "node": ">=20"

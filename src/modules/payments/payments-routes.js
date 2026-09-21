@@ -1,4 +1,5 @@
 import fp from 'fastify-plugin';
+import { assertPaymentScope } from '../customer/customer-session.js';
 import { z } from 'zod';
 import {
   createPayment,
@@ -42,6 +43,9 @@ const createSchema = z
   .strict('Campo não aceito no payload público de pagamento.');
 
 const PAYMENT_ERROR_STATUS = {
+  PAYMENT_TARGET_MISMATCH: 400,
+  IDEMPOTENCY_KEY_REUSED: 409,
+  IDEMPOTENCY_CONFLICT: 409,
   ORDER_NOT_FOUND: 404,
   ORDER_CANCELLED: 409,
   SESSION_NOT_FOUND: 404,
@@ -61,9 +65,7 @@ const PAYMENT_ERROR_STATUS = {
 export function mapPaymentError(err) {
   if (!(err instanceof PaymentError)) return null;
   const status =
-    err.details?.statusCode ??
-    PAYMENT_ERROR_STATUS[err.code] ??
-    400;
+    err.details?.statusCode ?? PAYMENT_ERROR_STATUS[err.code] ?? 400;
   return new AppError(err.code, err.message, status, err.details);
 }
 
@@ -86,18 +88,23 @@ async function paymentsRoutes(app) {
   /** Criar pagamento (cliente ou caixa) */
   app.post(
     '/api/payments',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireCustomerOrPermission('payments.create')] },
     async (request, reply) => {
       const parsed = createSchema.safeParse(request.body ?? {});
       if (!parsed.success) {
         return sendError(
           reply,
-          new AppError('VALIDATION_ERROR', 'Payload de pagamento inválido.', 400, {
-            issues: parsed.error.issues.map((i) => ({
-              path: i.path.join('.'),
-              message: i.message,
-            })),
-          })
+          new AppError(
+            'VALIDATION_ERROR',
+            'Payload de pagamento inválido.',
+            400,
+            {
+              issues: parsed.error.issues.map((i) => ({
+                path: i.path.join('.'),
+                message: i.message,
+              })),
+            }
+          )
         );
       }
 
@@ -108,10 +115,14 @@ async function paymentsRoutes(app) {
         null;
 
       try {
-        const result = await createPayment(request.storeId, {
-          ...parsed.data,
-          idempotencyKey,
-        });
+        const result = await createPayment(
+          request.storeId,
+          {
+            ...parsed.data,
+            idempotencyKey,
+          },
+          { customer: request.customer }
+        );
 
         if (!result.replayed) {
           await auditRequest(request, {
@@ -158,7 +169,7 @@ async function paymentsRoutes(app) {
    */
   app.get(
     '/api/payments/:id',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireCustomerOrPermission('payments.read')] },
     async (request, reply) => {
       const payment = await findPaymentById(request.storeId, request.params.id);
       if (!payment) {
@@ -167,6 +178,7 @@ async function paymentsRoutes(app) {
           new AppError('PAYMENT_NOT_FOUND', 'Pagamento não encontrado.', 404)
         );
       }
+      await assertPaymentScope(request.customer, payment);
       return { payment: toPublicPayment(payment) };
     }
   );
@@ -191,15 +203,24 @@ async function paymentsRoutes(app) {
    */
   app.post(
     '/api/payments/:id/confirm',
-    { preHandler: [app.requireTenant, app.requirePermission('payments.confirm')] },
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requirePermission('payments.confirm'),
+      ],
+    },
     async (request, reply) => {
       try {
-        const result = await confirmPayment(request.storeId, request.params.id, {
-          metadata: {
-            confirmedBy: request.user?.id || null,
-            confirmedAt: new Date().toISOString(),
-          },
-        });
+        const result = await confirmPayment(
+          request.storeId,
+          request.params.id,
+          {
+            metadata: {
+              confirmedBy: request.user?.id || null,
+              confirmedAt: new Date().toISOString(),
+            },
+          }
+        );
         if (!result) {
           return sendError(
             reply,
@@ -246,7 +267,9 @@ async function paymentsRoutes(app) {
    */
   app.post(
     '/api/payments/:id/refund',
-    { preHandler: [app.requireTenant, app.requirePermission('payments.refund')] },
+    {
+      preHandler: [app.requireTenant, app.requirePermission('payments.refund')],
+    },
     async (request, reply) => {
       try {
         const result = await refundPayment(request.storeId, request.params.id, {
@@ -269,7 +292,10 @@ async function paymentsRoutes(app) {
           },
         });
 
-        return { alreadyRefunded: result.alreadyRefunded, payment: result.payment };
+        return {
+          alreadyRefunded: result.alreadyRefunded,
+          payment: result.payment,
+        };
       } catch (err) {
         const mapped = mapPaymentError(err);
         if (mapped) return sendError(reply, mapped);
@@ -379,11 +405,7 @@ async function paymentsRoutes(app) {
             },
           });
 
-          if (
-            result.payment &&
-            result.changed &&
-            result.payment.storeId
-          ) {
+          if (result.payment && result.changed && result.payment.storeId) {
             publishStoreOrderEvent(result.payment.storeId, {
               type: 'payment.paid',
               payment: {

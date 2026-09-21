@@ -3,6 +3,10 @@
  * Usado por server.js e pelos testes de isolamento.
  */
 import Fastify from 'fastify';
+import customerPlugin from './modules/customer/customer-plugin.js';
+import { isAllowedOrigin } from './shared/origin-policy.js';
+import platformRoutes from './modules/platform/platform-routes.js';
+import marketingRoutes from './modules/marketing/marketing-routes.js';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
@@ -102,16 +106,29 @@ function registerErrorHandling(app) {
 export async function buildApp(opts = {}) {
   const isProd = process.env.NODE_ENV === 'production';
 
+  const redactRequest = (req) => ({
+    method: req.method,
+    url: req.url
+      ?.replace(/(\/api\/tables\/by-token\/)[^?]+/, '$1[redacted]')
+      .split('?')[0],
+    hostname: req.hostname,
+    remoteAddress: req.ip,
+  });
   const app = Fastify({
     logger:
       opts.logger === false
         ? false
-        : opts.logger ?? {
+        : {
             level: isProd ? 'info' : 'warn',
+            ...(typeof opts.logger === 'object' ? opts.logger : {}),
+            serializers: { req: redactRequest },
+            redact: ['req.headers.authorization', 'req.headers.cookie'],
           },
     // Sem trustProxy o rate limit usa o IP do proxy em produção (todos os
     // clientes viram um só). Configure TRUST_PROXY=1 atrás de um proxy confiável.
-    trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : false,
+    trustProxy: process.env.TRUST_PROXY
+      ? Number(process.env.TRUST_PROXY)
+      : false,
   });
 
   await app.register(helmet, {
@@ -136,16 +153,31 @@ export async function buildApp(opts = {}) {
     throw new Error('COOKIE_SECRET é obrigatório em produção.');
   }
 
+  if (
+    isProd &&
+    (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
+  ) {
+    throw new Error(
+      'JWT_SECRET é obrigatório em produção (mínimo 32 caracteres).'
+    );
+  }
+
   await app.register(cors, {
-    origin: isProd ? origins : true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'X-Tenant-Slug',
-      'Idempotency-Key',
-      'X-Signature',
-    ],
+    delegator: (request, cb) =>
+      cb(null, {
+        origin: isAllowedOrigin(request, request.headers.origin)
+          ? request.headers.origin || false
+          : false,
+        credentials: true,
+        methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: [
+          'Content-Type',
+          'X-Tenant-Slug',
+          'Idempotency-Key',
+          'X-Signature',
+          'Authorization',
+        ],
+      }),
   });
 
   await app.register(cookie, {
@@ -159,9 +191,22 @@ export async function buildApp(opts = {}) {
 
   // Erros antes das rotas: ver comentário em registerErrorHandling().
   registerErrorHandling(app);
+  // CORS alone does not prevent simple-form CSRF. Reject disallowed browser
+  // origins before resolving stores or executing state-changing handlers.
+  app.addHook('onRequest', async (request) => {
+    if (
+      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+      !isAllowedOrigin(request, request.headers.origin)
+    ) {
+      throw new AppError('ORIGIN_FORBIDDEN', 'Origem não autorizada.', 403);
+    }
+  });
 
   await app.register(tenantPlugin);
   await app.register(authPlugin);
+  await app.register(customerPlugin);
+  await app.register(platformRoutes);
+  await app.register(marketingRoutes);
   await app.register(menuRoutes);
   await app.register(menuAdminRoutes);
   await app.register(tablesRoutes);
@@ -176,7 +221,10 @@ export async function buildApp(opts = {}) {
   await app.register(crmRoutes);
   await app.register(auditRoutes);
 
-  app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }));
+  app.get('/health', async () => ({
+    status: 'ok',
+    ts: new Date().toISOString(),
+  }));
 
   app.get('/ready', async (_request, reply) => {
     try {
@@ -190,26 +238,20 @@ export async function buildApp(opts = {}) {
       return reply.code(503).send({
         status: 'not_ready',
         db: false,
-        error: process.env.NODE_ENV === 'production' ? 'db_unavailable' : String(err.message),
+        error:
+          process.env.NODE_ENV === 'production'
+            ? 'db_unavailable'
+            : String(err.message),
       });
     }
   });
 
-  app.get('/', async (request) => ({
-    name: 'Admin-Restaurant',
-    version: '0.1.0',
-    message: 'SaaS multi-tenant para lanchonetes — em construção',
-    tenant: request.store
-      ? { id: request.store.id, slug: request.store.slug, name: request.store.name }
-      : null,
-    user: request.user
-      ? { id: request.user.id, email: request.user.email, isSuperAdmin: request.user.isSuperAdmin }
-      : null,
-  }));
+  // The frontend/proxy serves the SPA at /. API root never exposes identity/tenant.
+  app.get('/', async () => ({ name: 'Admin-Restaurant', version: '0.1.0' }));
 
   app.get(
     '/api/me/store',
-    { preHandler: [app.requireTenant] },
+    { preHandler: [app.requireTenant, app.requireStoreAccess] },
     async (request) => ({
       store: {
         id: request.store.id,

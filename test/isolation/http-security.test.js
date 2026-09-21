@@ -85,6 +85,7 @@ describe('CORS e cookies (integration)', () => {
       method: 'OPTIONS',
       url: '/api/payments',
       headers: {
+        host: 'app.example.com',
         origin: 'https://app.example.com',
         'access-control-request-method': 'POST',
         'access-control-request-headers': 'content-type,x-tenant-slug,idempotency-key,x-signature',
@@ -104,8 +105,8 @@ describe('CORS e cookies (integration)', () => {
   it('cookie de sessão é HttpOnly, SameSite=Lax e Secure em produção', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/auth/login',
-      headers: { 'content-type': 'application/json', 'x-tenant-slug': store.slug },
+      url: '/api/auth/store/login',
+      headers: { 'content-type': 'application/json', host: `${store.slug}.localhost` },
       payload: { email: owner.user.email, password: owner.password },
     });
     assert.equal(res.statusCode, 200, res.body);
@@ -195,8 +196,8 @@ describe('rate limit e mapeamento de erros (integration)', () => {
     const attempt = () =>
       app.inject({
         method: 'POST',
-        url: '/api/auth/login',
-        headers: { 'content-type': 'application/json', 'x-tenant-slug': store.slug },
+        url: '/api/auth/store/login',
+        headers: { 'content-type': 'application/json', host: `${store.slug}.localhost` },
         payload: { email: 'ninguem@test.local', password: 'senha-errada-123' },
       });
 
@@ -221,7 +222,7 @@ describe('rate limit e mapeamento de erros (integration)', () => {
     const badId = await app.inject({
       method: 'GET',
       url: '/api/admin/tables',
-      headers: { 'x-tenant-slug': store.slug, cookie },
+      headers: { host: `${store.slug}.localhost`, cookie },
     });
     assert.equal(badId.statusCode, 200, badId.body);
 
@@ -230,7 +231,7 @@ describe('rate limit e mapeamento de erros (integration)', () => {
       url: '/api/admin/tables/nao-e-uuid',
       headers: {
         'content-type': 'application/json',
-        'x-tenant-slug': store.slug,
+        host: `${store.slug}.localhost`,
         cookie,
       },
       payload: { number: 5 },
@@ -242,7 +243,7 @@ describe('rate limit e mapeamento de erros (integration)', () => {
     const badJson = await app.inject({
       method: 'POST',
       url: '/api/payments',
-      headers: { 'content-type': 'application/json', 'x-tenant-slug': store.slug },
+      headers: { 'content-type': 'application/json', host: `${store.slug}.localhost` },
       payload: '{ isso não é json',
     });
     assert.equal(badJson.statusCode, 400, badJson.body);
@@ -257,7 +258,7 @@ describe('rate limit e mapeamento de erros (integration)', () => {
     const badType = await app.inject({
       method: 'POST',
       url: '/api/payments',
-      headers: { 'content-type': 'text/xml', 'x-tenant-slug': store.slug },
+      headers: { 'content-type': 'text/xml', host: `${store.slug}.localhost` },
       payload: '<xml/>',
     });
     assert.equal(badType.statusCode, 415, badType.body);

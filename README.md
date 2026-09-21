@@ -116,3 +116,11 @@ Veja as [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues) e os E
 ---
 
 Feito com foco em segurança, integridade e crescimento.
+
+
+## Contextos de entrada
+
+A partir da migration 0022: marketing no apex/www, plataforma em app/platform e
+loja em subdomínio/custom domain. Login genérico e seleção de tenant pelo browser
+foram removidos. Consulte [contratos e implantação](docs/ENTRY-CONTEXTS.md) antes
+de atualizar um deploy existente. Bootstrap sem demo: `npm run platform:bootstrap`.

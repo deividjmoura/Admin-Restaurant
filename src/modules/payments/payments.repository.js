@@ -1,11 +1,13 @@
+import {
+  assertCustomerSession,
+  assertSessionScope,
+  assertOrderScope,
+} from '../customer/customer-session.js';
 import { query, withTransaction } from '../../infrastructure/db.js';
 import { buildStaticPixPayload, resolvePixConfig } from './pix-static.js';
 import { findById as findStoreById } from '../tenancy/store.repository.js';
 import { findOrderById } from '../orders/orders.repository.js';
-import {
-  isPaidEvent,
-  redactWebhookPayload,
-} from './webhook-auth.js';
+import { isPaidEvent, redactWebhookPayload } from './webhook-auth.js';
 
 /** Tolerância de comparação de valores (meio centavo). */
 export const AMOUNT_TOLERANCE = 0.005;
@@ -42,9 +44,13 @@ export async function findPaymentById(storeId, paymentId) {
   return rows[0] ? mapPayment(rows[0]) : null;
 }
 
-export async function findPaymentByIdempotency(storeId, key) {
+export async function findPaymentByIdempotency(
+  storeId,
+  key,
+  { client = null } = {}
+) {
   if (!key) return null;
-  const { rows } = await query(
+  const { rows } = await (client ? client.query.bind(client) : query)(
     `SELECT * FROM payments WHERE store_id = $1 AND idempotency_key = $2`,
     [storeId, key]
   );
@@ -118,12 +124,16 @@ export async function listPayments(
  *
  * @returns {Promise<{ itemsTotal: number, paidTotal: number, pendingTotal: number, due: number }>}
  */
-export async function amountDue(storeId, { orderId = null, sessionId = null } = {}) {
+export async function amountDue(
+  storeId,
+  { orderId = null, sessionId = null } = {},
+  { client = null } = {}
+) {
   if (!orderId && !sessionId) {
     throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
   }
 
-  const { rows } = await query(
+  const { rows } = await (client ? client.query.bind(client) : query)(
     `WITH items AS (
        SELECT COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity), 0) AS items_total
        FROM order_items oi
@@ -175,13 +185,20 @@ export async function amountDue(storeId, { orderId = null, sessionId = null } = 
  * Valida que o alvo do pagamento pertence à loja resolvida pelo tenant.
  * Nunca aceita ordem/sessão de outra loja.
  */
-export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
+export async function assertPaymentTarget(
+  storeId,
+  { orderId, sessionId },
+  { client = null } = {}
+) {
   let order = null;
 
   if (orderId) {
-    order = await findOrderById(storeId, orderId);
+    order = await findOrderById(storeId, orderId, { client });
     if (!order) {
-      throw new PaymentError('ORDER_NOT_FOUND', 'Pedido não encontrado nesta loja.');
+      throw new PaymentError(
+        'ORDER_NOT_FOUND',
+        'Pedido não encontrado nesta loja.'
+      );
     }
     if (order.status === 'CANCELLED') {
       throw new PaymentError(
@@ -193,20 +210,32 @@ export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
 
   let session = null;
   if (sessionId) {
-    const { rows } = await query(
+    const { rows } = await (client ? client.query.bind(client) : query)(
       `SELECT id, store_id, status FROM table_sessions
        WHERE id = $1 AND store_id = $2`,
       [sessionId, storeId]
     );
     session = rows[0] ?? null;
     if (!session) {
-      throw new PaymentError('SESSION_NOT_FOUND', 'Sessão não encontrada nesta loja.');
+      throw new PaymentError(
+        'SESSION_NOT_FOUND',
+        'Sessão não encontrada nesta loja.'
+      );
     }
     if (session.status !== 'open') {
-      throw new PaymentError('SESSION_CLOSED', 'Sessão de mesa já está fechada.');
+      throw new PaymentError(
+        'SESSION_CLOSED',
+        'Sessão de mesa já está fechada.'
+      );
     }
   }
 
+  if (order && session && order.table_session_id !== session.id) {
+    throw new PaymentError(
+      'PAYMENT_TARGET_MISMATCH',
+      'Pedido e sessão incompatíveis.'
+    );
+  }
   return { order, session };
 }
 
@@ -217,7 +246,7 @@ export async function assertPaymentTarget(storeId, { orderId, sessionId }) {
  * `provider` / `providerPaymentId` existem para fluxos INTERNOS (integração com
  * provider) e nunca são expostos no schema HTTP público.
  */
-export async function createPayment(
+async function createPaymentInTx(
   storeId,
   {
     amount,
@@ -228,8 +257,14 @@ export async function createPayment(
     provider = null,
     providerPaymentId = null,
     metadata = {},
-  }
+  },
+  client,
+  customer
 ) {
+  const run = client.query.bind(client);
+  await assertCustomerSession(customer, run, { lock: true });
+  if (sessionId) assertSessionScope(customer, storeId, sessionId);
+  if (orderId) await assertOrderScope(customer, storeId, orderId, run);
   if (!orderId && !sessionId) {
     throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
   }
@@ -244,13 +279,18 @@ export async function createPayment(
   }
 
   if (idempotencyKey) {
-    const existing = await findPaymentByIdempotency(storeId, idempotencyKey);
-    if (existing) return { payment: existing, replayed: true };
+    const existing = await findPaymentByIdempotency(storeId, idempotencyKey, {
+      client,
+    });
+    if (existing) {
+      assertPaymentReplay(existing, { orderId, sessionId, method, amount });
+      return { payment: existing, replayed: true };
+    }
   }
 
-  await assertPaymentTarget(storeId, { orderId, sessionId });
+  await assertPaymentTarget(storeId, { orderId, sessionId }, { client });
 
-  const due = await amountDue(storeId, { orderId, sessionId });
+  const due = await amountDue(storeId, { orderId, sessionId }, { client });
   if (Number(amount) > due.due + AMOUNT_TOLERANCE) {
     throw new PaymentError(
       'AMOUNT_EXCEEDS_DUE',
@@ -259,13 +299,15 @@ export async function createPayment(
     );
   }
 
-  const store = await findStoreById(storeId);
+  const { rows: storeRows } = await run(
+    'SELECT id, settings FROM stores WHERE id=$1',
+    [storeId]
+  );
+  const store = storeRows[0];
   if (!store) throw new PaymentError('STORE_NOT_FOUND', 'Loja não encontrada.');
 
   const settings =
-    typeof store.settings === 'object' && store.settings
-      ? store.settings
-      : {};
+    typeof store.settings === 'object' && store.settings ? store.settings : {};
 
   let resolvedProvider = provider || 'manual';
   let pixCopyPaste = null;
@@ -279,7 +321,10 @@ export async function createPayment(
       );
     }
     resolvedProvider = provider || 'static_pix';
-    const txid = (idempotencyKey || `P${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 25) || 'PEDIDO';
+    const txid =
+      (idempotencyKey || `P${Date.now()}`)
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 25) || 'PEDIDO';
     pixCopyPaste = buildStaticPixPayload({
       key: pix.key,
       name: pix.name,
@@ -294,12 +339,13 @@ export async function createPayment(
     resolvedProvider = provider || 'provider_pending';
   }
 
-  try {
-    const { rows } = await query(
+  {
+    const { rows } = await run(
       `INSERT INTO payments
         (store_id, order_id, session_id, method, status, amount, provider,
          provider_payment_id, idempotency_key, pix_copy_paste, metadata)
        VALUES ($1,$2,$3,$4,'PENDING',$5,$6,$7,$8,$9,$10::jsonb)
+       ON CONFLICT (store_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
        RETURNING *`,
       [
         storeId,
@@ -314,20 +360,48 @@ export async function createPayment(
         JSON.stringify(metadata || {}),
       ]
     );
-    return { payment: mapPayment(rows[0]), replayed: false };
-  } catch (err) {
-    if (err.code === '23505' && idempotencyKey) {
-      const existing = await findPaymentByIdempotency(storeId, idempotencyKey);
-      if (existing) return { payment: existing, replayed: true };
-    }
-    throw err;
+    if (rows[0]) return { payment: mapPayment(rows[0]), replayed: false };
+    const existing = await findPaymentByIdempotency(storeId, idempotencyKey, {
+      client,
+    });
+    if (!existing)
+      throw new PaymentError(
+        'IDEMPOTENCY_CONFLICT',
+        'Conflito de idempotência. Tente novamente.'
+      );
+    assertPaymentReplay(existing, { orderId, sessionId, method, amount });
+    return { payment: existing, replayed: true };
   }
+}
+
+function assertPaymentReplay(existing, { orderId, sessionId, method, amount }) {
+  if (
+    (existing.orderId ?? null) !== (orderId ?? null) ||
+    (existing.sessionId ?? null) !== (sessionId ?? null) ||
+    existing.method !== method ||
+    toCents(existing.amount) !== toCents(amount)
+  ) {
+    throw new PaymentError(
+      'IDEMPOTENCY_KEY_REUSED',
+      'Chave já utilizada para outro pagamento.'
+    );
+  }
+}
+
+export async function createPayment(storeId, input, { customer = null } = {}) {
+  return withTransaction((client) =>
+    createPaymentInTx(storeId, input, client, customer)
+  );
 }
 
 /**
  * Confirma pagamento (caixa / webhook). Idempotente se já PAID.
  */
-export async function confirmPayment(storeId, paymentId, { metadata = {} } = {}) {
+export async function confirmPayment(
+  storeId,
+  paymentId,
+  { metadata = {} } = {}
+) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
@@ -361,7 +435,11 @@ export async function confirmPayment(storeId, paymentId, { metadata = {} } = {})
 }
 
 /** Estorna/cancela um pagamento (OWNER: payments.refund). */
-export async function refundPayment(storeId, paymentId, { reason = null, actorUserId = null } = {}) {
+export async function refundPayment(
+  storeId,
+  paymentId,
+  { reason = null, actorUserId = null } = {}
+) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT * FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
@@ -424,7 +502,10 @@ export async function processWebhookEvent({
   bodyStoreId = null,
 }) {
   if (!provider || !externalEventId) {
-    throw new PaymentError('WEBHOOK_INVALID', 'provider e externalEventId obrigatórios.');
+    throw new PaymentError(
+      'WEBHOOK_INVALID',
+      'provider e externalEventId obrigatórios.'
+    );
   }
 
   // Fast path: evento já processado (sem escrita).
@@ -444,10 +525,14 @@ export async function processWebhookEvent({
 
   return withTransaction(async (client) => {
     // 1. O pagamento é a fonte de verdade do tenant.
-    const paymentRow = await findPaymentByProviderReference(provider, providerPaymentId, {
-      client,
-      forUpdate: true,
-    });
+    const paymentRow = await findPaymentByProviderReference(
+      provider,
+      providerPaymentId,
+      {
+        client,
+        forUpdate: true,
+      }
+    );
 
     const storeId = paymentRow ? paymentRow.store_id : null;
 

@@ -20,13 +20,13 @@ export async function listTables(storeId) {
   return rows;
 }
 
-export async function findTableByPublicToken(publicToken) {
+export async function findTableByPublicToken(storeId, publicToken) {
   if (!publicToken || !UUID_RE.test(String(publicToken))) return null;
   const { rows } = await query(
     `SELECT id, store_id, number, label, public_token, status, is_active, created_at, updated_at
      FROM tables
-     WHERE public_token = $1 AND is_active = TRUE`,
-    [publicToken]
+     WHERE public_token = $1 AND store_id = $2 AND is_active = TRUE`,
+    [publicToken, storeId]
   );
   return rows[0] ?? null;
 }

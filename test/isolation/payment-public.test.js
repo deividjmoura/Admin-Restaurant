@@ -15,7 +15,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { skipWithoutDb } from '../helpers/env.js';
-import { dropStores } from '../helpers/fixtures.js';
+import { customerHeaders, dropStores } from '../helpers/fixtures.js';
 
 describe('pagamentos públicos — ownership e valor devido (integration)', () => {
   let app = null;
@@ -28,7 +28,8 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
   let orderA = null;
   let addonA = null;
 
-  const auth = (slug) => ({ 'x-tenant-slug': slug });
+  const credentials = {};
+  const auth = (slug) => credentials[slug];
 
   async function makeOrderWithAddons() {
     const { createOrder } = await import(
@@ -76,6 +77,8 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
     sessionA = sA.session;
     const sB = await makeTableSession(storeB.id, { number: 2 });
     sessionB = sB.session;
+    credentials[storeA.slug] = await customerHeaders(app, storeA, sA.table);
+    credentials[storeB.slug] = await customerHeaders(app, storeB, sB.table);
 
     orderA = await makeOrderWithAddons();
   });
@@ -132,7 +135,9 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
     const { closeSession } = await import(
       '../../src/modules/tables/tables.repository.js'
     );
-    const { session } = await makeTableSession(storeA.id, { number: 77 });
+    const { table, session } = await makeTableSession(storeA.id, { number: 77 });
+    const prior = credentials[storeA.slug];
+    credentials[storeA.slug] = await customerHeaders(app, storeA, table);
     await closeSession(storeA.id, session.id);
 
     const res = await post(storeA.slug, {
@@ -142,6 +147,7 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
     });
     assert.equal(res.statusCode, 409, res.body);
     assert.equal(res.json().error.code, 'SESSION_CLOSED');
+    credentials[storeA.slug] = prior;
   });
 
   it('exige orderId ou sessionId (TARGET_REQUIRED)', async (t) => {
@@ -274,7 +280,8 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
       '../../src/modules/orders/orders.repository.js'
     );
     const { makeTableSession } = await import('../helpers/fixtures.js');
-    const { session } = await makeTableSession(storeB.id, { number: 55 });
+    const { table, session } = await makeTableSession(storeB.id, { number: 55 });
+    credentials[storeB.slug] = await customerHeaders(app, storeB, table);
     const order = await createOrder(storeB.id, {
       tableSessionId: session.id,
       channel: 'TABLE',

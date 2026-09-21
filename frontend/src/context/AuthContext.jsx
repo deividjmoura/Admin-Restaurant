@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, setTenantSlug, getTenant } from '../api/client';
+import { api, getTenant } from '../api/client';
+
+import { entryContext } from './entry-context';
 
 const AuthContext = createContext(null);
 
@@ -8,8 +10,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (entryContext.type === 'marketing' || window.location.pathname.startsWith('/m/')) { setLoading(false); return; }
     try {
-      const data = await api('/api/auth/me');
+      const data = await api(entryContext.type === 'platform' ? '/api/platform/me' : '/api/me');
       setUser(data.user || data);
     } catch {
       setUser(null);
@@ -22,9 +25,8 @@ export function AuthProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  async function login(email, password, tenantSlug) {
-    if (tenantSlug) setTenantSlug(tenantSlug);
-    const data = await api('/api/auth/login', {
+  async function login(email, password) {
+    const data = await api(`/api/auth/${entryContext.type}/login`, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });

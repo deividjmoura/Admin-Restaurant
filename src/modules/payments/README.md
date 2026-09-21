@@ -1,3 +1,7 @@
+> **Contrato de autenticação atualizado:** IDs não autorizam mais acesso ao fluxo
+> mesa/QR. Pedidos, pagamentos e carrinho exigem JWT customer ou cookie staff com
+> permissão. Veja [CUSTOMER-SESSIONS.md](../../../docs/CUSTOMER-SESSIONS.md).
+
 # Payments (Fase 7 / Epic #8)
 
 ## Princípios

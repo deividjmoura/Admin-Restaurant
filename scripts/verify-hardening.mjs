@@ -295,7 +295,9 @@ async function main() {
       };
       const fx = await makeStoreWithProduct({ price: 25 }); // sem settings.pix
       try {
-        const { session } = await makeTableSession(fx.store.id, { number: 4 });
+        const { table, session } = await makeTableSession(fx.store.id, { number: 4 });
+        const { customerHeaders } = await import('../test/helpers/fixtures.js');
+        const customerAuth = await customerHeaders(app, fx.store, table);
         const { order } = await orders.createOrder(fx.store.id, {
           tableSessionId: session.id,
           channel: 'TABLE',
@@ -308,7 +310,7 @@ async function main() {
             url: '/api/payments',
             headers: {
               'content-type': 'application/json',
-              'x-tenant-slug': fx.store.slug,
+              ...customerAuth,
             },
             payload: { amount: 25, method: 'PIX', orderId: order.id },
           });
@@ -377,7 +379,7 @@ async function main() {
           url: '/api/admin/tables',
           headers: {
             'content-type': 'application/json',
-            'x-tenant-slug': fx.store.id ? fx.store.slug : undefined,
+            host: `${fx.store.slug}.localhost`,
             cookie: owner.cookie,
           },
           payload: { number: 999 },
@@ -427,8 +429,8 @@ async function main() {
         const attempt = (app) =>
           app.inject({
             method: 'POST',
-            url: '/api/auth/login',
-            headers: { 'content-type': 'application/json', 'x-tenant-slug': fx.store.slug },
+            url: '/api/auth/store/login',
+            headers: { 'content-type': 'application/json', host: `${fx.store.slug}.localhost` },
             payload: { email: 'ninguem@verify.local', password: 'senha-errada-123' },
           });
 
@@ -471,7 +473,7 @@ async function main() {
         const cross = await app.inject({
           method: 'GET',
           url: '/api/kitchen/orders?station=KITCHEN',
-          headers: { 'x-tenant-slug': b.store.slug, cookie: staff.cookie },
+          headers: { host: `${b.store.slug}.localhost`, cookie: staff.cookie },
         });
         assert(
           [401, 403].includes(cross.statusCode),
@@ -481,7 +483,7 @@ async function main() {
         const own = await app.inject({
           method: 'GET',
           url: '/api/kitchen/orders?station=KITCHEN',
-          headers: { 'x-tenant-slug': a.store.slug, cookie: staff.cookie },
+          headers: { host: `${a.store.slug}.localhost`, cookie: staff.cookie },
         });
         assert(own.statusCode === 200, `STAFF deveria ver a própria loja: ${own.body}`);
 

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, newIdempotencyKey, setTenantSlug } from '../../api/client';
+import { newIdempotencyKey } from '../../api/client';
+import { customer } from '../../api/customer';
 import { Button, Card, ErrorBox, Spinner } from '../../components/Layout';
 
 export default function CartPage() {
@@ -9,28 +10,31 @@ export default function CartPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
-
-  const ensureSession = useCallback(async () => {
-    let sid = sessionStorage.getItem('sessionId');
-    if (!sid) {
-      const table = await api(`/api/tables/by-token/${token}`);
-      if (table.storeSlug) setTenantSlug(table.storeSlug);
-      sid = table.session.id;
-      sessionStorage.setItem('sessionId', sid);
-      sessionStorage.setItem(
-        'cartVersion',
-        String(table.session.cartVersion ?? table.session.cart_version ?? 0)
-      );
-    }
-    return sid;
+  const checkoutKey = useRef(null);
+  const activeQr = useRef(token);
+  activeQr.current = token;
+  useEffect(() => {
+    checkoutKey.current = null;
+    setCart(null);
+    setOrderResult(null);
+    setError(null);
   }, [token]);
+
+  const ensureSession = useCallback(
+    async () => (await customer.ensure(token)).id,
+    [token]
+  );
 
   const load = useCallback(async () => {
     const sid = await ensureSession();
-    const data = await api(`/api/sessions/${sid}/cart`);
+    const data = await customer.request(token, `/api/sessions/${sid}/cart`);
+    if (activeQr.current !== token) return;
     setCart(data);
-    sessionStorage.setItem('cartVersion', String(data.version ?? 0));
-  }, [ensureSession]);
+    sessionStorage.setItem(
+      `table:${token}:cartVersion`,
+      String(data.version ?? 0)
+    );
+  }, [ensureSession, token]);
 
   useEffect(() => {
     load().catch(setError);
@@ -38,27 +42,44 @@ export default function CartPage() {
 
   async function changeQty(item, delta) {
     setError(null);
-    const sid = sessionStorage.getItem('sessionId');
-    const version = Number(sessionStorage.getItem('cartVersion') || 0);
+    const sid = sessionStorage.getItem(`table:${token}:sessionId`);
+    const version = Number(
+      sessionStorage.getItem(`table:${token}:cartVersion`) || 0
+    );
     const nextQty = (item.quantity || 1) + delta;
     try {
       if (nextQty <= 0) {
-        await api(`/api/sessions/${sid}/cart/items/${item.id}`, {
-          method: 'DELETE',
-          body: JSON.stringify({ expectedVersion: version }),
-        });
+        await customer.request(
+          token,
+          `/api/sessions/${sid}/cart/items/${item.id}`,
+          {
+            method: 'DELETE',
+            body: JSON.stringify({ expectedVersion: version }),
+          }
+        );
       } else {
-        await api(`/api/sessions/${sid}/cart/items/${item.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ quantity: nextQty, expectedVersion: version }),
-        });
+        await customer.request(
+          token,
+          `/api/sessions/${sid}/cart/items/${item.id}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              quantity: nextQty,
+              expectedVersion: version,
+            }),
+          }
+        );
       }
       await load();
     } catch (err) {
-      if (err.code === 'CART_VERSION_CONFLICT' || err.status === 409) {
+      if (err.status >= 400 && err.status < 500) checkoutKey.current = null;
+      if (err.code === 'CART_VERSION_CONFLICT') {
         const current = err.data?.error?.details?.currentVersion;
-        if (current != null) sessionStorage.setItem('cartVersion', String(current));
-        setError(new Error('Carrinho atualizado por outra pessoa — atualizando…'));
+        if (current != null)
+          sessionStorage.setItem(`table:${token}:cartVersion`, String(current));
+        setError(
+          new Error('Carrinho atualizado por outra pessoa — atualizando…')
+        );
         await load().catch(() => {});
       } else {
         setError(err);
@@ -70,25 +91,38 @@ export default function CartPage() {
     setBusy(true);
     setError(null);
     try {
-      const sid = sessionStorage.getItem('sessionId');
-      const version = Number(sessionStorage.getItem('cartVersion') || 0);
-      const idempotencyKey = newIdempotencyKey();
-      const res = await api(`/api/sessions/${sid}/cart/checkout`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
-        body: JSON.stringify({
-          expectedVersion: version,
-          idempotencyKey,
-        }),
-      });
+      const sid = sessionStorage.getItem(`table:${token}:sessionId`);
+      const version = Number(
+        sessionStorage.getItem(`table:${token}:cartVersion`) || 0
+      );
+      const idempotencyKey = (checkoutKey.current ||= newIdempotencyKey());
+      const res = await customer.request(
+        token,
+        `/api/sessions/${sid}/cart/checkout`,
+        {
+          method: 'POST',
+          headers: { 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({
+            expectedVersion: version,
+            idempotencyKey,
+          }),
+        }
+      );
       setOrderResult(res);
-      sessionStorage.setItem('cartVersion', '0');
-      await load().catch(() => setCart({ items: [], version: 0, totals: { amount: 0 } }));
+      checkoutKey.current = null;
+      sessionStorage.setItem(`table:${token}:cartVersion`, '0');
+      await load().catch(() =>
+        setCart({ items: [], version: 0, totals: { amount: 0 } })
+      );
     } catch (err) {
+      if (err.status >= 400 && err.status < 500) checkoutKey.current = null;
       if (err.code === 'CART_VERSION_CONFLICT') {
         const current = err.data?.error?.details?.currentVersion;
-        if (current != null) sessionStorage.setItem('cartVersion', String(current));
-        setError(new Error('Carrinho mudou — confira os itens e tente de novo'));
+        if (current != null)
+          sessionStorage.setItem(`table:${token}:cartVersion`, String(current));
+        setError(
+          new Error('Carrinho mudou — confira os itens e tente de novo')
+        );
         await load().catch(() => {});
       } else {
         setError(err);
@@ -110,10 +144,14 @@ export default function CartPage() {
           <h1 className="text-xl font-bold text-stone-900">Pedido enviado!</h1>
           <p className="text-stone-600 text-sm">
             Número do pedido{' '}
-            <span className="font-mono font-semibold text-amber-700">#{shortId}</span>
+            <span className="font-mono font-semibold text-amber-700">
+              #{shortId}
+            </span>
           </p>
           {orderResult.replayed && (
-            <p className="text-xs text-stone-500">Pedido já havia sido registrado (retry seguro).</p>
+            <p className="text-xs text-stone-500">
+              Pedido já havia sido registrado (retry seguro).
+            </p>
           )}
           <p className="text-sm text-stone-500">
             A cozinha já recebeu. Você pode pedir mais quando quiser.
@@ -141,6 +179,11 @@ export default function CartPage() {
     return (
       <div className="mx-auto max-w-lg px-4 py-8">
         <ErrorBox error={error} />
+        {error && (
+          <Link className="underline text-sm" to={`/m/${token}`}>
+            Voltar à entrada da mesa
+          </Link>
+        )}
       </div>
     );
   }
@@ -159,6 +202,11 @@ export default function CartPage() {
       </div>
 
       <ErrorBox error={error} />
+      {error && (
+        <Link className="underline text-sm" to={`/m/${token}`}>
+          Voltar à entrada da mesa
+        </Link>
+      )}
 
       {items.length === 0 && (
         <Card>
@@ -176,7 +224,10 @@ export default function CartPage() {
               {item.productName || item.product_name}
             </p>
             <p className="text-sm text-amber-700 font-semibold">
-              R$ {Number(item.lineTotal ?? item.unitPrice * item.quantity ?? 0).toFixed(2)}
+              R${' '}
+              {Number(
+                item.lineTotal ?? item.unitPrice * item.quantity ?? 0
+              ).toFixed(2)}
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -188,7 +239,9 @@ export default function CartPage() {
             >
               −
             </Button>
-            <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+            <span className="w-8 text-center text-sm font-medium">
+              {item.quantity}
+            </span>
             <Button
               variant="secondary"
               className="!px-2.5 !py-1"
