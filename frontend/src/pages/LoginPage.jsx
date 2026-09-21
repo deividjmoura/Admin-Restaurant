@@ -3,16 +3,18 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { entryContext } from '../context/entry-context';
 import { getTenant } from '../api/client';
-import { Button, Card, ErrorBox } from '../components/Layout';
+import { Button, Card, ErrorBox, Banner } from '../components/Layout';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  // Nada de credencial default no bundle: campos começam vazios.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const platform = entryContext.type === 'platform';
+  const tenantLabel = getTenant();
+  const missingStoreTenant =
+    !platform && entryContext.type === 'store' && !entryContext.slug && !tenantLabel;
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,6 +23,11 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      if (missingStoreTenant) {
+        throw new Error(
+          'Nenhuma loja identificada neste endereço. Use o subdomínio da loja ou configure VITE_TENANT_SLUG + TENANT_FALLBACK_* no deploy.'
+        );
+      }
       const data = await login(email, password);
       const roleHome = {
         KITCHEN: '/kitchen',
@@ -30,7 +37,7 @@ export default function LoginPage() {
       };
       const dest = platform
         ? '/platform/stores'
-        : loc.state?.from || roleHome[data.user.role] || '/admin';
+        : loc.state?.from || roleHome[data.user?.role] || '/admin';
       nav(dest, { replace: true });
     } catch (err) {
       setError(err);
@@ -46,9 +53,18 @@ export default function LoginPage() {
           {platform ? 'Entrar na plataforma' : 'Entrar na loja'}
         </h1>
         <p className="text-sm text-stone-500 mb-4">
-          {platform ? 'Acesso exclusivo à administração do SaaS.' : getTenant()}
+          {platform
+            ? 'Acesso exclusivo à administração do SaaS.'
+            : tenantLabel || 'Loja não identificada neste host'}
         </p>
-        <form onSubmit={onSubmit} className="space-y-3">
+        {missingStoreTenant && (
+          <Banner tone="warning">
+            Este host não mapeia uma loja. Login de staff de loja exige
+            subdomínio/custom domain, ou transport com VITE_TENANT_SLUG e
+            TENANT_FALLBACK_HOSTS/ORIGINS no backend.
+          </Banner>
+        )}
+        <form onSubmit={onSubmit} className="space-y-3 mt-3">
           <label className="block text-sm">
             <span className="text-stone-600">E-mail</span>
             <input
@@ -57,6 +73,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="username"
             />
           </label>
           <label className="block text-sm">
@@ -67,6 +84,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
             />
           </label>
           <ErrorBox error={error} />

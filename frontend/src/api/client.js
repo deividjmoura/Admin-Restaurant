@@ -2,8 +2,27 @@ const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 import { entryContext, devTenant } from '../context/entry-context';
 
+/**
+ * Slug de tenant enviado no header X-Tenant-Slug.
+ * Ordem: subdomínio resolvido → VITE_TENANT_SLUG (prod/transport) → VITE_DEV_TENANT_SLUG (só DEV).
+ * Em produção cross-origin (SPA e API em hosts diferentes) configure VITE_TENANT_SLUG
+ * e no backend TENANT_FALLBACK_HOSTS + TENANT_FALLBACK_ORIGINS.
+ */
+function resolveTenantSlug() {
+  if (entryContext?.type === 'store' && entryContext.slug) {
+    return entryContext.slug;
+  }
+  const explicit =
+    (import.meta.env.VITE_TENANT_SLUG || '').trim() ||
+    (import.meta.env.DEV ? (import.meta.env.VITE_DEV_TENANT_SLUG || '').trim() : '');
+  return explicit || '';
+}
+
 export function getTenant() {
-  return entryContext.type === 'store' ? entryContext.slug || devTenant || window.location.hostname : '';
+  if (entryContext?.type === 'platform' || entryContext?.type === 'marketing') {
+    return '';
+  }
+  return resolveTenantSlug() || (typeof window !== 'undefined' ? window.location.hostname : '');
 }
 
 /** UUID v4 for Idempotency-Key (safe client retries). */
@@ -27,22 +46,18 @@ export class ApiError extends Error {
     this.data = data;
   }
 
-  /** 4xx de autenticação/autorização → a sessão precisa ser refeita. */
   get isAuthError() {
     return this.status === 401;
   }
 
-  /** 403 — autenticado, mas sem permissão para a ação. */
   get isForbidden() {
     return this.status === 403;
   }
 
-  /** 429 — limite de requisições. */
   get isRateLimited() {
     return this.status === 429;
   }
 
-  /** 5xx ou falha de rede — o painel deve sinalizar conexão perdida. */
   get isServerOrNetworkError() {
     return this.status === 0 || this.status >= 500;
   }
@@ -52,7 +67,7 @@ export class ApiError extends Error {
  * Fetch JSON against API with tenant header + cookies.
  */
 export async function api(path, options = {}) {
-  const tenant = devTenant;
+  const tenant = resolveTenantSlug();
   const headers = {
     'Content-Type': 'application/json',
     ...(tenant ? { 'X-Tenant-Slug': tenant } : {}),
