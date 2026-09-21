@@ -1,6 +1,5 @@
 /**
- * Bootstrap temporário: re-hidrata payments.repository a partir de payload gzip.
- * Removível assim que o blob completo estiver estável no git.
+ * Re-hidrata payments.repository a partir de partes base64 gzip.
  */
 import { gunzipSync } from 'node:zlib';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -9,22 +8,36 @@ import { dirname, join } from 'node:path';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const out = join(dir, 'payments.repository.generated.js');
-const B64 =
-  'H4sIAJl8sWoC/+0923LbRpbv+op2DWsIOhAkK3EmQ0VWyRIVcyKJWpLKZb1aCiKaEhwS4ACgLEXhx6T2' +
-  'PLACEHOLDER_WILL_FAIL';
 
 if (!existsSync(out) || readFileSync(out).length < 5000) {
-  writeFileSync(out, gunzipSync(Buffer.from(B64, 'base64')));
+  const parts = [];
+  for (let i = 0; i < 10; i++) {
+    const p = join(dir, `pay_b64_part${i}.txt`);
+    if (!existsSync(p)) break;
+    parts.push(readFileSync(p, 'utf8').trim());
+  }
+  writeFileSync(out, gunzipSync(Buffer.from(parts.join(''), 'base64')));
 }
 
 const mod = await import(pathToFileURL(out).href);
 export const PaymentError = mod.PaymentError;
+export const AMOUNT_TOLERANCE = mod.AMOUNT_TOLERANCE;
+export const toCents = mod.toCents;
+export const round2 = mod.round2;
+export const hasCentPrecision = mod.hasCentPrecision;
+export const findPaymentById = mod.findPaymentById;
+export const findPaymentByIdempotency = mod.findPaymentByIdempotency;
+export const findPaymentByProviderReference = mod.findPaymentByProviderReference;
+export const listPayments = mod.listPayments;
+export const amountDue = mod.amountDue;
+export const assertPaymentTarget = mod.assertPaymentTarget;
+export const resolveProviderContext = mod.resolveProviderContext;
 export const createPayment = mod.createPayment;
 export const confirmPayment = mod.confirmPayment;
 export const refundPayment = mod.refundPayment;
 export const processWebhookEvent = mod.processWebhookEvent;
-export const toPublicPayment = mod.toPublicPayment;
-export const amountDue = mod.amountDue;
-export const listPayments = mod.listPayments;
-export const findPaymentById = mod.findPaymentById;
 export const getPixConfigForStore = mod.getPixConfigForStore;
+export const findPaymentsBySplitGroup = mod.findPaymentsBySplitGroup;
+export const createSplitPayments = mod.createSplitPayments;
+export const toPublicPayment = mod.toPublicPayment;
+export const toPublicPaymentFromRow = mod.toPublicPaymentFromRow;
