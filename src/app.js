@@ -3,6 +3,10 @@
  * Usado por server.js e pelos testes de isolamento.
  */
 import Fastify from 'fastify';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fastifyStatic from '@fastify/static';
 import customerPlugin from './modules/customer/customer-plugin.js';
 import { isAllowedOrigin } from './shared/origin-policy.js';
 import platformRoutes from './modules/platform/platform-routes.js';
@@ -36,7 +40,7 @@ import { AppError, errorResponse } from './shared/errors.js';
  * depois de `app.register(...)` não se aplica a elas (o 500 padrão vazava
  * stack/erro de banco).
  */
-function registerErrorHandling(app) {
+function registerErrorHandling(app, spaEnabled = false) {
   // GOLDEN_RULES: nunca vazar 500 em UUID malformado / erro de cliente.
   // Erros do próprio Fastify (400/415/429) preservam o status original.
   app.setErrorHandler((err, request, reply) => {
@@ -90,14 +94,24 @@ function registerErrorHandling(app) {
     });
   });
 
-  app.setNotFoundHandler((request, reply) => {
-    return reply.code(404).send({
-      error: {
-        code: 'NOT_FOUND',
-        message: 'Rota não encontrada.',
-      },
+  if (spaEnabled) {
+    // SPA fallback: tudo que não é /api, /health ou /ready devolve index.html.
+    app.setNotFoundHandler((request, reply) => {
+      const url = (request.url || '').split('?')[0];
+      if (url.startsWith('/api') || url === '/health' || url === '/ready') {
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' },
+        });
+      }
+      return reply.sendFile('index.html');
     });
-  });
+  } else {
+    app.setNotFoundHandler((request, reply) => {
+      return reply.code(404).send({
+        error: { code: 'NOT_FOUND', message: 'Rota não encontrada.' },
+      });
+    });
+  }
 }
 
 /**
@@ -189,8 +203,23 @@ export async function buildApp(opts = {}) {
     timeWindow: '1 minute',
   });
 
+  // SPA: quando o build do frontend (`frontend/dist`) existe, servimos os
+  // assets estáticos e fazemos SPA fallback. Isso permite um deploy de
+  // ORIGEM ÚNICA (ex.: um serviço Render) onde SPA e API dividem o mesmo host
+  // — necessário para a resolução de tenant por Host e para cookies same-origin.
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const spaDir = path.join(__dirname, '..', 'frontend', 'dist');
+  const spaEnabled = fs.existsSync(spaDir);
+  if (spaEnabled) {
+    await app.register(fastifyStatic, {
+      root: spaDir,
+      prefix: '/',
+      wildcard: false,
+    });
+  }
+
   // Erros antes das rotas: ver comentário em registerErrorHandling().
-  registerErrorHandling(app);
+  registerErrorHandling(app, spaEnabled);
   // CORS alone does not prevent simple-form CSRF. Reject disallowed browser
   // origins before resolving stores or executing state-changing handlers.
   app.addHook('onRequest', async (request) => {
@@ -247,7 +276,11 @@ export async function buildApp(opts = {}) {
   });
 
   // The frontend/proxy serves the SPA at /. API root never exposes identity/tenant.
-  app.get('/', async () => ({ name: 'Admin-Restaurant', version: '0.1.0' }));
+  // Quando o SPA está habilitado, @fastify/static já serve `/` e os assets; o
+  // SPA fallback (rotas não-API) é tratado no notFoundHandler.
+  if (!spaEnabled) {
+    app.get('/', async () => ({ name: 'Admin-Restaurant', version: '0.1.0' }));
+  }
 
   app.get(
     '/api/me/store',

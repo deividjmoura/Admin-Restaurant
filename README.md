@@ -120,6 +120,49 @@ Veja as [Issues](https://github.com/deividjmoura/Admin-Restaurant/issues) e os E
 Feito com foco em segurança, integridade e crescimento.
 
 
+## Demo no Render (origem única, sem subdomínios)
+
+O app resolve o tenant pelo **Host** (ver [`docs/ENTRY-CONTEXTS.md`](docs/ENTRY-CONTEXTS.md)).
+No Render você só tem um `*.onrender.com` (sem `app.`/`demo.`/`www.`), então a demo
+usa **uma origem única**: o mesmo serviço Render serve o SPA **e** a API, e a loja
+`demo` é o padrão desse host.
+
+1. **Um serviço Web Render** apontando para este repo.
+2. **Build**: `npm ci && npm run db:migrate && npm run db:seed && npm run build --prefix frontend`
+   (`db:seed` é idempotente e cria a loja `demo`, dono, cardápio e mesas).
+3. **Start**: `npm start` — o Fastify sobe e, quando `frontend/dist` existe, também
+   serve o SPA (fallback SPA incluso em `src/app.js`).
+4. **Env do serviço:**
+   | Var | Valor |
+   |-----|-------|
+   | `NODE_ENV` | `production` |
+   | `DEFAULT_STORE_SLUG` | `demo` |
+   | `CORS_ORIGIN` | `https://<seu-servico>.onrender.com` |
+   | `DATABASE_URL`, `JWT_SECRET`, `COOKIE_SECRET`, `STAFF_SEED_PASSWORD` | os seus |
+   | `VITE_BASE_DOMAIN` | *(vazio → default `localhost`)* |
+   | `VITE_API_URL` | *(vazio → mesmo origem)* |
+   | `BASE_DOMAIN` | *(vazio → default `localhost`)* |
+5. **Acessos** (tudo no mesmo host `https://<seu-servico>.onrender.com`):
+   - `/` redireciona para `/login` (staff da loja demo): `owner@demo.local` / senha do seed.
+   - Cliente (QR): pegue o `token=` do `db:seed` e abra `/m/<token>`.
+   - Painéis: `/kitchen`, `/bar`, `/waiter`, `/cashier`, `/admin`.
+   - Landing (marketing) e plataforma **não** estão neste host — exigiriam
+     subdomínios `www.`/`app.` (ver abaixo).
+
+> `DEFAULT_STORE_SLUG` só atua quando nenhum tenant resolve pelo Host e fica
+> **desligado por padrão** — não afeta deploy multi-tenant normal.
+
+### Quero marketing/plataforma também (subdomínios próprios)
+Adicione domínios próprios no Render: `www.sua-loja.com` (marketing),
+`app.sua-loja.com` (plataforma), `demo.sua-loja.com` (loja) e aponte o DNS. Aí
+`BASE_DOMAIN=sua-loja.com` e cada contexto usa seu subdomínio (modelo original).
+
+### Remover o deploy da Vercel
+Dashboard da Vercel → projeto → **Settings → Delete Project** (ou desconecte o
+GitHub em *GitHub → Settings → Integrations*). Opcional: manter o domínio com
+redirect 308 para o Render.
+
+
 ## Contextos de entrada
 
 A partir da migration 0022: marketing no apex/www, plataforma em app/platform e

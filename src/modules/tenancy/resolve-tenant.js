@@ -82,6 +82,15 @@ export async function resolveStoreFromRequest(request) {
     return store;
   }
 
+  // Demo single-origin: quando nenhum tenant resolve pelo Host e DEFAULT_STORE_SLUG
+  // está definido (ex.: deploy de loja única em host sem subdomínio de loja, como
+  // um serviço Render), usa essa loja como padrão. Desligado por padrão — não
+  // afeta deploy multi-tenant normal (onde a variável fica vazia).
+  const defaultSlug = (process.env.DEFAULT_STORE_SLUG || '').trim();
+  if (defaultSlug) {
+    return findActiveStoreBySlug(defaultSlug);
+  }
+
   return null;
 }
 
