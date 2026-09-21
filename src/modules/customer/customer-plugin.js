@@ -3,7 +3,27 @@ import {
   verifyCustomerSession,
   assertCustomerSession,
 } from './customer-session.js';
+import { verifyDeliveryCheckout } from '../delivery/delivery-checkout.js';
 import { AppError } from '../../shared/errors.js';
+
+/**
+ * Customer plane = dois tipos de credencial, mutuamente excludentes:
+ *  - mesa/QR   : iss restaurant:qr            → kind 'table'
+ *  - checkout : iss restaurant:delivery       → kind 'delivery'
+ * A verificação tenta UM contexto por vez (audience/issuer/claims próprios);
+ * um JWT nunca atravessa de plano. `kind` orienta o escopo vivo das rotas.
+ */
+async function verifyAnyCustomer(token) {
+  try {
+    return { ...(await verifyCustomerSession(token)), kind: 'table' };
+  } catch (err) {
+    try {
+      return { ...(await verifyDeliveryCheckout(token)), kind: 'delivery' };
+    } catch {
+      throw err; // erro canônico do plano customer (401)
+    }
+  }
+}
 
 async function customerPlugin(app) {
   app.decorateRequest('customer', null);
@@ -20,7 +40,7 @@ async function customerPlugin(app) {
         if (!match)
           throw new AppError(
             'CUSTOMER_UNAUTHORIZED',
-            'Credencial da mesa inválida.',
+            'Credencial customer inválida.',
             401
           );
         if (request.session)
@@ -29,7 +49,7 @@ async function customerPlugin(app) {
             'Não misture sessão staff e customer.',
             403
           );
-        const customer = await verifyCustomerSession(match[1]);
+        const customer = await verifyAnyCustomer(match[1]);
         if (customer.storeId !== request.storeId)
           throw new AppError(
             'CONTEXT_FORBIDDEN',

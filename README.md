@@ -13,7 +13,9 @@ Sistema completo de pedidos por QR Code (mesa), delivery, cozinha, caixa e paine
 Cada lanchonete (tenant) possui ambiente logicamente isolado:
 
 - Cardápio, mesas, pedidos, clientes, usuários, configurações e relatórios
-- Cliente final acessa via QR Code da mesa ou link de delivery (sem instalar app)
+- Cliente final acessa via QR Code da mesa ou link de delivery (sem instalar app) —
+  cada fluxo com **credencial customer própria** (mesa/QR e checkout de delivery
+  são planos distintos, ver docs `CUSTOMER-SESSIONS.md` e `DELIVERY-CHECKOUT.md`)
 - Cozinha, garçom e caixa operam em tempo real
 - Dono tem dashboard e configurações
 
@@ -73,7 +75,7 @@ claim de Issue, branch, template de PR, como rodar os testes e Definition of Don
 ```bash
 npm ci && npm run db:migrate && npm run db:seed && npm run dev
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm run test:suite   # migrations + suíte + guarda: pass 141 · fail 0 · skipped 0
+npm run test:suite   # migrations + suíte + guarda: pass 223 · fail 0 · skipped 0
 ```
 
 Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa):

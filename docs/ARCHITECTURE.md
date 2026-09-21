@@ -63,6 +63,9 @@ estado de carrinho por token QR.
 [credenciais customer](./CUSTOMER-SESSIONS.md), distintas de cookies staff.
 Mutações revalidam a sessão sob lock na transação, inclusive antes de replays.
 A migration 0023 acrescenta `orders.create` para escritas staff antes anônimas.
+O checkout de delivery tem [credencial própria por pedido](./DELIVERY-CHECKOUT.md)
+(iss/aud distintos, segredo girável para revogação, frete somado ao saldo —
+migration 0024); os dois planos customer não se atravessam.
 
 ## Modelo de pastas
 

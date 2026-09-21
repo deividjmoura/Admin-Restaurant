@@ -146,3 +146,55 @@ esta decisão não implementa identidade/autorização customer de delivery.
 **Validação:** testes de isolamento de mesas/lojas, revogação, replay/concorrência,
 RBAC, credenciais mistas, logs e transporte/renovação frontend. Ver
 [CUSTOMER-SESSIONS.md](./CUSTOMER-SESSIONS.md).
+
+
+## 2026-09-21 — Credencial própria por checkout de delivery
+
+**Contexto:** a entrega mesa/QR deixou o delivery como fronteira explícita:
+`POST /api/delivery/orders` criava pedidos sem credencial e o tracking por ID
+era público no host — qualquer pessoa na loja lia endereço, telefone e status
+de qualquer pedido delivery, e o saldo de pagamento ignorava o frete (o
+cliente não conseguia pagar o total). Evoluir a autenticação de delivery
+exigia identidade por checkout, não uma sessão de mesa improvisada.
+
+**Decisões:**
+- Cada `delivery_orders` nasce com um **segredo** (`checkout_token`,
+  randomBytes, gerado na mesma transação do pedido). A criação emite JWT
+  customer `iss=restaurant:delivery`/`aud=restaurant:delivery-customer` com
+  `orderId` e `checkoutHash` (SHA-256 do segredo) — o JWT nunca carrega o
+  segredo cru e o segredo nunca sai na API. Mesa (`restaurant:qr`) e checkout
+  são planos distintos: nenhum verifica no outro, e `assertTablePlane`/
+  `assertDeliveryPlane` recusam o plano errado em cada rota (403).
+- Tracking, cancelamento e pagamentos do checkout exigem a credencial do
+  próprio checkout ou staff via RBAC (`orders.read`/`orders.status.write`).
+  Alvo divergente é 404 — inclusive entre lojas (403 só quando o host destoa
+  da loja do token). Bearer+cookie mistos continuam recusados.
+- **Validade/revogação espelham a mesa:** credencial vale até
+  `created_at + DELIVERY_CHECKOUT_TTL_HOURS` (24h) e morre com status terminal
+  (`CANCELLED`/`DELIVERED` → 409 `DELIVERY_CHECKOUT_CLOSED`). Revogar = girar
+  o segredo (`POST .../credential/revoke`, permissão nova
+  `delivery.checkout.revoke`, OWNER/MANAGER na migration 0024); toda cópia
+  antiga cai na hora.
+- **Replay seguro:** mesma `Idempotency-Key` na mesma loja devolve o mesmo
+  pedido e reemite a credencial válida (é o caminho de recuperação do
+  cliente); chave de checkout nunca replaya pelo endpoint de mesa nem o
+  contrário; pagamento mantém igualdade estrita de alvo. Escritas revalidam
+  credencial+estado com `FOR UPDATE` no pedido dentro da transação.
+- **Frete no saldo:** `amountDue` soma `delivery_orders.delivery_fee` quando o
+  alvo é o pedido do checkout (pedido cancelado fora; comanda de mesa
+  inalterada). Pagamento máximo = itens + frete; PENDING segue sem descontar.
+- Backend apenas: nenhuma tela nova de delivery nesta entrega; a SPA pública
+  existente não consome tracking anônimo (só admin usa zonas, via staff).
+
+**Compatibilidade:** `GET /api/delivery/orders/:orderId` deixa de ser público
+(sem credencial → 401). Consumidores anônimos legados migram para o fluxo com
+credencial ou para staff. Pedidos anteriores à 0024 não têm segredo: sem
+credencial própria até o cliente refazer o pedido (documentado no deploy).
+O teste de fronteira em `customer-session.test.js` passa a esperar 401
+anônimo — a autenticação precede qualquer enumeração de canal.
+
+**Validação:** suíte PostgreSQL com **223 testes** (zero fail/skip),
+`test/isolation/delivery-checkout.test.js` com 19 casos de autorização,
+isolamento, replay, revogação, TTL vivo, atomicidade e saldo com frete;
+migration/rollback 0024 aplicados em banco limpo; build do frontend sem
+alterações. Ver [DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md).
