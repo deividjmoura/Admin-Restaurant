@@ -542,15 +542,6 @@ export async function getPixConfigForStore(storeId) {
 
 export const PAYMENT_METHODS = ['PIX', 'CASH', 'CARD', 'OTHER'];
 
-async function lockPaymentTarget(client, storeId, { orderId = null, sessionId = null }) {
-  if (orderId) {
-    await client.query(`SELECT id FROM orders WHERE id = $1 AND store_id = $2 FOR UPDATE`, [orderId, storeId]);
-  }
-  if (sessionId) {
-    await client.query(`SELECT id FROM table_sessions WHERE id = $1 AND store_id = $2 FOR UPDATE`, [sessionId, storeId]);
-  }
-}
-
 export async function findPaymentsBySplitGroup(storeId, splitGroup) {
   if (!splitGroup) return [];
   const { rows } = await query(`SELECT * FROM payments WHERE store_id = $1 AND split_group = $2 ORDER BY created_at ASC`, [storeId, splitGroup]);
