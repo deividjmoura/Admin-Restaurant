@@ -65,6 +65,14 @@ jobs:
         env:
           SKIP_MIGRATE: '1'   # já aplicado no passo anterior
 
+      - name: Upload TAP report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tap-report
+          path: .tap/suite.tap
+          if-no-files-found: warn
+
   frontend:
     name: Frontend · build
     runs-on: ubuntu-latest
