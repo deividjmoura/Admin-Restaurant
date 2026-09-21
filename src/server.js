@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { buildApp } from './app.js';
 import { getAppLogger, logLevel } from './infrastructure/logger.js';
+import { startWorker, stopWorker } from './modules/jobs/worker.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -17,16 +18,13 @@ try {
     { event: 'server.listening', port: PORT, bindHost: HOST },
     `Server listening on http://${HOST}:${PORT}`
   );
+  startWorker();
+  app.log.info({ event: 'job.worker_started' }, 'job worker started');
 } catch (err) {
   app.log.error({ err, event: 'server.listen_failed' });
   process.exit(1);
 }
 
-/**
- * Shutdown gracioso (issue #106): SIGTERM do orquestrador fecha o HTTP (novas
- * requisições são recusadas, SSE recebe `close`), e só então o pool. Sem isso o
- * deploy derruba conexões da cozinha no meio do stream.
- */
 let shuttingDown = false;
 
 async function shutdown(signal) {
@@ -42,6 +40,7 @@ async function shutdown(signal) {
   forceExit.unref?.();
 
   try {
+    stopWorker();
     await app.close();
     const { pool } = await import('./infrastructure/db.js');
     await pool.end();
