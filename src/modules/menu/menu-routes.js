@@ -3,10 +3,6 @@ import { getMenuForStore } from './menu.repository.js';
 import { getCachedMenu, setCachedMenu } from './menu-cache.js';
 
 async function menuRoutes(app) {
-  /**
-   * Public menu for the current tenant.
-   * Cache key is always menu:store:{storeId}.
-   */
   app.get(
     '/api/menu',
     { preHandler: [app.requireTenant] },

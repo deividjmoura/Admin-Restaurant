@@ -75,7 +75,7 @@ claim de Issue, branch, template de PR, como rodar os testes e Definition of Don
 ```bash
 npm ci && npm run db:migrate && npm run db:seed && npm run dev
 export DATABASE_URL=postgres://user:pass@localhost:5432/admin_restaurant
-npm run test:suite   # migrations + suíte + guarda: pass 223 · fail 0 · skipped 0
+npm run test:suite   # migrations + suíte + guarda: pass 281 · fail 0 · skipped 0
 ```
 
 Checklist de API em 5–10 min (login → mesa → pedido → cozinha → caixa):

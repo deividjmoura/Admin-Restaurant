@@ -1,16 +1,20 @@
 /**
  * Factory da aplicação Fastify (sem listen).
  * Usado por server.js e pelos testes de isolamento.
+ *
+ * Merge de main (entry-contexts + customer sessions + delivery checkout) +
+ * PR #152 (observabilidade + caixa físico).
  */
 import Fastify from 'fastify';
-import customerPlugin from './modules/customer/customer-plugin.js';
-import { isAllowedOrigin } from './shared/origin-policy.js';
-import platformRoutes from './modules/platform/platform-routes.js';
-import marketingRoutes from './modules/marketing/marketing-routes.js';
+import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import customerPlugin from './modules/customer/customer-plugin.js';
+import { isAllowedOrigin } from './shared/origin-policy.js';
+import platformRoutes from './modules/platform/platform-routes.js';
+import marketingRoutes from './modules/marketing/marketing-routes.js';
 import tenantPlugin from './modules/tenancy/tenant-plugin.js';
 import authPlugin from './modules/auth/auth-plugin.js';
 import menuRoutes from './modules/menu/menu-routes.js';
@@ -26,19 +30,18 @@ import storeRoutes from './modules/tenancy/store-routes.js';
 import permissionsRoutes from './modules/permissions/permissions-routes.js';
 import crmRoutes from './modules/crm/crm-routes.js';
 import auditRoutes from './modules/audit/audit-routes.js';
+import cashRoutes from './modules/cash/cash-routes.js';
+import opsRoutes from './modules/ops/ops-routes.js';
+import requestContext, { sanitizeRequestId } from './infrastructure/request-context.js';
+import { buildLoggerOptions, SERVICE_NAME, SERVICE_VERSION } from './infrastructure/logger.js';
+import { startEventLoopSampler, stopEventLoopSampler, observeAppError } from './infrastructure/metrics.js';
 import { AppError, errorResponse } from './shared/errors.js';
 
 /**
  * Tratamento global de erros.
- *
- * PRECISA ser registrado ANTES das rotas: o Fastify resolve o error handler no
- * contexto em que a rota foi registrada, então um `setErrorHandler` chamado
- * depois de `app.register(...)` não se aplica a elas (o 500 padrão vazava
- * stack/erro de banco).
+ * PRECISA ser registrado ANTES das rotas.
  */
 function registerErrorHandling(app) {
-  // GOLDEN_RULES: nunca vazar 500 em UUID malformado / erro de cliente.
-  // Erros do próprio Fastify (400/415/429) preservam o status original.
   app.setErrorHandler((err, request, reply) => {
     if (err?.code === '22P02') {
       return reply.code(400).send({
@@ -51,6 +54,12 @@ function registerErrorHandling(app) {
 
     if (err instanceof AppError) {
       const { statusCode, body } = errorResponse(err);
+      observeAppError({
+        code: err.code,
+        route: request.routeOptions?.url || request.url?.split('?')[0] || 'unmatched',
+        status: statusCode,
+        storeId: request.storeId || null,
+      });
       return reply.code(statusCode).send(body);
     }
 
@@ -66,8 +75,6 @@ function registerErrorHandling(app) {
               : status === 413
                 ? 'Payload muito grande.'
                 : 'Requisição inválida.';
-      // Códigos estáveis para o cliente: nunca expor códigos internos do
-      // runtime (FST_ERR_*) nem detalhes de banco.
       const codeByStatus = {
         400: 'BAD_REQUEST',
         404: 'NOT_FOUND',
@@ -79,8 +86,13 @@ function registerErrorHandling(app) {
       return reply.code(status).send({ error: { code, message } });
     }
 
-    // 5xx: loga com stack trace no servidor e responde genérico (sem stack).
-    request.log?.error({ err }, 'unhandled error');
+    observeAppError({
+      code: 'INTERNAL_ERROR',
+      route: request.routeOptions?.url || request.url?.split('?')[0] || 'unmatched',
+      status: 500,
+      storeId: request.storeId || null,
+    });
+    request.log?.error({ err, event: 'http.error', status: 500 }, 'unhandled error');
 
     return reply.code(500).send({
       error: {
@@ -100,44 +112,63 @@ function registerErrorHandling(app) {
   });
 }
 
+export function resolveLoggerConfig(opts = {}) {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (opts.logger === false) return { logger: false };
+
+  if (opts.loggerInstance) {
+    return { loggerInstance: opts.loggerInstance };
+  }
+
+  if (opts.logger && typeof opts.logger === 'object') {
+    const alreadyConfigured = opts.logger.formatters || opts.logger.redact || opts.logger.base;
+    return {
+      logger: alreadyConfigured
+        ? opts.logger
+        : buildLoggerOptions({
+            level: opts.logger.level || (isProd ? 'info' : 'debug'),
+          }),
+    };
+  }
+
+  return { logger: buildLoggerOptions({ level: isProd ? 'info' : 'debug' }) };
+}
+
+function resolveRequestLoggingOption() {
+  const LogController = Fastify.LogController;
+  if (typeof LogController === 'function') {
+    return {
+      logController: new LogController({
+        disableRequestLogging: true,
+        requestIdLogLabel: 'requestId',
+      }),
+    };
+  }
+  return { disableRequestLogging: true, requestIdLogLabel: 'requestId' };
+}
+
+function requestIdGenerator(rawRequest) {
+  return sanitizeRequestId(rawRequest?.headers?.['x-request-id']) || randomUUID();
+}
+
 /**
- * @param {{ logger?: boolean | object }} [opts]
+ * @param {{ logger?: boolean | object, loggerInstance?: object }} [opts]
  */
 export async function buildApp(opts = {}) {
   const isProd = process.env.NODE_ENV === 'production';
 
-  const redactRequest = (req) => ({
-    method: req.method,
-    url: req.url
-      ?.replace(/(\/api\/tables\/by-token\/)[^?]+/, '$1[redacted]')
-      .split('?')[0],
-    hostname: req.hostname,
-    remoteAddress: req.ip,
-  });
   const app = Fastify({
-    logger:
-      opts.logger === false
-        ? false
-        : {
-            level: isProd ? 'info' : 'warn',
-            ...(typeof opts.logger === 'object' ? opts.logger : {}),
-            serializers: { req: redactRequest },
-            redact: ['req.headers.authorization', 'req.headers.cookie'],
-          },
-    // Sem trustProxy o rate limit usa o IP do proxy em produção (todos os
-    // clientes viram um só). Configure TRUST_PROXY=1 atrás de um proxy confiável.
-    trustProxy: process.env.TRUST_PROXY
-      ? Number(process.env.TRUST_PROXY)
-      : false,
+    ...resolveLoggerConfig(opts),
+    ...resolveRequestLoggingOption(),
+    genReqId: requestIdGenerator,
+    trustProxy: process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : false,
   });
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
   });
 
-  // CORS fail-closed: em produção a lista de origens é obrigatória e NUNCA
-  // refletimos o Origin do request (com credentials:true isso seria um
-  // open redirect de sessão).
   const origins = (process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '')
     .split(',')
     .map((value) => value.trim())
@@ -153,13 +184,8 @@ export async function buildApp(opts = {}) {
     throw new Error('COOKIE_SECRET é obrigatório em produção.');
   }
 
-  if (
-    isProd &&
-    (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
-  ) {
-    throw new Error(
-      'JWT_SECRET é obrigatório em produção (mínimo 32 caracteres).'
-    );
+  if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
+    throw new Error('JWT_SECRET é obrigatório em produção (mínimo 32 caracteres).');
   }
 
   await app.register(cors, {
@@ -189,10 +215,8 @@ export async function buildApp(opts = {}) {
     timeWindow: '1 minute',
   });
 
-  // Erros antes das rotas: ver comentário em registerErrorHandling().
   registerErrorHandling(app);
-  // CORS alone does not prevent simple-form CSRF. Reject disallowed browser
-  // origins before resolving stores or executing state-changing handlers.
+
   app.addHook('onRequest', async (request) => {
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
@@ -202,6 +226,7 @@ export async function buildApp(opts = {}) {
     }
   });
 
+  await app.register(requestContext);
   await app.register(tenantPlugin);
   await app.register(authPlugin);
   await app.register(customerPlugin);
@@ -220,33 +245,14 @@ export async function buildApp(opts = {}) {
   await app.register(permissionsRoutes);
   await app.register(crmRoutes);
   await app.register(auditRoutes);
+  await app.register(cashRoutes);
+  await app.register(opsRoutes);
 
-  app.get('/health', async () => ({
-    status: 'ok',
-    ts: new Date().toISOString(),
-  }));
-
-  app.get('/ready', async (_request, reply) => {
-    try {
-      const { pool } = await import('./infrastructure/db.js');
-      const r = await pool.query('SELECT 1 AS ok');
-      if (!r.rows[0]) {
-        return reply.code(503).send({ status: 'not_ready', db: false });
-      }
-      return { status: 'ready', db: true, ts: new Date().toISOString() };
-    } catch (err) {
-      return reply.code(503).send({
-        status: 'not_ready',
-        db: false,
-        error:
-          process.env.NODE_ENV === 'production'
-            ? 'db_unavailable'
-            : String(err.message),
-      });
-    }
+  startEventLoopSampler();
+  app.addHook('onClose', async () => {
+    stopEventLoopSampler();
   });
 
-  // The frontend/proxy serves the SPA at /. API root never exposes identity/tenant.
   app.get('/', async () => ({ name: 'Admin-Restaurant', version: '0.1.0' }));
 
   app.get(

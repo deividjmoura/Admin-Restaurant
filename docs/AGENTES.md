@@ -117,9 +117,11 @@ npm run test:suite              # migrations + suíte completa + guarda de conta
 >
 > `npm run test:suite` cuida disso por você: aborta com exit 2 sem `DATABASE_URL`, aplica as
 > migrations, roda a suíte com reporter TAP e **recusa** o resultado se houver falha, teste
-> ignorado ou menos testes que `MIN_TESTS` (baseline **141**). Use-o em vez de `npm test`.
+> ignorado ou menos testes que `MIN_TESTS` (baseline **223**, após rebase PR #152 → **281+**). Use-o em vez de `npm test`.
 
-Baseline na `main` (`cd435de` + esta): **38 testes · 10 suítes · 0 fail · 0 skipped** (~53 s).
+Baseline na `main` (`520f6be` + rebase PR #152): **223 testes + 58 (cash + observability) = 281+ · 0 fail · 0 skipped** (~60 s).
+- Node **>=22** obrigatório (suíte usa `fs.globSync`, CI roda Node 22).
+- Redis opcional (`REDIS_URL`) para cache L2 e pub/sub multi-instância; sem Redis usa fallback in-memory.
 Checklist manual de API em 5–10 min: [`SMOKE.md`](./SMOKE.md).
 
 > **CI ativo:** `.github/workflows/ci.yml` roda em todo PR contra `main` — job *backend*

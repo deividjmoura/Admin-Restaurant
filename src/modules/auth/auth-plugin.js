@@ -16,6 +16,7 @@ import {
 } from './session.js';
 import { auditSafe } from '../audit/index.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
+import { bindRequestLog } from '../../infrastructure/request-context.js';
 import { createHash } from 'node:crypto';
 
 const loginSchema = z
@@ -107,6 +108,11 @@ async function authPlugin(app) {
           type: session.type,
           role: session.role,
         };
+        bindRequestLog(request, {
+          userId: user.id,
+          role: session.role,
+          isPlatformOwner: user.is_platform_owner || undefined,
+        });
       }
     } catch {
       request.user = null;
@@ -169,6 +175,7 @@ async function authPlugin(app) {
     }
     // Live membership is authoritative, including demotions/revocations.
     request.storeRole = membership.role;
+    bindRequestLog(request, { role: membership.role });
   });
 
   app.decorate('requirePermission', function (permissionKey) {

@@ -5,6 +5,11 @@ import {
 } from '../customer/customer-session.js';
 import { query, withTransaction } from '../../infrastructure/db.js';
 import {
+  ordersCreatedTotal,
+  orderTransitionsTotal,
+  orderItemTransitionsTotal,
+} from '../../infrastructure/metrics.js';
+import {
   canTransition,
   canTransitionItem,
   deriveOrderStatus,
@@ -471,8 +476,13 @@ async function createOrderInTx(
   }
 
   if (typeof afterInsert === 'function') {
-    // Ex.: delivery_orders. Uma falha aqui derruba o pedido junto (rollback).
     await afterInsert(client, order, createdItems);
+  }
+
+  try {
+    ordersCreatedTotal.inc({ store_id: storeId, channel: input.channel || 'TABLE' });
+  } catch {
+    // métrica é best-effort
   }
 
   return {
@@ -654,6 +664,10 @@ export async function transitionOrderStatus(
       await cancelActiveItems(client, storeId, orderId);
     }
 
+    try {
+      orderTransitionsTotal.inc({ from: current.status, to: next, outcome: 'applied' });
+    } catch {}
+
     return rows[0];
   });
 }
@@ -799,6 +813,15 @@ export async function transitionOrderItemStatus(storeId, itemId, nextStatus) {
     }
 
     await syncOrderStatusFromItems(client, storeId, parent.id, parent.status);
+
+    try {
+      orderItemTransitionsTotal.inc({
+        from: item.status,
+        to: next,
+        outcome: 'applied',
+        station: rows[0]?.station || 'unknown',
+      });
+    } catch {}
 
     return rows[0];
   });
