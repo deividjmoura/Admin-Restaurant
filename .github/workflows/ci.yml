@@ -80,54 +80,27 @@ jobs:
           grep -E "^not ok" .tap/suite.tap | head -n 200 || echo "no not ok lines"
           echo "=== END FAILED ==="
 
-      - name: Push TAP to ci-debug branch via API
+      - name: Create issue with TAP on failure (bypass blob)
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const path = '.tap/suite.tap';
-            let content = '';
-            try { content = fs.readFileSync(path, 'utf8'); } catch(e) { content = 'no tap file: '+e.message; }
-            const branch = 'ci-debug';
-            const filePath = `.tap/failure-${{ github.run_id }}.tap`;
-            // Get current ci-debug branch SHA if exists
-            let sha = null;
+            let tap = '';
+            try { tap = fs.readFileSync('.tap/suite.tap','utf8'); } catch(e) { tap = 'no tap file: '+e.message; }
+            const fails = tap.split('\n').filter(l=>l.startsWith('not ok')).slice(0,150).join('\n');
+            const body = `CI failed for ${{ github.sha }} (run ${{ github.run_id }})\n\n**Failed tests:**\n\`\`\`\n${fails || 'none'}\n\`\`\`\n\n**TAP tail (4000 chars):**\n\`\`\`\n${tap.slice(-4000)}\n\`\`\``;
             try {
-              const ref = await github.rest.git.getRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `heads/${branch}` });
-              sha = ref.data.object.sha;
-              // Get file SHA if exists
-              try {
-                const file = await github.rest.repos.getContent({ owner: context.repo.owner, repo: context.repo.repo, path: filePath, ref: branch });
-                // file exists, we will overwrite (need its sha)
-                // but we are creating new file with unique name, so no need
-              } catch(e) {}
-            } catch(e) {
-              // branch doesn't exist, will be created via file creation
-            }
-            // Create or update file via API (this creates branch if needed via new branch creation? Actually need to create branch first)
-            // Ensure branch exists
-            try {
-              await github.rest.git.getRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `heads/${branch}` });
-            } catch(e) {
-              // Create branch from main
-              const mainRef = await github.rest.git.getRef({ owner: context.repo.owner, repo: context.repo.repo, ref: 'heads/main' });
-              await github.rest.git.createRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `refs/heads/${branch}`, sha: mainRef.data.object.sha });
-            }
-            // Now create file
-            const encoded = Buffer.from(content).toString('base64');
-            try {
-              await github.rest.repos.createOrUpdateFileContents({
+              await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                path: filePath,
-                message: `ci: failure TAP ${{ github.run_id }} ${{ github.sha }}`,
-                content: encoded,
-                branch: branch,
+                title: `CI failure ${{ github.run_id }} ${{ github.sha.slice(0,7) }}`,
+                body: body,
+                labels: ['ci-failure']
               });
-              console.log('Pushed TAP to ci-debug via API');
+              console.log('Created issue with TAP');
             } catch(err) {
-              console.log('Failed to push TAP via API:', err.message);
+              console.log('Failed to create issue:', err.message);
             }
 
       - name: Upload TAP report on failure
