@@ -151,3 +151,5 @@ PWA do garçom (`#64`), billing/planos (`#61`), IA/WhatsApp (`#59`). Todos
 3. **Pagamentos reais** — PR #152 (PIX provider, cartão, webhooks assinados).
 4. **Redis** — cache tenant-aware e canal realtime dedicado (hoje em memória/DB).
 5. **Caixa completo** — ledger de dinheiro, fechamento e conciliação (PR #152).
+6. **Demo pública ponta a ponta** — Vercel (SPA) + backend seedado (Render/Fly/Neon)
+   com `VITE_API_URL` e `CORS_*` ajustados (ver `frontend/README.md`).
