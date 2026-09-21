@@ -1,9 +1,6 @@
 /**
  * Factory da aplicação Fastify (sem listen).
  * Usado por server.js e pelos testes de isolamento.
- *
- * Merge de main (entry-contexts + customer sessions + delivery checkout) +
- * PR #152 (observabilidade + caixa físico).
  */
 import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
@@ -32,15 +29,13 @@ import crmRoutes from './modules/crm/crm-routes.js';
 import auditRoutes from './modules/audit/audit-routes.js';
 import cashRoutes from './modules/cash/cash-routes.js';
 import opsRoutes from './modules/ops/ops-routes.js';
+import jobsRoutes from './modules/jobs/jobs-routes.js';
+import billingRoutes from './modules/billing/billing-routes.js';
 import requestContext, { sanitizeRequestId } from './infrastructure/request-context.js';
 import { buildLoggerOptions, SERVICE_NAME, SERVICE_VERSION } from './infrastructure/logger.js';
 import { startEventLoopSampler, stopEventLoopSampler, observeAppError } from './infrastructure/metrics.js';
 import { AppError, errorResponse } from './shared/errors.js';
 
-/**
- * Tratamento global de erros.
- * PRECISA ser registrado ANTES das rotas.
- */
 function registerErrorHandling(app) {
   app.setErrorHandler((err, request, reply) => {
     if (err?.code === '22P02') {
@@ -247,6 +242,8 @@ export async function buildApp(opts = {}) {
   await app.register(auditRoutes);
   await app.register(cashRoutes);
   await app.register(opsRoutes);
+  await app.register(jobsRoutes);
+  await app.register(billingRoutes);
 
   startEventLoopSampler();
   app.addHook('onClose', async () => {
