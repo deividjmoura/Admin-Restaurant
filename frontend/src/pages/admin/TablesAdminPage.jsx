@@ -2,28 +2,41 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
-import { Shell, Card, Button, Spinner, ErrorBox } from '../../components/Layout';
+import {
+  Shell,
+  Card,
+  Button,
+  Spinner,
+  ErrorBox,
+  EmptyState,
+} from '../../components/Layout';
 
 const nav = [
   { to: '/admin', label: 'Dashboard' },
   { to: '/admin/menu', label: 'Cardápio' },
   { to: '/admin/tables', label: 'Mesas' },
+  { to: '/cashier', label: 'Caixa' },
 ];
 
 export default function TablesAdminPage() {
   const { user, loading } = useAuth();
   const [tables, setTables] = useState([]);
   const [error, setError] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const [number, setNumber] = useState('');
 
   async function load() {
     const data = await api('/api/admin/tables');
     setTables(data.tables || []);
+    setLoaded(true);
   }
 
   useEffect(() => {
     if (!user) return;
-    load().catch(setError);
+    load().catch((err) => {
+      setError(err);
+      setLoaded(true);
+    });
   }, [user]);
 
   if (loading) return <Spinner />;
@@ -31,6 +44,7 @@ export default function TablesAdminPage() {
 
   async function createTable(e) {
     e.preventDefault();
+    setError(null);
     try {
       await api('/api/admin/tables', {
         method: 'POST',
@@ -59,6 +73,17 @@ export default function TablesAdminPage() {
           <Button type="submit">Criar mesa</Button>
         </form>
       </Card>
+
+      {!loaded && <Spinner />}
+
+      {loaded && tables.length === 0 && (
+        <EmptyState
+          title="Nenhuma mesa"
+          description="Crie mesas e use o token do QR para o cliente pedir."
+          icon="🪑"
+        />
+      )}
+
       <div className="space-y-2">
         {tables.map((t) => (
           <Card key={t.id}>
