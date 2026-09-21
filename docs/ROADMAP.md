@@ -1,44 +1,36 @@
 # Roadmap — Admin-Restaurant
 
-> Fonte viva do plano de evolução. Issues seguem este documento.
-> **Política explícita (2026-09-21):** não há mais “demo pública”. O projeto é tratado como **produção** multi-tenant desde já. Seed local (`db:seed`) existe só para desenvolvimento e testes; não há loja/feature/ambiente chamado “demo” como objetivo de produto.
+> **Política:** produção multi-tenant. Seed local só para dev/testes — não há produto “demo”.
 
-## Estado atual (2026-09-21)
+## Estado (2026-09-21)
 
-- **Backend:** caixa, pagamentos (PIX + CARD adapter + webhooks), delivery, menu admin, reports, observabilidade, multi-tenant.
-- **Frontend produção:** dashboard, KDS, EmptyStates, admin, garçom, caixa, cliente.
-- **CI (#53):** Postgres 18 + `test:suite` (fail 0 ∧ skipped 0 ∧ ≥281) + build frontend — **fechada**.
-- **Issues fechadas nesta limpeza:** #7 delivery · #9 reports · #49 menu admin · #50 SPA · #53 CI · #47 ruído · #8 payments · #56 reports base.
+- Núcleo operacional + SPA + CI (#53) fechados.
+- **#52 jobs/worker** + **#61 billing** entregues nesta rodada.
+- Pagamentos: PIX estático + CARD adapter; PIX dinâmico (#51) ainda aberto.
 
-## Fases
+## Fechado recentemente
 
-### Ondas 0–5 — fechadas (núcleo operacional)
-Multi-tenancy, cardápio admin, mesas, pedidos, delivery, caixa API+UI, pagamentos, dashboard, SPA, CI.
+| Issue | Entrega |
+|-------|----------|
+| #52 | Fila `jobs`, worker, print mock, BACKUP.md |
+| #61 | Planos, subscriptions, feature-gating, gateway mock |
+| #53 | CI isolation suite |
+| #8 | Payments + webhooks + CARD intent |
 
-### Onda 6 — Hardening (resto)
-- [x] CI isolation suite (#53)
-- [ ] SECURITY.md revisão final
-- [ ] Workers/filas (#52 / #10 parcial — obs. já existe)
+## Aberto (prioridade de negócio)
 
-### Onda 7+ — Growth (#58) e financeiro
-Onboarding, billing, PIX dinâmico (#51), cartão real (#62), IA WhatsApp (#59), fiscal, multiunidade…
+1. **#51** — PIX dinâmico (Mercado Pago)
+2. **#59** — chatbot WhatsApp (growth)
+3. Middleware global de feature-gating nas rotas (helper já existe)
+4. Fiscal / multiunidade / financeiro (ondas 6–8)
 
-## Como contribuir agora
-
-1. Exercitar `docs/SMOKE.md` + `docs/SMOKE-CAIXA.md` localmente
-2. Growth / PIX provider real (#51) ou billing (#61) conforme prioridade de negócio
-3. `npm run test:suite` + `npm run web:build` antes de PR
-
-## Operação
+## Operação local
 
 ```bash
+git pull origin main
 npm ci && npm run db:migrate && npm run db:seed
 npm run test:suite
-npm run dev   # + npm run web
+npm run dev
 ```
 
-## Docs
-
-- `src/modules/cash/README.md` · `src/modules/payments/README.md`
-- `docs/SMOKE.md` · `docs/SMOKE-CAIXA.md`
-- `docs/OBSERVABILITY.md` · `docs/SECURITY.md`
+Docs: `src/modules/jobs/README.md` · `src/modules/billing/README.md` · `docs/BACKUP.md` · `docs/SMOKE-CAIXA.md`
