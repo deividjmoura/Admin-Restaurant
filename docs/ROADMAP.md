@@ -5,10 +5,10 @@
 
 ## Estado atual (2026-09-21)
 
-- **Backend:** caixa, observabilidade, multi-tenant, pedidos, delivery — suíte de isolamento.
-- **Frontend produção:** dashboard (série/prep/live), KDS (`?station=`), EmptyStates, admin cardápio/mesas, garçom.
-- **Caixa UI:** gaveta (`/api/cash/*`) + mesas (`/api/cashier/sessions`) + cobrança na gaveta em `CashierPage.jsx`.
-- **Próximo:** smoke documentado + QA da UI de caixa — `docs/AGENT-BRIEF-SMOKE-CAIXA.md`.
+- **Backend:** caixa, pagamentos (PIX + CARD adapter + webhooks), observabilidade, multi-tenant, pedidos, delivery.
+- **Frontend produção:** dashboard, KDS (`?station=`), EmptyStates, admin, garçom, **caixa físico** (`/cashier`).
+- **Epic #8 (pagamentos):** fechada — adapter CARD, rejeição de dados sensíveis, `providerPaymentId` no create.
+- **Smoke caixa:** `docs/SMOKE-CAIXA.md` (API + checklist UI).
 
 ## Fases
 
@@ -18,27 +18,26 @@ Multi-tenancy, cardápio, mesas, pedidos, delivery, caixa API, observabilidade, 
 ### Onda 3 — Caixa
 - [x] API gaveta / ledger / split / fechamento
 - [x] UI `/cashier` (gaveta + mesas + pagamento)
+- [x] SMOKE gaveta — `docs/SMOKE-CAIXA.md`
 
 ### Onda 5 — Frontend de produção
-- [x] Dashboard, KDS, EmptyState, admin, garçom
-- [x] Caixa físico na UI
-- [ ] SMOKE.md com fluxo de gaveta (`docs/AGENT-BRIEF-SMOKE-CAIXA.md`)
-- [ ] Entry-contexts / build checklist contínuo
+- [x] Dashboard, KDS, EmptyState, admin, garçom, caixa
+- [ ] Entry-contexts / build checklist contínuo (opcional)
 
 ### Onda 6 — Hardening
-- [ ] Fechar issues já entregues
-- [ ] SECURITY.md alinhado a caixa + obs
-- [ ] Resíduos de linguagem “demo” no seed (labels apenas)
+- [ ] Fechar issues já entregues no GitHub (#49 UI?, #50 SPA, #56 reports…)
+- [ ] SECURITY.md alinhado
+- [ ] CI suite completa (#53)
 
-### Onda 7 — Futuro
-Rate-limit Redis, fila, fiscal, multiunidade, CRM…
+### Onda 7+ — Growth (#58)
+Onboarding, billing, PIX dinâmico (#51), IA WhatsApp (#59)…
 
 ## Como contribuir agora
 
-1. Prioridade: **SMOKE do caixa** — `docs/AGENT-BRIEF-SMOKE-CAIXA.md`
-2. Branch `feat/smoke-cash-ui`
+1. Exercitar **SMOKE-CAIXA** localmente e anotar gaps de UI
+2. Fechar issues já implementadas (comentário + `gh issue close`)
 3. `npm run test:suite` + `npm run web:build`
-4. Sem modo demo / DEFAULT_STORE_SLUG
+4. Sem modo demo / DEFAULT_STORE_SLUG de produto
 
 ## Operação
 
@@ -50,6 +49,6 @@ npm run dev   # + npm run web
 
 ## Docs
 
-- `src/modules/cash/README.md`
-- `docs/AGENT-BRIEF-SMOKE-CAIXA.md`
-- `docs/OBSERVABILITY.md`
+- `src/modules/cash/README.md` · `src/modules/payments/README.md`
+- `docs/SMOKE.md` · `docs/SMOKE-CAIXA.md`
+- `docs/OBSERVABILITY.md` · `docs/SECURITY.md`
