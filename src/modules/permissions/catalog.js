@@ -24,6 +24,7 @@ export const PERMISSIONS = [
   { key: 'reports.read', description: 'Ver relatórios/dashboard' },
   { key: 'delivery.zones.read', description: 'Listar zonas de entrega' },
   { key: 'delivery.zones.write', description: 'Criar/editar zonas de entrega' },
+  { key: 'delivery.checkout.revoke', description: 'Revogar/girar a credencial de checkout de delivery' },
   { key: 'payments.read', description: 'Listar/ver pagamentos' },
   { key: 'payments.create', description: 'Criar pagamento' },
   { key: 'payments.confirm', description: 'Confirmar pagamento' },

@@ -4,6 +4,11 @@
 > Só IDs não autorizam mais acesso. Roteiro e erros em
 > [CUSTOMER-SESSIONS.md](./CUSTOMER-SESSIONS.md).
 
+> **Checkout delivery (migration 0024):** `POST /api/delivery/orders` emite
+> `customerSession.token` próprio do pedido; tracking/cancelamento/pagamento
+> do checkout exigem esse bearer (ou staff). O tracking anônimo por ID não é
+> mais suportado. Roteiro em [DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md).
+
 > **Atualização 2026-09-21:** o contrato de login genérico abaixo foi substituído.
 > Para a implantação atual, comece pelo roteiro em
 > [ENTRY-CONTEXTS.md](./ENTRY-CONTEXTS.md#verificação): host de loja nos requests,

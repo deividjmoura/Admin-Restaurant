@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import {
   assertSessionScope,
   assertOrderScope,
+  assertTablePlane,
 } from '../customer/customer-session.js';
 import { z } from 'zod';
 import {
@@ -180,6 +181,7 @@ async function ordersRoutes(app) {
       }
 
       if (request.customer) {
+        assertTablePlane(request.customer);
         if (parsed.data.channel !== 'TABLE')
           throw new AppError(
             'FORBIDDEN',
@@ -280,6 +282,7 @@ async function ordersRoutes(app) {
     '/api/orders/:id',
     { preHandler: [app.requireCustomerOrPermission('orders.read')] },
     async (request, reply) => {
+      assertTablePlane(request.customer);
       await assertOrderScope(
         request.customer,
         request.storeId,
@@ -334,6 +337,7 @@ async function ordersRoutes(app) {
     { preHandler: [app.requireCustomerOrPermission('orders.status.write')] },
     async (request, reply) => {
       try {
+        assertTablePlane(request.customer);
         await assertOrderScope(
           request.customer,
           request.storeId,

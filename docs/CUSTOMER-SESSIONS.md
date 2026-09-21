@@ -115,14 +115,17 @@ CDN/ingress/analytics para não registrar QR, Authorization ou respostas da troc
 
 ## Fronteira delivery
 
-Esta entrega protege **mesa/QR**, não cria uma identidade customer de delivery.
-As rotas dedicadas `/api/delivery/orders` e tracking continuam um contrato
-independente. Elas não retornam TABLE pelo ID nem pela chave de idempotência.
-O JWT de mesa não permite acessar delivery através de `/api/orders/:id` ou
-`/api/payments`. Consumidores delivery desses endpoints genéricos antes anônimos
-precisam migrar para staff/backend autorizado; não enviar um token de mesa como
-atalho. Evoluir autenticação de delivery exige credencial própria por pedido/
-cliente e migração do tracking dedicado, separadamente.
+Esta entrega protege **mesa/QR**. O delivery evoluiu em seguida (2026-09-21,
+migration `0024`): cada checkout passou a ter **credencial própria**, emitida
+na criação do pedido, com emissor/audience distintos — o plano de mesa nunca
+autoriza checkout e vice-versa (403 `CONTEXT_FORBIDDEN` nos dois sentidos).
+Tracking e cancelamento exigem a credencial do checkout (ou staff via RBAC);
+o ID do pedido sozinho não vale nada, e a chave de idempotência não atravessa
+de canal (TABLE↔DELIVERY replay é 409). Pagamento pelo bearer customer aceita
+somente o `orderId` do próprio checkout, com o **frete somado ao saldo**.
+Contrato completo, erros e deploy em
+[DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md); não enviar um token de mesa
+como atalho nem reusar o tracking anônimo antigo.
 
 ## Deploy e rollback
 
@@ -138,7 +141,7 @@ cliente e migração do tracking dedicado, separadamente.
 
 ```sh
 export DATABASE_URL=postgres://... # banco descartável
-npm run test:suite                # guarda mínima 204; zero falhas/ignorados
+npm run test:suite                # guarda mínima 223; zero falhas/ignorados
 npm run test:unit                 # inclui transporte/cache/revogação frontend
 npm run web:build
 ```

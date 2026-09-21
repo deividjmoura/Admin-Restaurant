@@ -620,9 +620,16 @@ describe('customer session authorization', { skip: !hasDatabase() }, () => {
     });
     assert.equal(deliveryAttempt.statusCode, 409, deliveryAttempt.body);
     assert.equal(deliveryAttempt.json().order, undefined);
+    // Tracking delivery passou a exigir credencial própria (checkout/staff):
+    // a autenticação vem ANTES de resolver o canal — anonymously é 401 e o
+    // ID de pedido TABLE nem é distinguido de um DELIVERY (sem enumeração).
     assert.equal(
       (await send('GET', `/api/delivery/orders/${order1.id}`, null)).statusCode,
-      404
+      401
+    );
+    assert.equal(
+      (await send('GET', `/api/delivery/orders/${order1.id}`, first)).statusCode,
+      403
     );
     const otherKey = randomUUID();
     await createOrder(a.store.id, {

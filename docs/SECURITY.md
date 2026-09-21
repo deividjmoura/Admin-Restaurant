@@ -74,6 +74,9 @@ atomicidade, sessões, realtime e auditoria). Cada item tem teste de regressão 
   com `JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id`, e
   exclui pedidos cancelados: comanda, dashboard, top produtos, série diária,
   relatórios e cotação de delivery.
+- No saldo de pagamento (`amountDue`), `orderId` de canal DELIVERY soma também
+  o `delivery_orders.delivery_fee` do snapshot: o cliente consegue pagar
+  itens + frete exatos; o ramo `sessionId` (mesa) nunca recebe frete.
 - Cancelar pedido cancela os itens ativos, mas **nunca** itens `DELIVERED`.
 
 ## 6. Atomicidade
@@ -162,3 +165,27 @@ sessão ativa são obrigatórios; staff continua com cookie e RBAC. Revalidaçã
 transação impede escrita/replay depois de fechamento. Tokens são revogados por
 expiração, encerramento, troca do QR ou desativação da mesa. Detalhes e fronteira
 com delivery em [CUSTOMER-SESSIONS.md](./CUSTOMER-SESSIONS.md).
+
+## 12. Credencial de checkout de delivery (migration 0024)
+
+Tracking e cancelamento de delivery exigem a credencial emitida na criação do
+pedido (ou staff via RBAC); o ID do pedido sozinho não autoriza leitura
+nenhuma — antes, `GET /api/delivery/orders/:id` expunha endereço e telefone de
+qualquer pedido da loja a qualquer visitante do host. O JWT customer de
+delivery tem `iss`/`aud` próprios e **nenhum** token de mesa/QR (ou do plano
+inverso) verifica no outro contexto; mix de bearer com cookie staff é 403.
+
+- Segredo do checkout (`delivery_orders.checkout_token`) nasce com o pedido,
+  na mesma transação; o JWT só referencia o SHA-256 dele. Girar o segredo
+  revoga na hora todas as credenciais emitidas (análogo à troca do QR).
+- Revalidação viva (`assertDeliveryCheckout`) com `FOR UPDATE` no pedido antes
+  de escrita/replay: checkout terminal (cancelado/entregue) ou TTL vencido
+  derruba 409/401 mesmo com JWT ainda não expirado.
+- Replay com a `Idempotency-Key` original devolve o MESMO pedido e reemite
+  credencial — e nunca vaza pedido de outro contexto (chave de checkout no
+  endpoint de mesa e vice-versa = 409, sessão nula incluída).
+- `delivery.checkout.revoke`: OWNER/MANAGER por default; STAFF não recebe.
+  Criação pública continua, porém rate-limited por IP (60/min) e sem aceitar
+  bearer como atalho.
+
+Contrato, erros e deploy em [DELIVERY-CHECKOUT.md](./DELIVERY-CHECKOUT.md).

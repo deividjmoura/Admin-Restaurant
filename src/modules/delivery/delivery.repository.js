@@ -1,4 +1,5 @@
 import { query } from '../../infrastructure/db.js';
+import { generateCheckoutSecret } from './delivery-checkout.js';
 
 export class DeliveryError extends Error {
   constructor(code, message) {
@@ -187,6 +188,9 @@ export async function createDeliveryOrder(
 
   return withTransaction(async (client) => {
     let createdDelivery = null;
+    // O segredo do checkout nasce NA transação do pedido: ou pedido+credencial
+    // existem juntos, ou nada (nunca um delivery_orders órfão sem token).
+    const checkoutSecret = generateCheckoutSecret();
 
     const result = await createOrder(
       storeId,
@@ -204,8 +208,8 @@ export async function createDeliveryOrder(
             `INSERT INTO delivery_orders
               (order_id, store_id, zone_id, customer_name, customer_phone,
                street, number, complement, neighborhood, city, state, postal_code,
-               delivery_fee, eta_minutes_min, eta_minutes_max, notes)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+               delivery_fee, eta_minutes_min, eta_minutes_max, notes, checkout_token)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
              RETURNING *`,
             [
               order.id,
@@ -224,6 +228,7 @@ export async function createDeliveryOrder(
               zone.etaMinutesMin,
               zone.etaMinutesMax,
               notes ?? null,
+              checkoutSecret,
             ]
           );
           createdDelivery = rows[0];
@@ -235,15 +240,69 @@ export async function createDeliveryOrder(
       const existing = await getDeliveryByOrderId(storeId, result.order.id, {
         client,
       });
-      return { ...result, delivery: existing, quote: null };
+      // Replay devolve o segredo ATUAL do mesmo checkout: rotação revoga,
+      // replay re-emite a credencial válida (nunca a de outro pedido).
+      const credential = await getDeliveryCredentialRow(storeId, result.order.id, {
+        client,
+      });
+      return {
+        ...result,
+        delivery: existing,
+        quote: null,
+        credential,
+      };
     }
 
     return {
       ...result,
       delivery: mapDelivery(createdDelivery),
       quote,
+      credential: {
+        checkoutToken: createdDelivery.checkout_token,
+      },
     };
   });
+}
+
+/**
+ * Linha viva da credencial do checkout (segredo + estado do pedido).
+ * Uso interno: emissão/rotação. O segredo NUNCA é mapeado para resposta.
+ */
+export async function getDeliveryCredentialRow(storeId, orderId, { client = null } = {}) {
+  const run = client ? client.query.bind(client) : query;
+  const { rows } = await run(
+    `SELECT o.id, o.channel, o.status, o.created_at, d.checkout_token
+     FROM delivery_orders d
+     JOIN orders o ON o.id = d.order_id AND o.store_id = d.store_id
+     WHERE d.order_id = $1 AND d.store_id = $2`,
+    [orderId, storeId]
+  );
+  const row = rows[0];
+  if (!row || row.channel !== 'DELIVERY') return null;
+  return {
+    orderId: row.id,
+    checkoutToken: row.checkout_token,
+    orderCreatedAt: row.created_at,
+    orderStatus: row.status,
+  };
+}
+
+/**
+ * Gira o segredo do checkout: revoga TODAS as credenciais emitidas (o hash do
+ * JWT antigo para de bater) e passa a aceitar apenas replay com a
+ * Idempotency-Key original para reemitir. Não mexe no pedido nem no endereço.
+ */
+export async function rotateDeliveryCredential(storeId, orderId) {
+  const { rows } = await query(
+    `UPDATE delivery_orders d
+     SET checkout_token = $3, updated_at = now()
+     FROM orders o
+     WHERE d.order_id = o.id AND d.store_id = o.store_id
+       AND d.order_id = $1 AND d.store_id = $2 AND o.channel = 'DELIVERY'
+     RETURNING d.order_id`,
+    [orderId, storeId, generateCheckoutSecret()]
+  );
+  return rows[0] ?? null;
 }
 
 /**

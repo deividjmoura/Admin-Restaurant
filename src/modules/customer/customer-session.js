@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { getSecret } from '../auth/session.js';
 import { query } from '../../infrastructure/db.js';
 import { SESSION_TTL_MS } from '../tables/tables.repository.js';
+import {
+  assertDeliveryCheckout,
+  assertDeliveryOrderScope,
+  assertDeliveryPaymentTarget,
+} from '../delivery/delivery-checkout.js';
 import { AppError } from '../../shared/errors.js';
 
 const AUDIENCE = 'restaurant:table-customer';
@@ -69,6 +74,8 @@ export async function verifyCustomerSession(token) {
 /** Revalidate live state. Mutations call this inside their own transaction,
  * locking the session before writes/replays. Closing it cannot race past this lock.
  * QR rotation/deactivation is also serialized by the table's share lock.
+ * `kind:'delivery'` dispatches to the checkout's own live revalidation; the two
+ * credential planes never authorize each other's rows.
  */
 export async function assertCustomerSession(
   customer,
@@ -76,6 +83,8 @@ export async function assertCustomerSession(
   { lock = false } = {}
 ) {
   if (!customer) return;
+  if (customer.kind === 'delivery')
+    return assertDeliveryCheckout(customer, run, { lock });
   const { rows } = await run(
     `SELECT s.status,s.opened_at,s.expired_at,t.public_token,t.is_active
     FROM table_sessions s JOIN tables t ON t.id=s.table_id AND t.store_id=s.store_id
@@ -106,7 +115,24 @@ export async function assertCustomerSession(
   }
 }
 
+/** Mesa/QR é outro plano: credencial de checkout de delivery nunca autoriza
+ * sessões, carrinhos nem pedidos pelo contrato de mesa (e vice-versa). */
+export function assertTablePlane(customer) {
+  if (customer && customer.kind === 'delivery')
+    throw new AppError(
+      'CONTEXT_FORBIDDEN',
+      'Credencial de checkout não autoriza a superfície de mesa.',
+      403
+    );
+}
+
 export function assertSessionScope(customer, storeId, sessionId) {
+  if (customer && customer.kind === 'delivery')
+    throw new AppError(
+      'CONTEXT_FORBIDDEN',
+      'Credencial de checkout não autoriza sessão de mesa.',
+      403
+    );
   if (
     customer &&
     (customer.storeId !== storeId || customer.sessionId !== sessionId)
@@ -122,6 +148,10 @@ export async function assertOrderScope(
   run = query
 ) {
   if (!customer) return;
+  if (customer.kind === 'delivery') {
+    await assertDeliveryOrderScope(customer, storeId, orderId, run);
+    return;
+  }
   const { rows } = await run(
     `SELECT id FROM orders WHERE id=$1 AND store_id=$2
     AND table_session_id=$3 AND channel='TABLE'`,
@@ -134,6 +164,17 @@ export async function assertOrderScope(
 
 export async function assertPaymentScope(customer, payment, run = query) {
   if (!customer) return;
+  if (customer.kind === 'delivery') {
+    assertDeliveryPaymentTarget(customer, payment);
+    if (payment.orderId)
+      await assertDeliveryOrderScope(
+        customer,
+        payment.storeId,
+        payment.orderId,
+        run
+      );
+    return;
+  }
   // Both targets, when present, must match. Never authorize one with an OR that
   // would allow a payment linked to this session AND somebody else's order.
   if (

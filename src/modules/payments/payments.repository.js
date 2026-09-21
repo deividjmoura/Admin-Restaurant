@@ -117,12 +117,17 @@ export async function listPayments(
  *   - ignora itens CANCELLED
  *   - ignora pedidos CANCELLED (join por id + store_id)
  *   - desconta pagamentos já PAID
+ * e, no alvo `orderId` de canal DELIVERY, soma o FRETE gravado no snapshot
+ * (`delivery_orders.delivery_fee`). Sem isso o cliente nunca conseguia pagar o
+ * total real do delivery: `AMOUNT_EXCEEDS_DUE` cortava exatamente a taxa.
+ * Frete nunca entra pelo ramo `sessionId` — pedido delivery não tem sessão de
+ * mesa, então o saldo de comanda permanece só itens.
  *
  * Pagamentos PENDING NÃO são descontados de propósito: a rota de criação é
  * pública e descontar PENDING permitiria que qualquer cliente "reservasse"
  * o valor devido e bloqueasse o pagamento legítimo da mesa (DoS financeiro).
  *
- * @returns {Promise<{ itemsTotal: number, paidTotal: number, pendingTotal: number, due: number }>}
+ * @returns {Promise<{ itemsTotal: number, deliveryFee: number, paidTotal: number, pendingTotal: number, due: number }>}
  */
 export async function amountDue(
   storeId,
@@ -146,6 +151,15 @@ export async function amountDue(
            OR ($3::uuid IS NOT NULL AND o.table_session_id = $3::uuid)
          )
      ),
+     fees AS (
+       SELECT COALESCE(SUM(d.delivery_fee), 0) AS fee_total
+       FROM delivery_orders d
+       INNER JOIN orders o ON o.id = d.order_id AND o.store_id = d.store_id
+       WHERE d.store_id = $1
+         AND o.status <> 'CANCELLED'
+         AND $2::uuid IS NOT NULL
+         AND d.order_id = $2::uuid
+     ),
      pays AS (
        SELECT COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'PAID'), 0) AS paid_total,
               COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'PENDING'), 0) AS pending_total
@@ -163,21 +177,23 @@ export async function amountDue(
                ))
          )
      )
-     SELECT items.items_total, pays.paid_total, pays.pending_total
-     FROM items CROSS JOIN pays`,
+     SELECT items.items_total, fees.fee_total, pays.paid_total, pays.pending_total
+     FROM items CROSS JOIN fees CROSS JOIN pays`,
     [storeId, orderId, sessionId]
   );
 
   const row = rows[0] || {};
   const itemsTotal = round2(Number(row.items_total) || 0);
+  const deliveryFee = round2(Number(row.fee_total) || 0);
   const paidTotal = round2(Number(row.paid_total) || 0);
   const pendingTotal = round2(Number(row.pending_total) || 0);
 
   return {
     itemsTotal,
+    deliveryFee,
     paidTotal,
     pendingTotal,
-    due: round2(Math.max(0, itemsTotal - paidTotal)),
+    due: round2(Math.max(0, itemsTotal + deliveryFee - paidTotal)),
   };
 }
 
