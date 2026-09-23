@@ -79,7 +79,17 @@ export async function makeUserWithRole(
   });
   if (storeId) await addStoreUser({ storeId, userId: user.id, role });
   const sessionType = storeId ? 'store' : 'platform';
-  const cookie = `ar_session=${await signSessionToken(user, { type: sessionType, storeId, role })}`;
+  const sessionRole = storeId ? role : 'PLATFORM_OWNER';
+  // createUser returns snake_case from DB; session.js expects is_platform_owner for platform tokens
+  if (!storeId && (user.isPlatformOwner || user.is_platform_owner || isSuperAdmin)) {
+    user.is_platform_owner = true;
+    user.isPlatformOwner = true;
+  }
+  const cookie = `ar_session=${await signSessionToken(user, {
+    type: sessionType,
+    storeId: storeId || undefined,
+    role: sessionRole,
+  })}`;
   return { user, cookie, password };
 }
 

@@ -94,12 +94,13 @@ jobs:
             let tap = '';
             try { tap = fs.readFileSync('.tap/suite.tap','utf8'); } catch(e) { tap = 'no tap file: '+e.message; }
             const fails = tap.split('\n').filter(l=>l.startsWith('not ok')).slice(0,150).join('\n');
-            const body = `CI failed for ${{ github.sha }} (run ${{ github.run_id }})\n\n**Failed tests:**\n\`\`\`\n${fails || 'none'}\n\`\`\`\n\n**TAP tail (4000 chars):**\n\`\`\`\n${tap.slice(-4000)}\n\`\`\``;
+            const shortSha = context.sha.slice(0, 7);
+            const body = `CI failed for ${context.sha} (run ${context.runId})\n\n**Failed tests:**\n\`\`\`\n${fails || 'none'}\n\`\`\`\n\n**TAP tail (4000 chars):**\n\`\`\`\n${tap.slice(-4000)}\n\`\`\``;
             try {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `CI failure ${{ github.run_id }} ${{ github.sha.slice(0,7) }}`,
+                title: `CI failure ${context.runId} ${shortSha}`,
                 body: body,
                 labels: ['ci-failure']
               });
