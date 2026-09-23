@@ -371,7 +371,7 @@ describe('Observabilidade — health/ready/logs/metrics (integração)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/reports/live',
-      headers: { cookie: ownerCookie, 'x-tenant-slug': store.slug, 'x-request-id': 'log-trace-1' },
+      headers: { cookie: ownerCookie, host: `${store.slug}.localhost`, 'x-request-id': 'log-trace-1' },
     });
     assert.equal(res.statusCode, 200, res.body);
 
@@ -409,8 +409,8 @@ describe('Observabilidade — health/ready/logs/metrics (integração)', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/auth/login',
-      headers: { 'content-type': 'application/json', 'x-tenant-slug': store.slug },
+      url: '/api/auth/store/login',
+      headers: { 'content-type': 'application/json', host: `${store.slug}.localhost` },
       payload: { email: 'ninguem@test.local', password: secret },
     });
     assert.equal(res.statusCode, 401);
@@ -429,7 +429,7 @@ describe('Observabilidade — health/ready/logs/metrics (integração)', () => {
     await app.inject({
       method: 'GET',
       url: '/api/me/store',
-      headers: { cookie: ownerCookie, 'x-tenant-slug': store.slug },
+      headers: { cookie: ownerCookie, host: `${store.slug}.localhost` },
     });
     const text = await renderMetrics();
     assert.match(text, new RegExp(`store_id="${store.id}"`));
@@ -446,7 +446,7 @@ describe('Observabilidade — health/ready/logs/metrics (integração)', () => {
     const owner = await app.inject({
       method: 'GET',
       url: '/metrics',
-      headers: { cookie: ownerCookie, 'x-tenant-slug': store.slug },
+      headers: { cookie: ownerCookie, host: `${store.slug}.localhost` },
     });
     assert.equal(owner.statusCode, 404, 'dono de loja não pode ler métricas da plataforma');
 
@@ -500,7 +500,7 @@ describe('Observabilidade — health/ready/logs/metrics (integração)', () => {
     await app.inject({
       method: 'GET',
       url: '/api/me/store',
-      headers: { cookie: ownerCookie, 'x-tenant-slug': store.slug },
+      headers: { cookie: ownerCookie, host: `${store.slug}.localhost` },
     });
 
     const res = await app.inject({
