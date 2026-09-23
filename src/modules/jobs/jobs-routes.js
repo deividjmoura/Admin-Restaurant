@@ -1,6 +1,12 @@
 import fp from 'fastify-plugin';
 import { z } from 'zod';
-import { enqueueJob, listJobs, countByStatus } from './jobs.repository.js';
+import {
+  enqueueJob,
+  listJobs,
+  listDeadJobs,
+  countByStatus,
+  requeueJob,
+} from './jobs.repository.js';
 import { getWorkerStatus } from './worker.js';
 import { AppError, errorResponse } from '../../shared/errors.js';
 
@@ -26,6 +32,24 @@ async function jobsRoutes(app) {
     async (request) => {
       const jobs = await listJobs(request.storeId, {
         status: request.query?.status || null,
+        limit: request.query?.limit || 50,
+      });
+      return { jobs };
+    }
+  );
+
+  /** Dead-letter queue (#138) */
+  app.get(
+    '/api/jobs/dead',
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requireStoreAccess,
+        app.requirePermission('store.settings.read'),
+      ],
+    },
+    async (request) => {
+      const jobs = await listDeadJobs(request.storeId, {
         limit: request.query?.limit || 50,
       });
       return { jobs };
@@ -79,6 +103,31 @@ async function jobsRoutes(app) {
       });
 
       return reply.code(result.replayed ? 200 : 201).send(result);
+    }
+  );
+
+  /**
+   * Requeue dead-letter → pending (#138).
+   * Reseta attempts e limpa dead_at.
+   */
+  app.post(
+    '/api/jobs/:id/requeue',
+    {
+      preHandler: [
+        app.requireTenant,
+        app.requireStoreAccess,
+        app.requirePermission('store.settings.write'),
+      ],
+    },
+    async (request, reply) => {
+      const job = await requeueJob(request.params.id, request.storeId);
+      if (!job) {
+        const { statusCode, body } = errorResponse(
+          new AppError('JOB_NOT_FOUND', 'Job dead não encontrado nesta loja.', 404)
+        );
+        return reply.code(statusCode).send(body);
+      }
+      return { job, requeued: true };
     }
   );
 }
