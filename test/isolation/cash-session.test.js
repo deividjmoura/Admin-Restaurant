@@ -24,8 +24,9 @@ describe('Caixa — sessão e ledger (issues #107/#108)', () => {
   let kitchenA = null;
   let ownerB = null;
 
-  const slugA = () => ({ 'x-tenant-slug': storeA.slug });
-  const slugB = () => ({ 'x-tenant-slug': storeB.slug });
+  // Host subdomain is the canonical tenant source; apex+header is blocked (SEC-01).
+  const slugA = () => ({ host: `${storeA.slug}.localhost` });
+  const slugB = () => ({ host: `${storeB.slug}.localhost` });
 
   before(async () => {
     if (!hasDatabase()) return;

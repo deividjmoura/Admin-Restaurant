@@ -131,12 +131,18 @@ describe('fail-closed de configuração (unit)', () => {
     delete process.env.CORS_ORIGIN;
     delete process.env.FRONTEND_ORIGIN;
     try {
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
       const { buildApp } = await import('../../src/app.js');
       await assert.rejects(() => buildApp({ logger: false }), /CORS_ORIGIN/);
     } finally {
       process.env.NODE_ENV = prev.nodeEnv;
       if (prev.cors !== undefined) process.env.CORS_ORIGIN = prev.cors;
+      else delete process.env.CORS_ORIGIN;
       if (prev.frontend !== undefined) process.env.FRONTEND_ORIGIN = prev.frontend;
+      else delete process.env.FRONTEND_ORIGIN;
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
     }
   });
 
@@ -150,12 +156,17 @@ describe('fail-closed de configuração (unit)', () => {
     process.env.CORS_ORIGIN = 'https://app.example.com';
     delete process.env.COOKIE_SECRET;
     try {
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
       const { buildApp } = await import('../../src/app.js');
       await assert.rejects(() => buildApp({ logger: false }), /COOKIE_SECRET/);
     } finally {
       process.env.NODE_ENV = prev.nodeEnv;
       if (prev.cookie !== undefined) process.env.COOKIE_SECRET = prev.cookie;
+      else delete process.env.COOKIE_SECRET;
       process.env.CORS_ORIGIN = prev.cors ?? 'https://app.example.com';
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
     }
   });
 });

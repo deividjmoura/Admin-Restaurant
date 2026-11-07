@@ -1,6 +1,6 @@
 /**
- * Fila de jobs persistida — issue #52.
- * Enqueue nunca lança para o caller de domínio (best-effort).
+ * Fila de jobs persistida — #52 + #138 (retry, dedup, dead-letter).
+ * Enqueue nunca lança para o caller de domínio (best-effort via enqueueSafe).
  */
 import { query, withTransaction } from '../../infrastructure/db.js';
 import { observeQueue, observeQueueJob } from '../../infrastructure/metrics.js';
@@ -29,10 +29,22 @@ function mapJob(row) {
     lockedBy: row.locked_by,
     lastError: row.last_error,
     idempotencyKey: row.idempotency_key,
+    deadAt: row.dead_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
   };
+}
+
+/**
+ * Backoff exponencial: 30s * 2^(attempts-1), cap 1h.
+ * attempts já foi incrementado no claim.
+ */
+function backoffInterval(attempts) {
+  const baseSec = 30;
+  const exp = Math.min(Math.max(Number(attempts) || 1, 1) - 1, 10);
+  const sec = Math.min(baseSec * Math.pow(2, exp), 3600);
+  return `${sec} seconds`;
 }
 
 /**
@@ -107,6 +119,7 @@ export async function enqueueSafe(args) {
 
 /**
  * Claim atômico de um batch de jobs pending com run_at <= now().
+ * Também requeue jobs running presos (lockTimeout).
  */
 export async function claimJobs({
   workerId,
@@ -116,7 +129,7 @@ export async function claimJobs({
 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
   return withTransaction(async (client) => {
-    // Requeue stuck running
+    // Requeue stuck running → pending (não conta como attempt extra aqui)
     await client.query(
       `UPDATE jobs SET status = 'pending', locked_at = NULL, locked_by = NULL, updated_at = now()
        WHERE status = 'running'
@@ -173,24 +186,37 @@ export async function completeJob(jobId, { result = null } = {}) {
   return job;
 }
 
+/**
+ * Falha o job: retry com backoff exponencial ou dead-letter.
+ * #138 — dead_at preenchido quando status = dead.
+ */
 export async function failJob(jobId, errorMessage) {
+  const current = await query(`SELECT attempts, max_attempts, queue FROM jobs WHERE id = $1`, [
+    jobId,
+  ]);
+  const row = current.rows[0];
+  if (!row) return null;
+
+  const attempts = row.attempts;
+  const maxAttempts = row.max_attempts;
+  const isDead = attempts >= maxAttempts;
+  const backoff = isDead ? null : backoffInterval(attempts);
+
   const { rows } = await query(
     `UPDATE jobs SET
-       status = CASE
-         WHEN attempts >= max_attempts THEN 'dead'
-         ELSE 'pending'
-       END,
+       status = CASE WHEN $3 THEN 'dead' ELSE 'pending' END,
        last_error = $2,
        run_at = CASE
-         WHEN attempts >= max_attempts THEN run_at
-         ELSE now() + (LEAST(attempts, 6) * interval '30 seconds')
+         WHEN $3 THEN run_at
+         ELSE now() + ($4::text)::interval
        END,
+       dead_at = CASE WHEN $3 THEN now() ELSE dead_at END,
        locked_at = NULL,
        locked_by = NULL,
        updated_at = now()
      WHERE id = $1
      RETURNING *`,
-    [jobId, String(errorMessage || 'error').slice(0, 2000)]
+    [jobId, String(errorMessage || 'error').slice(0, 2000), isDead, backoff]
   );
   const job = mapJob(rows[0]);
   if (job) {
@@ -198,6 +224,32 @@ export async function failJob(jobId, errorMessage) {
       queue: job.queue,
       outcome: job.status === 'dead' ? 'dead' : 'retry',
     });
+  }
+  return job;
+}
+
+/**
+ * Requeue um job dead → pending (zera attempts, limpa dead_at).
+ * #138 — operador pode reprocessar dead-letter.
+ */
+export async function requeueJob(jobId, storeId) {
+  const { rows } = await query(
+    `UPDATE jobs SET
+       status = 'pending',
+       attempts = 0,
+       run_at = now(),
+       locked_at = NULL,
+       locked_by = NULL,
+       dead_at = NULL,
+       last_error = NULL,
+       updated_at = now()
+     WHERE id = $1 AND store_id = $2 AND status = 'dead'
+     RETURNING *`,
+    [jobId, storeId]
+  );
+  const job = mapJob(rows[0]);
+  if (job) {
+    observeQueueJob({ queue: job.queue, outcome: 'requeued' });
   }
   return job;
 }
@@ -241,4 +293,11 @@ export async function listJobs(storeId, { status = null, limit = 50 } = {}) {
     params
   );
   return rows.map(mapJob);
+}
+
+/**
+ * Lista apenas dead-letter de uma loja (mais recente primeiro).
+ */
+export async function listDeadJobs(storeId, { limit = 50 } = {}) {
+  return listJobs(storeId, { status: 'dead', limit });
 }

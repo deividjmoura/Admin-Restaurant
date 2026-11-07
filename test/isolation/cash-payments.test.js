@@ -29,7 +29,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
   const hdr = (cookie, extra = {}) => ({
     cookie,
     'content-type': 'application/json',
-    'x-tenant-slug': storeA.slug,
+    host: `${storeA.slug}.localhost`,
     ...extra,
   });
 
@@ -524,7 +524,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { openingAmount: 10 },
     });
@@ -538,7 +538,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { orderId: order.id, items: [{ method: 'CASH', amount: 40 }] },
     });
@@ -549,7 +549,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
     const detailB = await app.inject({
       method: 'GET',
       url: `/api/cash/sessions/${sessionB}`,
-      headers: { cookie: ownerB.cookie, 'x-tenant-slug': storeB.slug },
+      headers: { cookie: ownerB.cookie, host: `${storeB.slug}.localhost` },
     });
     assert.equal(detailB.json().session.totals.expected, 10);
 
@@ -559,7 +559,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       app.inject({
         method: 'GET',
         url: '/api/cash/report',
-        headers: { cookie: ownerB.cookie, 'x-tenant-slug': storeB.slug },
+        headers: { cookie: ownerB.cookie, host: `${storeB.slug}.localhost` },
       }),
     ]);
     assert.equal(reportA.statusCode, 200, reportA.body);
@@ -581,7 +581,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { countedAmount: 10 },
     });

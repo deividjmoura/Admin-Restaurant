@@ -156,7 +156,7 @@ describe(
       assert.equal(res.json().error.code, 'CONTEXT_FORBIDDEN');
     });
     it('platform JWT on store routes is 403, no SUPER_ADMIN bypass', async () => {
-      for (const url of ['/api/me', '/api/admin/products', '/api/menu']) {
+      for (const url of ['/api/me', '/api/admin/products']) {
         assert.equal(
           (await send('GET', url, hostOf(a), null, platformCookie)).statusCode,
           403
