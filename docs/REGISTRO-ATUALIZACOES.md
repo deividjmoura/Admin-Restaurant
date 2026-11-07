@@ -71,3 +71,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: validação exige plano para inconsistências legadas, backup e janela para locks; nenhuma consulta ou migration foi feita em produção. Outros vínculos como itens, carrinhos e pagamentos não estão cobertos pelas novas FKs. CI remoto deve ser confirmado após atualização do PR.
 - Próximos passos: revisar os demais relacionamentos multi-tenant e seus efeitos operacionais; homologar antes de aplicar migrations.
 - Publicação/deploy: alterações preparadas para atualizar o PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento dos itens de pedido
+
+- Objetivo: impedir que itens vinculem pedido ou produto de outra loja e proteger integridade dos snapshots financeiros sem apagar registros.
+- Mudanças: `migrations/0033_order_items_tenant_constraints.sql` e rollback em `migrations/rollback/0033_order_items_tenant_constraints.sql`; `test/isolation/order-items-tenant-constraints.test.js` cobre repositório, INSERT/UPDATE cruzado no banco, exclusão em cascata e preço snapshot; `docs/INTEGRIDADE-MULTITENANT-ITENS-PEDIDO.md` registra preflight e riscos.
+- Testes: PostgreSQL 18.6 descartável, migration aplicada em banco já migrado. `node --test test/isolation/order-items-tenant-constraints.test.js`: 6 aprovados, 0 falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 322 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 223,28 s. Ensaio local separado com dados sintéticos validou bloqueio de cada tipo de vínculo legado, aplicação, rollback e reaplicação. `git diff --check` passou.
+- Limitações: sem acesso ou alteração em produção; planejar preflight, backup, locks e homologação. A migration cobre vínculo item/pedido e item/produto, não adicionais de item, carrinho ou pagamentos. Nenhum status financeiro é alterado.
+- Próximos passos: revisar integridade de adicionais de item, carrinhos e pagamentos, inclusive comportamento de exclusão `SET NULL`, e validar CI remoto do PR.
+- Publicação/deploy: alteração preparada para atualizar PR #170; nenhum deploy ou merge.
