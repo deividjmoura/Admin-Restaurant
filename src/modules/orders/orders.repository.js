@@ -174,8 +174,8 @@ export async function listStationOrders(
      FROM orders o
      INNER JOIN order_items oi
        ON oi.order_id = o.id AND oi.store_id = o.store_id
-     LEFT JOIN table_sessions ts ON ts.id = o.table_session_id
-     LEFT JOIN tables t ON t.id = ts.table_id
+     LEFT JOIN table_sessions ts ON ts.id = o.table_session_id AND ts.store_id = o.store_id
+     LEFT JOIN tables t ON t.id = ts.table_id AND t.store_id = ts.store_id
      WHERE o.store_id = $1
        AND o.status = ANY($2::text[])
        AND oi.station = $3
@@ -881,8 +881,8 @@ export async function listReadyItems(
             o.table_session_id, t.number AS table_number
      FROM order_items oi
      INNER JOIN orders o ON o.id = oi.order_id AND o.store_id = oi.store_id
-     LEFT JOIN table_sessions ts ON ts.id = o.table_session_id
-     LEFT JOIN tables t ON t.id = ts.table_id
+     LEFT JOIN table_sessions ts ON ts.id = o.table_session_id AND ts.store_id = o.store_id
+     LEFT JOIN tables t ON t.id = ts.table_id AND t.store_id = ts.store_id
      WHERE oi.store_id = $1
        AND oi.status = 'READY'
        AND o.status <> 'CANCELLED'
@@ -918,7 +918,7 @@ export async function getSessionSummary(storeId, sessionId) {
     `SELECT ts.id, ts.store_id, ts.table_id, ts.opened_at, ts.closed_at, ts.status,
             t.number AS table_number, t.label AS table_label
      FROM table_sessions ts
-     INNER JOIN tables t ON t.id = ts.table_id
+     INNER JOIN tables t ON t.id = ts.table_id AND t.store_id = ts.store_id
      WHERE ts.id = $1 AND ts.store_id = $2`,
     [sessionId, storeId]
   );
@@ -1025,7 +1025,7 @@ export async function listOpenSessions(storeId, { limit = 50 } = {}) {
     `SELECT ts.id, ts.table_id, ts.opened_at, ts.status,
             t.number AS table_number, t.label AS table_label
      FROM table_sessions ts
-     INNER JOIN tables t ON t.id = ts.table_id
+     INNER JOIN tables t ON t.id = ts.table_id AND t.store_id = ts.store_id
      WHERE ts.store_id = $1 AND ts.status = 'open'
      ORDER BY ts.opened_at ASC
      LIMIT $2`,

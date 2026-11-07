@@ -103,8 +103,11 @@ o mesmo padrão `assertCustomerSession` da mesa.
 pedido) quando o alvo é `orderId` de checkout; pedido cancelado não conta; o
 ramo `sessionId` (comanda de mesa) permanece só itens — frete não vaza para
 mesa. Com isso o cliente consegue pagar `itens + frete` exatos: antes o teto
-do pagamento cortava a taxa (`AMOUNT_EXCEEDS_DUE`). PENDING continua sem
-descontar (anti-DoS financeiro), igual à mesa.
+do pagamento cortava a taxa (`AMOUNT_EXCEEDS_DUE`). PENDING não abate o saldo
+devido, mas reserva capacidade para novas cobranças, igual à mesa. Pendentes
+podem bloquear tentativas até conciliação; não são cancelados automaticamente.
+A reserva amplia o risco de bloqueio indevido e o fluxo financeiro permanece
+bloqueado para implantação até haver reconciliação segura e tratamento de abuso.
 
 ### Erros
 

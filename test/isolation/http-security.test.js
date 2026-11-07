@@ -131,6 +131,8 @@ describe('fail-closed de configuração (unit)', () => {
     delete process.env.CORS_ORIGIN;
     delete process.env.FRONTEND_ORIGIN;
     try {
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
       const { buildApp } = await import('../../src/app.js');
       await assert.rejects(() => buildApp({ logger: false }), /CORS_ORIGIN/);
     } finally {
@@ -150,6 +152,8 @@ describe('fail-closed de configuração (unit)', () => {
     process.env.CORS_ORIGIN = 'https://app.example.com';
     delete process.env.COOKIE_SECRET;
     try {
+      const { resetConfigForTests } = await import('../../src/config.js');
+      resetConfigForTests();
       const { buildApp } = await import('../../src/app.js');
       await assert.rejects(() => buildApp({ logger: false }), /COOKIE_SECRET/);
     } finally {

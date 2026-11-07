@@ -157,6 +157,17 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
     assert.equal(res.json().error.code, 'TARGET_REQUIRED');
   });
 
+  it('pedido e sessão simultâneos são recusados sem criar pagamento', async (t) => {
+    if (skipWithoutDb(t)) return;
+    const { query } = await import('../../src/infrastructure/db.js');
+    const before = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    const res = await post(storeA.slug, { amount: 1, method: 'CASH', orderId: orderA.id, sessionId: sessionA.id });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(res.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    const after = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    assert.equal(after.rows[0].n, before.rows[0].n);
+  });
+
   it('valor acima do devido retorna 409 AMOUNT_EXCEEDS_DUE', async (t) => {
     if (skipWithoutDb(t)) return;
     const res = await post(storeA.slug, {
@@ -206,10 +217,11 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
 
   it('metadata do cliente é rejeitada/ignorada (nunca vai para o banco)', async (t) => {
     if (skipWithoutDb(t)) return;
+    const order = await makeOrderWithAddons();
     const res = await post(storeA.slug, {
       amount: 5,
       method: 'CASH',
-      orderId: orderA.id,
+      orderId: order.id,
       metadata: { markPaid: true, providerPaymentId: 'hack', internal: 'x' },
     });
     assert.equal(res.statusCode, 400, res.body);
@@ -223,7 +235,7 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
         ...auth(storeA.slug),
       },
       // sem metadata: aceito
-      payload: { amount: 5, method: 'CASH', orderId: orderA.id },
+      payload: { amount: 5, method: 'CASH', orderId: order.id },
     });
     assert.equal(ok.statusCode, 201, ok.body);
     const paymentId = ok.json().payment.id;
@@ -237,10 +249,11 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
 
   it('GET /api/payments/:id público não expõe metadata nem dados internos', async (t) => {
     if (skipWithoutDb(t)) return;
+    const order = await makeOrderWithAddons();
     const created = await post(storeA.slug, {
       amount: 5,
       method: 'CASH',
-      orderId: orderA.id,
+      orderId: order.id,
       idempotencyKey: `pub-${Date.now()}`,
     });
     assert.equal(created.statusCode, 201, created.body);

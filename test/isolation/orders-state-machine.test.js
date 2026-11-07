@@ -144,7 +144,7 @@ describe('transições guardadas por concorrência (integration)', () => {
     assert.equal(after.status, 'CONFIRMED');
   });
 
-  it('transições concorrentes para alvos diferentes → só uma é aplicada', async (t) => {
+  it('transições concorrentes para alvos diferentes respeitam a ordem serializada', async (t) => {
     if (skipWithoutDb(t)) return;
     const { transitionOrderStatus, findOrderById } = await import(
       '../../src/modules/orders/orders.repository.js'
@@ -157,10 +157,22 @@ describe('transições guardadas por concorrência (integration)', () => {
       transitionOrderStatus(store.id, order.id, 'PREPARING'),
       transitionOrderStatus(store.id, order.id, 'CONFIRMED'),
     ]);
-    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
-
+    const ok = results.filter((r) => r.status === 'fulfilled');
+    const failed = results.filter((r) => r.status === 'rejected');
     const after = await findOrderById(store.id, order.id);
-    assert.ok(['PREPARING', 'CONFIRMED'].includes(after.status));
+    // Se CONFIRMED obtém o lock primeiro, CONFIRMED → PREPARING também é
+    // válido e ambas podem ter sucesso. Na ordem inversa, CONFIRMED é inválido.
+    if (ok.length === 2) {
+      assert.equal(results[0].value.status, 'PREPARING');
+      assert.equal(results[1].value.status, 'CONFIRMED');
+      assert.equal(after.status, 'PREPARING');
+    } else {
+      assert.equal(ok.length, 1);
+      assert.equal(failed.length, 1);
+      assert.ok(['STATUS_CONFLICT', 'INVALID_STATUS_TRANSITION'].includes(failed[0].reason.code));
+      assert.equal(results[0].value.status, 'PREPARING');
+      assert.equal(after.status, 'PREPARING');
+    }
   });
 
   it('transição inválida de pedido → INVALID_STATUS_TRANSITION', async (t) => {

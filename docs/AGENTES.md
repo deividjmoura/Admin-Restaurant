@@ -6,6 +6,16 @@
 
 **Canal vivo:** `main`. Toda entrega entra por PR pequeno contra `main`.
 
+## Registro obrigatório de atualizações
+
+**Todos os agentes devem atualizar [`REGISTRO-ATUALIZACOES.md`](./REGISTRO-ATUALIZACOES.md)
+na mesma entrega após qualquer alteração no repositório** (código, testes,
+configuração ou documentação). Acrescente data, objetivo, arquivos afetados,
+comandos/resultados de testes, falhas/limitações e próximos passos; nunca inclua
+segredos. Não apague o histórico e preserve entradas de outros agentes ao
+resolver conflitos. Não registre sucesso sem evidência. Instruções superiores e
+solicitações explícitas do usuário prevalecem sobre este fluxo.
+
 ---
 
 ## 1. Papéis

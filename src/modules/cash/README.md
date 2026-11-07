@@ -8,9 +8,11 @@ fechamento reconciliável.
 
 - **Uma gaveta aberta por operador/loja** (índice único parcial). Abrir a segunda
   → `409 CASH_SESSION_ALREADY_OPEN` com a sessão existente no corpo.
-- **Ledger é append-only**: `cash_movements` não aceita UPDATE/DELETE (trigger no
-  banco). Correção se faz com movimento de compensação (AJUSTMENT), nunca editando
-  o histórico — sem isso o fechamento não é auditável.
+- **Ledger sem UPDATE**: o trigger bloqueia UPDATE; o banco permite DELETE e a
+  exclusão de uma sessão de caixa ou loja remove movimentos por cascata. O app
+  não oferece rota de exclusão de movimentos. Correção operacional se faz com
+  movimento de compensação (ADJUSTMENT). A retenção depende de controles de acesso
+  ao banco e de uma política de exclusão; não é garantida pelo trigger.
 - **Dinheiro só entra na gaveta aberta**: todo efeito de caixa acontece *dentro*
   da transação do pagamento/estorno, com `SELECT ... FOR UPDATE` na sessão.
 - **Troco é derivado no servidor** (`recebido − valor`). O cliente informa quanto

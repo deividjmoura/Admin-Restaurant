@@ -13,6 +13,31 @@
 - Body do webhook **não é confiável** (storeId/paymentId ignorados); resolução por
   `(provider, provider_payment_id)`
 
+## Alvo do pagamento
+
+Novas solicitações e resumos devem informar **apenas um** alvo: `orderId` ou
+`sessionId`; ambos retornam `PAYMENT_TARGET_AMBIGUOUS` (400). Isso inclui
+retentativas de solicitações antigas com ambos: consultar e reconciliar o
+pagamento original antes de qualquer nova tentativa. Não altera dados históricos.
+A listagem pode filtrar pelos dois IDs.
+
+**Escopos mistos:** a aplicação bloqueia criação e resumo quando há pagamento
+PENDING ou PAID no outro escopo da mesma comanda; não há rateio automático. Isso
+é uma restrição operacional e não corrige pagamentos legados. Pendentes podem
+bloquear troca de escopo e não devem ser apagados para contornar a regra.
+
+**Reserva parcial:** PENDING não reduz o `due`, mas reduz o novo campo
+`availableToInitiate`, usado como limite para novas cobranças individuais e
+combinadas. Replays idênticos não criam nova reserva. A reserva não expira
+automaticamente: um pendente pode bloquear o fluxo e ser usado para negação de
+serviço. Não liberar saldo sem confirmação/reconciliação externa segura.
+
+**Risco aberto:** pendentes legados em excesso ainda podem ser confirmados além
+do valor devido; confirmações e webhooks não foram modificados. Cancelamentos de
+pedido, alterações de valor e SQL direto também exigem revisão. Não implantar até
+resolver abuso e testar conciliação do ciclo financeiro.
+Detalhes em `docs/COERENCIA-ALVOS-MESMA-LOJA.md`.
+
 ## Tabelas
 
 - `payments` — PENDING → PAID / FAILED / CANCELLED / REFUNDED

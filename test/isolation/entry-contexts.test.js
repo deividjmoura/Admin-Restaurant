@@ -156,12 +156,19 @@ describe(
       assert.equal(res.json().error.code, 'CONTEXT_FORBIDDEN');
     });
     it('platform JWT on store routes is 403, no SUPER_ADMIN bypass', async () => {
-      for (const url of ['/api/me', '/api/admin/products', '/api/menu']) {
+      for (const url of ['/api/me', '/api/admin/products']) {
         assert.equal(
           (await send('GET', url, hostOf(a), null, platformCookie)).statusCode,
           403
         );
       }
+    });
+    it('public menu remains available independently of platform credentials', async () => {
+      const anonymous = await send('GET', '/api/menu', hostOf(a));
+      const platform = await send('GET', '/api/menu', hostOf(a), null, platformCookie);
+      assert.equal(anonymous.statusCode, 200);
+      assert.equal(platform.statusCode, 200);
+      assert.equal(platform.json().store.id, a.id);
     });
     it('store JWT on platform routes is 403', async () => {
       assert.equal(

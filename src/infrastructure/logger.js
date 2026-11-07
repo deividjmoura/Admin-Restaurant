@@ -83,7 +83,7 @@ export function buildLoggerOptions(opts = {}) {
       // Nunca logar headers/cookies do request: só o que identifica a chamada.
       req: (req) => ({
         method: req.method,
-        url: req.url,
+        url: req.routeOptions?.url || '[redacted]',
         requestId: req.id,
         remoteAddress: req.ip,
       }),

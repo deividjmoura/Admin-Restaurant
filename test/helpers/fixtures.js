@@ -79,7 +79,8 @@ export async function makeUserWithRole(
   });
   if (storeId) await addStoreUser({ storeId, userId: user.id, role });
   const sessionType = storeId ? 'store' : 'platform';
-  const cookie = `ar_session=${await signSessionToken(user, { type: sessionType, storeId, role })}`;
+  const sessionRole = storeId ? role : 'PLATFORM_OWNER';
+  const cookie = `ar_session=${await signSessionToken(user, { type: sessionType, storeId, role: sessionRole })}`;
   return { user, cookie, password };
 }
 

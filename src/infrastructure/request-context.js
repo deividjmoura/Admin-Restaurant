@@ -88,7 +88,8 @@ async function requestContext(app) {
     request.requestId = requestId;
     reply.header('x-request-id', requestId);
 
-    bindRequestLog(request, { path: request.url?.split('?')[0] });
+    // Nunca colocar a URL bruta em bindings: ela pode conter QR/tokens.
+    bindRequestLog(request, { path: request.routeOptions?.url || 'unmatched' });
   });
 
   app.addHook('onResponse', async (request, reply) => {
@@ -97,7 +98,7 @@ async function requestContext(app) {
       : 0;
     const durationMs = durationNs / 1e6;
     const route =
-      request.routeOptions?.url || request.url?.split('?')[0] || 'unmatched';
+      request.routeOptions?.url || 'unmatched';
     const status = reply.statusCode || 0;
 
     observeHttpRequest({

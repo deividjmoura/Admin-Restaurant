@@ -29,7 +29,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
   const hdr = (cookie, extra = {}) => ({
     cookie,
     'content-type': 'application/json',
-    'x-tenant-slug': storeA.slug,
+    host: `${storeA.slug}.localhost`,
     ...extra,
   });
 
@@ -148,6 +148,34 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
     assert.equal(summary.due, 100);
     assert.deepEqual(summary.byMethod, []);
     assert.equal(summary.storeId, storeA.id);
+  });
+
+  it('caixa rejeita pagamento combinado e resumo com dois alvos', async (t) => {
+    if (skipWithoutDb(t)) return;
+    const { order, tableSession } = await makeOrder();
+    const { query } = await import('../../src/infrastructure/db.js');
+    const before = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    const res = await app.inject({ method: 'POST', url: `/api/cash/sessions/${cashSessionId}/payments`, headers: hdr(ownerA.cookie), payload: { orderId: order.id, sessionId: tableSession.id, items: [{ method: 'OTHER', amount: 1 }] } });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(res.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    const summary = await app.inject({ method: 'GET', url: `/api/cash/checkout-summary?orderId=${order.id}&sessionId=${tableSession.id}`, headers: hdr(ownerA.cookie) });
+    assert.equal(summary.statusCode, 400, summary.body);
+    assert.equal(summary.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    const after = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    assert.equal(after.rows[0].n, before.rows[0].n);
+  });
+
+  it('rejeita cobrança e resumo por pedido quando já existe pagamento por comanda', async (t) => {
+    if (skipWithoutDb(t)) return;
+    const { order, tableSession } = await makeOrder();
+    const { createSplitPayments } = await import('../../src/modules/payments/payments.repository.js');
+    await createSplitPayments(storeA.id, { sessionId: tableSession.id, items: [{ method: 'OTHER', amount: 10, confirm: true }] });
+    const payment = await app.inject({ method: 'POST', url: '/api/payments', headers: hdr(ownerA.cookie), payload: { orderId: order.id, amount: 5, method: 'OTHER' } });
+    assert.equal(payment.statusCode, 409, payment.body);
+    assert.equal(payment.json().error.code, 'PAYMENT_SCOPE_CONFLICT');
+    const summary = await app.inject({ method: 'GET', url: `/api/cash/checkout-summary?orderId=${order.id}`, headers: hdr(ownerA.cookie) });
+    assert.equal(summary.statusCode, 409, summary.body);
+    assert.equal(summary.json().error.code, 'PAYMENT_SCOPE_CONFLICT');
   });
 
   it('pagamento combinado: dinheiro (com troco) + PIX numa única operação', async (t) => {
@@ -524,7 +552,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { openingAmount: 10 },
     });
@@ -538,7 +566,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { orderId: order.id, items: [{ method: 'CASH', amount: 40 }] },
     });
@@ -549,7 +577,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
     const detailB = await app.inject({
       method: 'GET',
       url: `/api/cash/sessions/${sessionB}`,
-      headers: { cookie: ownerB.cookie, 'x-tenant-slug': storeB.slug },
+      headers: { cookie: ownerB.cookie, host: `${storeB.slug}.localhost` },
     });
     assert.equal(detailB.json().session.totals.expected, 10);
 
@@ -559,7 +587,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       app.inject({
         method: 'GET',
         url: '/api/cash/report',
-        headers: { cookie: ownerB.cookie, 'x-tenant-slug': storeB.slug },
+        headers: { cookie: ownerB.cookie, host: `${storeB.slug}.localhost` },
       }),
     ]);
     assert.equal(reportA.statusCode, 200, reportA.body);
@@ -581,7 +609,7 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
       headers: {
         cookie: ownerB.cookie,
         'content-type': 'application/json',
-        'x-tenant-slug': storeB.slug,
+        host: `${storeB.slug}.localhost`,
       },
       payload: { countedAmount: 10 },
     });

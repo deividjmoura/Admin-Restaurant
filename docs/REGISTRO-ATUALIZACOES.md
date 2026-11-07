@@ -1,0 +1,136 @@
+# Registro de atualizações do repositório
+
+Este é o registro contínuo das alterações. **Todo agente deve adicionar uma
+entrada na mesma entrega após qualquer mudança no repositório**, inclusive
+alterações de documentação, testes e configuração. Preserve o histórico, não
+registre segredos ou dados pessoais, e diferencie alterações locais de mudanças
+publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
+
+## Modelo para novas entradas
+
+```markdown
+## AAAA-MM-DD — Resumo
+- Objetivo e escopo:
+- Mudanças e caminhos:
+- Testes: comando, resultado, contagem, falhas/skips e ambiente:
+- Limitações/riscos e compatibilidade:
+- Próximos passos:
+- Publicação/deploy: não realizado ou link/identificação comprovada.
+```
+
+## 2026-11-07 — Auditoria e documentação preliminar
+
+- Objetivo: auditar o Admin-Restaurant e propor uma ordem de execução, sem alterar o repositório de referência.
+- Mudanças locais: `docs/AUDITORIA-GERAL-ADMIN-RESTAURANT.md`, `docs/MATRIZ-FUNCIONAL-ADMIN-RESTAURANT.md`, `docs/AUDITORIA-MULTI-TENANT-SEGURANCA.md`, `docs/AUDITORIA-PORTABILIDADE-HOSPEDAGEM.md`, `docs/PLANO-EXECUCAO-POS-AUDITORIA.md`. A main remota avançou posteriormente com documentos próprios de mesmo nome; na preparação do PR, os documentos da main foram preservados nos caminhos originais e as versões locais foram preservadas com prefixo `COMPLEMENTO-LOCAL-`.
+- Evidência: análise da main então em `d79278a92d4007235f72877ed351a21e16f93a28`; repositório de referência retornou 403 neste ambiente. O inventário de 105 IDs foi enumerado, com análise parcial e limitações explícitas.
+- Testes então: `npm run test:unit` 25 aprovados; `node --test test/unit/config.test.js` 8 aprovados; `npm run web:build` passou. Sem PostgreSQL nessa etapa, a suíte de isolamento não foi validada.
+- Publicação/deploy: não realizados nesta sessão.
+
+## 2026-11-07 — Proteção do webhook de billing
+
+- Objetivo: impedir alteração indevida de assinatura entre lojas e reprocessamento do mesmo evento.
+- Mudanças: `src/modules/billing/billing-routes.js`, `billing.repository.js` e `README.md`; `migrations/0030_billing_webhook_events.sql`; `test/isolation/billing-webhook.test.js`. Provider mock explicitamente habilitado e HMAC sobre corpo bruto, referência de assinatura resolvida no servidor, verificação de divergência, evento/alteração transacionais e deduplicação persistente. A migration 0030 evita colidir com 0029 proposta no PR #159.
+- Testes: PostgreSQL 18.6 local descartável; `npm run db:migrate` em banco limpo aplicou 29 migrations; segunda execução não encontrou pendências. `node --test test/isolation/billing-webhook.test.js`: 12 aprovados, 0 falhas, 0 skips. `npm run web:build` passou.
+- Limitações: contrato anterior de segredo em texto puro não é compatível; provider real continua desabilitado e exige adaptador e validação próprios. Deduplicação de ID idêntico não resolve eventos distintos fora de ordem. Atualização requer migration antes de habilitar webhook.
+- Publicação/deploy: não realizados nesta sessão.
+
+## 2026-11-07 — CI local, segurança de logs e registro obrigatório
+
+- Objetivo: reproduzir e corrigir falhas da suíte sem remover testes; documentar continuamente o trabalho dos agentes.
+- Mudanças: fixtures de autenticação em `test/helpers/fixtures.js`; hosts e expectativas em `test/isolation/cash-payments.test.js`, `cash-session.test.js`, `entry-contexts.test.js`, `http-security.test.js` e `observability.test.js`; captura real de logs em `customer-session.test.js`. O cardápio permanece público; testes continuam negando acesso de plataforma às rotas protegidas. Testes fail-closed reinicializam cache de configuração antes de cada cenário.
+- Segurança: `src/infrastructure/request-context.js` registra padrão da rota, não URL bruta com token QR; `src/infrastructure/logger.js` evita URL bruta no serializer. Teste de sessão verifica log efetivamente capturado e ausência de token.
+- Registro: criado `AGENTS.md` e este documento; `docs/AGENTES.md` passou a exigir atualização do registro por todos os agentes após qualquer alteração.
+- Testes: PostgreSQL 18.6 local descartável com migrations/seed. Os seis arquivos afetados: `node --test test/isolation/cash-payments.test.js test/isolation/cash-session.test.js test/isolation/customer-session.test.js test/isolation/entry-contexts.test.js test/isolation/http-security.test.js test/isolation/observability.test.js` — 125 aprovados, 0 falhas, 0 cancelados, 0 skips. `SKIP_MIGRATE=1 npm run test:suite`: 302 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 224,25 s. `npm run web:build`: passou. `git diff --check`: passou.
+- Limitações: resultado é local, não prova que o GitHub Actions remoto está verde nem substitui revisão de segurança integral; não foram feitos deploy ou merge. A suíte anterior falhou com 20 falhas e 25 cancelados antes dos ajustes.
+- Próximos passos: revisar alterações e validar CI remoto após publicação autorizada; continuar auditoria sistemática de isolamento e avaliar dependências/Redis.
+- Publicação/deploy: não realizados nesta sessão.
+
+## 2026-11-07 — Isolamento do cardápio no banco
+
+- Objetivo: impedir que produto, categoria e adicional de lojas distintas sejam relacionados por SQL direto, falhas de aplicação ou concorrência.
+- Mudanças: `migrations/0031_menu_tenant_constraints.sql` adiciona chaves únicas compostas e FKs categoria/produto e produto/adicional; valida dados existentes e aborta sem modificá-los se já houver vínculo cruzado. `migrations/rollback/0031_menu_tenant_constraints.sql` reverte as constraints. `test/isolation/menu-tenant-constraints.test.js` cobre operações HTTP e SQL entre lojas, caminho válido e alteração de loja de categoria. `docs/INTEGRIDADE-MULTITENANT-CARDAPIO.md` documenta pré-checagem, locks, backup e reversão.
+- Testes: PostgreSQL 18.6 local descartável; migration aplicada em banco já migrado. Três suítes de isolamento executadas em conjunto: 15 aprovados, 0 falhas/skips/cancelados; após incluir teste adicional de mudança da loja da categoria, `node --test test/isolation/menu-tenant-constraints.test.js` passou 8 testes. Ensaio separado em banco descartável verificou que dados cruzados legados abortam a migration sem perdas e que aplicar, reverter e reaplicar funciona. `SKIP_MIGRATE=1 npm run test:suite`: 310 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 222,77 s.
+- Limitações: esta etapa protege somente relações do cardápio, não fecha a auditoria de todos os módulos. FKs podem exigir locks e a migration pode falhar com dados legados inconsistentes; nenhum banco de produção foi consultado ou alterado. Antes de implantação, consultar contagens, investigar e planejar a correção, sem apagar dados automaticamente.
+- Próximos passos: ampliar a análise para sessões, pedidos, pagamentos e relações restantes; avaliar caches e realtime em múltiplas instâncias. Revisar e validar em ambiente de homologação antes de publicar.
+- Publicação/deploy: não realizados nesta sessão.
+
+## 2026-11-07 — Preparação do pull request
+
+- Objetivo: preparar revisão das alterações acumuladas contra a main atual, sem fazer merge ou deploy.
+- Mudanças: preservados os cinco documentos de auditoria da main nos caminhos originais e as versões locais em `docs/COMPLEMENTO-LOCAL-*`, sem apagar conteúdo. Integração da main na branch de trabalho apenas para resolver conflitos de documentação.
+- Testes: a suíte completa do código antes da integração documental passou com 310 testes, 0 falhas, 0 skips e 0 cancelados em PostgreSQL local; `git diff --check` executado após reconciliação. A integração não alterou código ou migrations.
+- Limitações: os complementos são registros históricos, não equivalem ao estado atual. CI remoto ainda deve ser acompanhado no PR.
+- Próximos passos: revisão do diff e dos checks; validação de dados legados antes de aplicar migration 0031.
+- Publicação/deploy: PR solicitado; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento de mesas, sessões e pedidos
+
+- Objetivo: impedir relações de mesa/sessão/pedido entre lojas e evitar exposição de informações em JOINs quando houver dados legados inconsistentes.
+- Mudanças: `migrations/0032_table_order_tenant_constraints.sql` e rollback em `migrations/rollback/0032_table_order_tenant_constraints.sql`; `src/modules/orders/orders.repository.js` adiciona igualdade de loja aos JOINs de sessões e mesas; `test/isolation/table-order-tenant-constraints.test.js` cobre escrita, alteração, consulta e delivery sem sessão; `docs/INTEGRIDADE-MULTITENANT-MESAS-PEDIDOS.md` documenta pré-checagem e riscos.
+- Testes: PostgreSQL 18.6 descartável; migration aplicada em banco atualizado. Quatro suítes de integração direcionadas: 24 aprovados, sem falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 316 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 222,97 s. Em banco separado com dados legados sintéticos, JOINs não revelaram número da mesa estrangeira; cada vínculo inválido bloqueou a migration sem perda; aplicação, rollback e reaplicação passaram. `git diff --check` passou.
+- Limitações: validação exige plano para inconsistências legadas, backup e janela para locks; nenhuma consulta ou migration foi feita em produção. Outros vínculos como itens, carrinhos e pagamentos não estão cobertos pelas novas FKs. CI remoto deve ser confirmado após atualização do PR.
+- Próximos passos: revisar os demais relacionamentos multi-tenant e seus efeitos operacionais; homologar antes de aplicar migrations.
+- Publicação/deploy: alterações preparadas para atualizar o PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento dos itens de pedido
+
+- Objetivo: impedir que itens vinculem pedido ou produto de outra loja e proteger integridade dos snapshots financeiros sem apagar registros.
+- Mudanças: `migrations/0033_order_items_tenant_constraints.sql` e rollback em `migrations/rollback/0033_order_items_tenant_constraints.sql`; `test/isolation/order-items-tenant-constraints.test.js` cobre repositório, INSERT/UPDATE cruzado no banco, exclusão em cascata e preço snapshot; `docs/INTEGRIDADE-MULTITENANT-ITENS-PEDIDO.md` registra preflight e riscos.
+- Testes: PostgreSQL 18.6 descartável, migration aplicada em banco já migrado. `node --test test/isolation/order-items-tenant-constraints.test.js`: 6 aprovados, 0 falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 322 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 223,28 s. Ensaio local separado com dados sintéticos validou bloqueio de cada tipo de vínculo legado, aplicação, rollback e reaplicação. `git diff --check` passou.
+- Limitações: sem acesso ou alteração em produção; planejar preflight, backup, locks e homologação. A migration cobre vínculo item/pedido e item/produto, não adicionais de item, carrinho ou pagamentos. Nenhum status financeiro é alterado.
+- Próximos passos: revisar integridade de adicionais de item, carrinhos e pagamentos, inclusive comportamento de exclusão `SET NULL`, e validar CI remoto do PR.
+- Publicação/deploy: alteração preparada para atualizar PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento de adicionais, carrinhos e pagamentos
+
+- Objetivo: proteger relações entre lojas em adicionais de pedido, carrinho e alvos de pagamento, preservando exclusões e dados financeiros históricos.
+- Mudanças: `migrations/0034_cart_addons_payments_tenant_constraints.sql` e rollback em `migrations/rollback/0034_cart_addons_payments_tenant_constraints.sql`; `test/isolation/cart-addons-payments-tenant.test.js`; `docs/INTEGRIDADE-MULTITENANT-CARRINHO-PAGAMENTOS.md` com nove preflights, riscos e reversão.
+- Testes: PostgreSQL 18.6 descartável; `node --test test/isolation/cart-addons-payments-tenant.test.js`: 8 aprovados sem falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 330 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 223,33 s. Experimento local com dados legados sintéticos testou cada um dos nove preflights separadamente e aplicação, rollback e reaplicação. Testes verificam snapshot ao apagar adicional, exclusão em cascata no carrinho, `SET NULL` preservando pagamento/loja/valor e bloqueio preexistente de pagamento sem alvo. `git diff --check` passou.
+- Limitações: nenhuma consulta ou alteração em produção; validar backup, preflight e locks em homologação. As FKs cobrem loja, não a correspondência exata adicional/produto nem pedido/sessão; ledger/eventos e outras relações não estão cobertos. Compatibilidade de exclusão verificada em PG18, não em todas as versões suportadas.
+- Próximos passos: revisar correspondência entre recursos da mesma loja, ledger de caixa, eventos e regras de retenção; validar CI remoto do PR.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento do ledger e eventos de pagamento
+
+- Objetivo: restringir vínculos entre lojas preservando a semântica existente de eventos nulos e retenção do ledger.
+- Mudanças: migration 0035 e rollback; `test/isolation/payment-events-cash-ledger-tenant.test.js`; guia `docs/INTEGRIDADE-MULTITENANT-LEDGER-EVENTOS.md`; correção da descrição de DELETE no README do caixa. Corrigida a expectativa de concorrência em `orders-state-machine.test.js`: com `SELECT FOR UPDATE`, CONFIRMED e depois PREPARING podem ambas ser transições válidas; a asserção verifica os dois resultados e estado final sem enfraquecer o outro teste de transições idênticas.
+- Testes: 7 testes novos aprovados em PostgreSQL 18.6 local descartável; cinco preflights independentes, aplicação, rollback e reaplicação com dados sintéticos. A primeira suíte completa falhou em 1/337 no teste preexistente de transições diferentes, que assumia indevidamente um único sucesso. Após correção da expectativa, teste de estado: 11/11; suíte completa: 337/337, 0 falhas/skips/cancelamentos, guard aprovado, 224,42 s.
+- Limitações: eventos com `store_id` nulo e pagamento não nulo não são protegidos pela FK composta; ledger proíbe UPDATE mas permite DELETE e exclusões por cascata, e não garante retenção. Correspondência exata entre alvos da mesma loja e usuários não é protegida. Verificar versão de PostgreSQL, locks, preflights e política de retenção em homologação. Nada executado em produção.
+- Próximos passos: avaliar lacuna de eventos sem loja, coerência semântica dos vínculos e política de retenção/autorização para ledger; conferir CI remoto.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Revisão de coerência de vínculos da mesma loja
+
+- Objetivo: verificar validações de produto/adicional e pedido/sessão de pagamento além das FKs por loja.
+- Mudanças: `test/isolation/same-store-target-coherence.test.js` cobre rejeição de adicionais de outro produto da mesma loja em pedido/carrinho, atomicidade e versão do carrinho, adicional válido e pagamento com pedido/sessão incompatíveis ou compatíveis; `docs/COERENCIA-ALVOS-MESMA-LOJA.md` documenta consultas de investigação e achado financeiro. Nenhuma migration ou regra financeira alterada.
+- Testes: PostgreSQL 18.6 local descartável; 5 testes novos aprovados; suíte completa 342/342, 0 falhas/skips/cancelamentos, guard aprovado, 224,32 s. Experimento sintético isolado reproduziu pedido de R$ 10 e comanda de R$ 30 aceitando pagamento PENDING de R$ 25 com ambos os IDs; não houve gateway real nem produção. `git diff --check` aprovado.
+- Limitações: validações verificadas nos repositórios não são garantia de banco ou de todos os fluxos/concorrência. O comportamento financeiro ao misturar alvos é ambíguo; não se afirma cobrança real ou dano. Faltam decisão do contrato de cobrança, investigação de pagamentos mistos e testes de confirmação, resumo, estorno e concorrência.
+- Próximos passos: definir se alvos são exclusivos, se um tem prioridade ou se haverá rateio; revisar compatibilidade antes de modificar os cálculos e os consumidores.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Alvo único de pagamento e risco de pagamentos mistos
+
+- Objetivo: eliminar ambiguidade de pedido e sessão enviados na mesma operação, optando por um único alvo explícito e registrando limitações financeiras.
+- Mudanças: `payments.repository.js` rejeita ambos alvos em criação, split e `amountDue`; erro `PAYMENT_TARGET_AMBIGUOUS` mapeado para 400. Atualizadas as coberturas HTTP/repositório/isolamento e documentados breaking change, replay histórico e riscos em README e `docs/COERENCIA-ALVOS-MESMA-LOJA.md`. Sem migration, sem alteração em pagamentos existentes.
+- Testes: focados 55/55; suíte inicial 345/347 por duas expectativas antigas de código HTTP; ajustados testes para a rejeição uniforme, mantendo verificação de não divulgação e leitura de registros legados. Nova suíte 347/347, sem falhas/skips/cancelamentos, guard aprovado, PostgreSQL 18.6 descartável. `git diff --check` aprovado.
+- **Risco aberto, bloquear implantação:** experimento sintético reproduziu sessão de R$ 10 com pagamento PAID `OTHER` por sessão; resumo da sessão R$ 0, resumo por pedido R$ 10, novo pagamento PENDING de R$ 10 por pedido aceito. Exclusividade dos IDs por operação não resolve sobreposição entre operações. Analisar confirmação/webhook, pendentes, estornos, concorrência e reconciliação. Sem gateway real nem evidência de dano em produção.
+- Compatibilidade: pedidos e resumos com ambos os alvos passam a falhar inclusive replay de pagamento histórico; conciliar original antes de nova tentativa. Testar clientes em homologação e planejar rollout.
+- Próximos passos: corrigir de forma abrangente o risco de pagamento misto antes de implantar; validar CI remoto. Nenhum deploy ou merge.
+
+## 2026-11-07 — Mitigação parcial para pagamentos mistos
+
+- Objetivo: impedir novas cobranças e resumos ambíguos quando há pagamento PENDING/PAID em escopos diferentes da mesma comanda, sem ratear ou alterar histórico.
+- Mudanças: `payments.repository.js` verifica conflitos, serializa criações por pedido/comanda na sessão de mesa e confere associação após locks; `PAYMENT_SCOPE_CONFLICT` e `PAYMENT_TARGET_CHANGED` mapeados para 409. Testes novos em `test/isolation/payment-scope-conflict.test.js`, testes HTTP de caixa e ajuste de fixture; README e `docs/COERENCIA-ALVOS-MESMA-LOJA.md` registram restrições operacionais e lacunas. Sem migration.
+- Testes: focados em repositórios/webhook/carrinho/HTTP 49 aprovados e HTTP/concorrência 19 aprovados; suíte completa 354/354, 0 falhas/skips/cancelamentos, guard aprovado, 224,90 s, PostgreSQL 18.6 local descartável. Cinco corridas concorrentes por teste deixaram só uma criação. `git diff --check` aprovado.
+- **Bloqueio de implantação mantido:** experimento sintético adicional confirmou que pedido de R$ 10 aceita dois PENDING de R$ 10 e ambas confirmações manuais como PAID, total R$ 20; não houve gateway real. A proteção não cobre confirmações/webhooks legados, SQL direto nem todas as concorrências. Não alegar solução completa de sobrepagamento.
+- Compatibilidade: alternar entre pagamento por pedido e comanda é bloqueado por PENDING/PAID; pendentes não devem ser apagados para liberar a operação. Resumos e replays históricos podem retornar 409; planejar reconciliação com provedor e atualização de clientes antes de rollout.
+- Próximos passos: modelar reservas, confirmação e evidência externa/reprocessamento, idempotência, estornos e legado; testar concorrência ponta a ponta. Nenhum deploy ou merge.
+
+## 2026-11-07 — Reserva parcial de valores pendentes
+
+- Objetivo: impedir que novas criações pela aplicação reservem, em conjunto, mais que o valor não pago do mesmo alvo.
+- Mudanças: `amountDue` expõe `availableToInitiate` (total menos pagos e pendentes em centavos), sem descontar pendentes de `due`; criação individual e split usam esse limite sob os locks existentes. Testes de reserva, replay, parciais, centavos, concorrência, confirmação e legado em `test/isolation/payment-pending-reservation.test.js`; testes HTTP de delivery e pagamento público atualizados com fixtures independentes. README e docs atualizados; nenhuma migration.
+- Testes: focados 84/84 e testes de reserva/escopo 12/12; suíte completa 360/360, 0 falhas/skips/cancelamentos, guard aprovado, 226,50 s no PostgreSQL 18.6 descartável. A primeira execução focada teve 2 falhas por fixtures compartilhadas que dependiam de criar pagamentos após reservar o valor integral; substituídas por pedidos independentes, preservando cobertura. `git diff --check` aprovado.
+- **Bloqueio de implantação mantido:** reserva pode ser usada para bloquear cobrança, não expira automaticamente e não há cancelamento/reconciliação universal segura. Pendentes legados excessivos ainda podem ser confirmados; webhook, mudança de valor/cancelamento, races fora do protocolo de locks, SQL direto e dinheiro efetivamente recebido por provider não estão resolvidos. Nenhum teste real de gateway/produção.
+- Compatibilidade: `due` não é o valor disponível para nova tentativa; `availableToInitiate` agora é o limite. Não liberar automaticamente PENDING ou reenviar cobrança sem conciliação externa.
+- Próximos passos: desenhar proteção contra abuso, fluxo de conciliação e tratamento de confirmações e webhooks de dados legados; testar ponta a ponta. Nenhum deploy ou merge.

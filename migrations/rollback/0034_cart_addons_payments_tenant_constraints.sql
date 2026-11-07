@@ -1,0 +1,13 @@
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS fk_payments_cash_store;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS fk_payments_session_store;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS fk_payments_order_store;
+ALTER TABLE cart_item_addons DROP CONSTRAINT IF EXISTS fk_cart_addons_addon_store;
+ALTER TABLE cart_item_addons DROP CONSTRAINT IF EXISTS fk_cart_addons_item_store;
+ALTER TABLE cart_items DROP CONSTRAINT IF EXISTS fk_cart_items_product_store;
+ALTER TABLE cart_items DROP CONSTRAINT IF EXISTS fk_cart_items_session_store;
+ALTER TABLE order_item_addons DROP CONSTRAINT IF EXISTS fk_order_addons_addon_store;
+ALTER TABLE order_item_addons DROP CONSTRAINT IF EXISTS fk_order_addons_item_store;
+ALTER TABLE cash_sessions DROP CONSTRAINT IF EXISTS uq_cash_sessions_store_id;
+ALTER TABLE cart_items DROP CONSTRAINT IF EXISTS uq_cart_items_store_id;
+ALTER TABLE product_addons DROP CONSTRAINT IF EXISTS uq_product_addons_store_id;
+ALTER TABLE order_items DROP CONSTRAINT IF EXISTS uq_order_items_store_id;

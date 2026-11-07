@@ -31,6 +31,17 @@ export class PaymentError extends Error {
   }
 }
 
+// Cada cobrança ou resumo usa um único alvo. Não escolher implicitamente entre
+// pedido e comanda: o total e a atribuição contábil seriam ambíguos.
+function assertSingleTarget({ orderId, sessionId }) {
+  if (!orderId && !sessionId) {
+    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
+  }
+  if (orderId && sessionId) {
+    throw new PaymentError('PAYMENT_TARGET_AMBIGUOUS', 'Informe apenas orderId ou sessionId, não ambos.');
+  }
+}
+
 export async function findPaymentById(storeId, paymentId) {
   const { rows } = await query(`SELECT * FROM payments WHERE id = $1 AND store_id = $2`, [paymentId, storeId]);
   return rows[0] ? mapPayment(rows[0]) : null;
@@ -84,13 +95,12 @@ export async function listPayments(storeId, { sessionId = null, orderId = null, 
  *   - ignora pedidos CANCELLED
  *   - desconta pagamentos já PAID
  *   - soma frete delivery quando alvo é orderId (delivery_orders.delivery_fee)
- * PENDING não desconta (anti-DoS financeiro).
+ * PENDING não abate due, mas reserva saldo para criação de novas cobranças.
  */
 export async function amountDue(storeId, { orderId = null, sessionId = null } = {}, { client = null } = {}) {
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
   const runner = client ? client.query.bind(client) : query;
+  await assertCompatiblePaymentScope(runner, storeId, { orderId, sessionId });
   const { rows } = await runner(
     `WITH items AS (
        SELECT COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity), 0) AS items_total
@@ -147,6 +157,7 @@ export async function amountDue(storeId, { orderId = null, sessionId = null } = 
     paidTotal,
     pendingTotal,
     due: round2(Math.max(0, itemsTotal + deliveryFee - paidTotal)),
+    availableToInitiate: Math.max(0, toCents(itemsTotal) + toCents(deliveryFee) - toCents(paidTotal) - toCents(pendingTotal)) / 100,
   };
 }
 
@@ -253,12 +264,47 @@ function assertPaymentReplay(existing, { orderId, sessionId, method, amount }) {
   }
 }
 
+// Serializa criação por pedido e por comanda no mesmo lock da sessão de mesa.
+// A leitura inicial não tranca; a associação é conferida novamente após os locks.
 async function lockPaymentTarget(client, storeId, { orderId = null, sessionId = null }) {
+  let orderSessionId = null;
   if (orderId) {
-    await client.query(`SELECT id FROM orders WHERE id = $1 AND store_id = $2 FOR UPDATE`, [orderId, storeId]);
+    const { rows } = await client.query('SELECT table_session_id FROM orders WHERE id=$1 AND store_id=$2', [orderId, storeId]);
+    orderSessionId = rows[0]?.table_session_id ?? null;
   }
-  if (sessionId) {
-    await client.query(`SELECT id FROM table_sessions WHERE id = $1 AND store_id = $2 FOR UPDATE`, [sessionId, storeId]);
+  const tableSessionId = sessionId || orderSessionId;
+  if (tableSessionId) {
+    await client.query('SELECT id FROM table_sessions WHERE id=$1 AND store_id=$2 FOR UPDATE', [tableSessionId, storeId]);
+  }
+  if (orderId) {
+    const { rows } = await client.query('SELECT table_session_id FROM orders WHERE id=$1 AND store_id=$2 FOR UPDATE', [orderId, storeId]);
+    if (rows[0] && rows[0].table_session_id !== orderSessionId) {
+      throw new PaymentError('PAYMENT_TARGET_CHANGED', 'O alvo mudou durante a operação. Recarregue e tente novamente.');
+    }
+  }
+}
+
+// Sem rateio não há como atribuir um pagamento de comanda a pedidos individuais.
+// PENDING também bloqueia mistura: pode ser confirmado mais tarde por webhook.
+async function assertCompatiblePaymentScope(runner, storeId, { orderId, sessionId }) {
+  let conflict;
+  if (orderId) {
+    ({ rows: conflict } = await runner(
+      `SELECT 1 FROM orders o JOIN payments p
+         ON p.store_id=o.store_id AND (p.session_id=o.table_session_id OR (p.order_id=o.id AND p.session_id IS NOT NULL))
+       WHERE o.store_id=$1 AND o.id=$2 AND p.status IN ('PENDING','PAID') LIMIT 1`,
+      [storeId, orderId]
+    ));
+  } else {
+    ({ rows: conflict } = await runner(
+      `SELECT 1 FROM payments p JOIN orders o
+         ON o.id=p.order_id AND o.store_id=p.store_id
+       WHERE p.store_id=$1 AND (o.table_session_id=$2 OR p.session_id=$2) AND p.status IN ('PENDING','PAID') LIMIT 1`,
+      [storeId, sessionId]
+    ));
+  }
+  if (conflict.length) {
+    throw new PaymentError('PAYMENT_SCOPE_CONFLICT', 'Há pagamento pendente ou pago no outro escopo. Concilie antes de continuar.');
   }
 }
 
@@ -274,9 +320,7 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
     metadata = {},
   } = input;
 
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
   if (!amount || Number(amount) <= 0) {
     throw new PaymentError('INVALID_AMOUNT', 'Valor inválido.');
   }
@@ -314,9 +358,10 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
       await assertPaymentTarget(storeId, { orderId, sessionId }, { client });
 
       const due = await amountDue(storeId, { orderId, sessionId }, { client });
-      if (Number(amount) > due.due + AMOUNT_TOLERANCE) {
-        throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Valor acima do total devido (R$ ${due.due.toFixed(2)}).`, {
+      if (toCents(amount) > toCents(due.availableToInitiate)) {
+        throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Valor acima do disponível para nova cobrança (R$ ${due.availableToInitiate.toFixed(2)}).`, {
           due: due.due,
+          availableToInitiate: due.availableToInitiate,
           requested: round2(amount),
         });
       }
@@ -575,9 +620,7 @@ export async function createSplitPayments(storeId, { orderId = null, sessionId =
   if (items.length > 8) {
     throw new PaymentError('SPLIT_TOO_MANY', 'Máximo de 8 métodos por pagamento.');
   }
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
 
   const normalized = items.map((item, index) => {
     const method = String(item?.method || '').toUpperCase();
@@ -641,9 +684,10 @@ export async function createSplitPayments(storeId, { orderId = null, sessionId =
 
     const before = await amountDue(storeId, { orderId, sessionId }, { client });
     const requestedTotal = sumMoney(normalized.map((item) => item.amount));
-    if (requestedTotal > before.due + AMOUNT_TOLERANCE) {
-      throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Soma dos pagamentos (R$ ${requestedTotal.toFixed(2)}) acima do devido (R$ ${before.due.toFixed(2)}).`, {
+    if (toCents(requestedTotal) > toCents(before.availableToInitiate)) {
+      throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Soma dos pagamentos (R$ ${requestedTotal.toFixed(2)}) acima do disponível (R$ ${before.availableToInitiate.toFixed(2)}).`, {
         due: before.due,
+        availableToInitiate: before.availableToInitiate,
         requested: requestedTotal,
       });
     }

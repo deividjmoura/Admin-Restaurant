@@ -1,0 +1,21 @@
+> Registro histórico da auditoria local; resultados e status descrevem o momento da análise, não necessariamente o estado atual. Versão da main preservada no arquivo original.
+
+# Plano pós-auditoria — sujeito a autorização
+
+Nada abaixo foi implementado nesta etapa. Todos os testes usam infraestrutura descartável, nunca produção. Dependências e tarefas em comum devem ter dono único para evitar edições concorrentes nas mesmas rotas/migrations.
+
+| ID/prioridade | Evidência e impacto | Escopo e dependências | Aceite e testes | Risco de regressão |
+|---|---|---|---|---|
+| P0-01 | MT-01 webhook billing aceita provider sem segredo e `storeId` arbitrário; assinatura de outra loja pode mudar | Bloquear desconhecido/sem segredo; autenticar e resolver assinatura do lado servidor, idempotência; coordenar migrations com P1-02 | Sem segredo/assinatura/loja divergente/replay: nenhum efeito; eventos legítimos A/B funcionam; teste de isolamento e contrato | Provedor existente pode parar; compatibilidade e rotação de segredo |
+| P1-01 | CI main falha; PR #159 enfraquece teste; banco não disponível aqui | Reproduzir CI em Postgres descartável, preservar teste completo, determinar causa antes de corrigir | suíte completa com zero falhas/cancelados/skips e guard de contagem; frontend build | Mudanças em fixtures podem mascarar isolamento |
+| P1-02 | MT-02: FKs simples não garantem mesmo tenant | Inventário de writes/joins, dados inválidos e plano de constraints; depois de P0-01 | Casos cruzados e concorrentes negados; migrations em DB limpo e existente | Bloqueio de dados legados e locks |
+| P1-03 | MT-03 fallback Redis e possível duplicação SSE | Escolher topologia e cliente Redis; idempotência/reconexão; depende de infra local reproduzível | 2 processos, falha/recuperação, cache e eventos A/B sem perda silenciosa/duplicação | Comportamento de cache, eventos e reconnect |
+| P1-04 | MT-04 advisories npm | Atualizar/testar lockfiles e possível major Zod, avaliar exposição | audit reavaliado e suíte/contratos sem regressões | Validação de entrada e build |
+| P1-05 | MT-06 mocks e jobs desconhecidos completados; backup sem restore demonstrado | Implementar apenas adapters aprovados, sem falso sucesso; runbook backup e restore; depende de infraestrutura isolada | retry/crash/requeue/idempotência externa e restauração testados; alertas | Eventos duplicados e interrupção de impressão |
+| P1-06 | Vercel rewrite SPA não prova proxy API; deploy não verificado | Inventário com acesso autorizado; matriz local e segundo provedor; preservar vercel.json | smoke host/cookies/CORS/API/SSE/migrations/health e restore; não exigir Vercel | DNS, login e sessão |
+| P2-01 | Matriz CLI/PRD/GAR/CX incompleta | Definir paridade com acesso read-only ao semi-final e escopo; depende P0/P1 | E2E de QR → carrinho → produção → entrega → pagamento → fechamento, com 2 lojas | Pedidos e valores históricos |
+| P2-02 | REL-09 usa timezone global; estoque/CSV/CRM com lacunas | Corrigir por loja e priorizar apenas requisitos aceitos; dependem de isolamento | Fronteiras de tempo, privacidade, CSV reversível e testes A/B | Agregações existentes e dados pessoais |
+| P2-03 | billing mock e integrações fiscais/PIX real não comprovadas | Definir produto/provider e contratos após P0-01 | Webhook autenticado, replay e reconciliação em sandbox | Cobrança, duplicação, compatibilidade |
+| P3-01 | PWA offline/UX e métricas de produção sem paridade demonstrada | Priorizar após fluxo online estável; separar fila por loja/dispositivo | offline, conflitos, reenvio idempotente e aparelho físico | Duplicação de pedidos |
+
+Frentes paralelas após autorização: segurança billing; reprodução CI/infra isolada; investigação deploy/backup; inventário funcional read-only. Coordenar toda alteração em `migrations/`, `src/app.js`, manifests e fixtures por responsável único. Resolver P0 antes de tratar billing como funcional em ambiente exposto. Não fechar issues nem mesclar PR sem revisão própria e autorização.
