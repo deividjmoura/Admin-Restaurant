@@ -80,3 +80,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: sem acesso ou alteração em produção; planejar preflight, backup, locks e homologação. A migration cobre vínculo item/pedido e item/produto, não adicionais de item, carrinho ou pagamentos. Nenhum status financeiro é alterado.
 - Próximos passos: revisar integridade de adicionais de item, carrinhos e pagamentos, inclusive comportamento de exclusão `SET NULL`, e validar CI remoto do PR.
 - Publicação/deploy: alteração preparada para atualizar PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento de adicionais, carrinhos e pagamentos
+
+- Objetivo: proteger relações entre lojas em adicionais de pedido, carrinho e alvos de pagamento, preservando exclusões e dados financeiros históricos.
+- Mudanças: `migrations/0034_cart_addons_payments_tenant_constraints.sql` e rollback em `migrations/rollback/0034_cart_addons_payments_tenant_constraints.sql`; `test/isolation/cart-addons-payments-tenant.test.js`; `docs/INTEGRIDADE-MULTITENANT-CARRINHO-PAGAMENTOS.md` com nove preflights, riscos e reversão.
+- Testes: PostgreSQL 18.6 descartável; `node --test test/isolation/cart-addons-payments-tenant.test.js`: 8 aprovados sem falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 330 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 223,33 s. Experimento local com dados legados sintéticos testou cada um dos nove preflights separadamente e aplicação, rollback e reaplicação. Testes verificam snapshot ao apagar adicional, exclusão em cascata no carrinho, `SET NULL` preservando pagamento/loja/valor e bloqueio preexistente de pagamento sem alvo. `git diff --check` passou.
+- Limitações: nenhuma consulta ou alteração em produção; validar backup, preflight e locks em homologação. As FKs cobrem loja, não a correspondência exata adicional/produto nem pedido/sessão; ledger/eventos e outras relações não estão cobertos. Compatibilidade de exclusão verificada em PG18, não em todas as versões suportadas.
+- Próximos passos: revisar correspondência entre recursos da mesma loja, ledger de caixa, eventos e regras de retenção; validar CI remoto do PR.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
