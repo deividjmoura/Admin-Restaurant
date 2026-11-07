@@ -13,6 +13,19 @@
 - Body do webhook **não é confiável** (storeId/paymentId ignorados); resolução por
   `(provider, provider_payment_id)`
 
+## Alvo do pagamento
+
+Novas solicitações e resumos devem informar **apenas um** alvo: `orderId` ou
+`sessionId`; ambos retornam `PAYMENT_TARGET_AMBIGUOUS` (400). Isso inclui
+retentativas de solicitações antigas com ambos: consultar e reconciliar o
+pagamento original antes de qualquer nova tentativa. Não altera dados históricos.
+A listagem pode filtrar pelos dois IDs.
+
+**Risco aberto:** pagamento por sessão seguido de pagamento por pedido pode
+sobrepor valores, pois o resumo por pedido não rateia o pagamento da sessão.
+Não implantar até revisão e testes de conciliação e concorrência. Detalhes em
+`docs/COERENCIA-ALVOS-MESMA-LOJA.md`.
+
 ## Tabelas
 
 - `payments` — PENDING → PAID / FAILED / CANCELLED / REFUNDED

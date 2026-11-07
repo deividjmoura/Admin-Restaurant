@@ -107,3 +107,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: validações verificadas nos repositórios não são garantia de banco ou de todos os fluxos/concorrência. O comportamento financeiro ao misturar alvos é ambíguo; não se afirma cobrança real ou dano. Faltam decisão do contrato de cobrança, investigação de pagamentos mistos e testes de confirmação, resumo, estorno e concorrência.
 - Próximos passos: definir se alvos são exclusivos, se um tem prioridade ou se haverá rateio; revisar compatibilidade antes de modificar os cálculos e os consumidores.
 - Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Alvo único de pagamento e risco de pagamentos mistos
+
+- Objetivo: eliminar ambiguidade de pedido e sessão enviados na mesma operação, optando por um único alvo explícito e registrando limitações financeiras.
+- Mudanças: `payments.repository.js` rejeita ambos alvos em criação, split e `amountDue`; erro `PAYMENT_TARGET_AMBIGUOUS` mapeado para 400. Atualizadas as coberturas HTTP/repositório/isolamento e documentados breaking change, replay histórico e riscos em README e `docs/COERENCIA-ALVOS-MESMA-LOJA.md`. Sem migration, sem alteração em pagamentos existentes.
+- Testes: focados 55/55; suíte inicial 345/347 por duas expectativas antigas de código HTTP; ajustados testes para a rejeição uniforme, mantendo verificação de não divulgação e leitura de registros legados. Nova suíte 347/347, sem falhas/skips/cancelamentos, guard aprovado, PostgreSQL 18.6 descartável. `git diff --check` aprovado.
+- **Risco aberto, bloquear implantação:** experimento sintético reproduziu sessão de R$ 10 com pagamento PAID `OTHER` por sessão; resumo da sessão R$ 0, resumo por pedido R$ 10, novo pagamento PENDING de R$ 10 por pedido aceito. Exclusividade dos IDs por operação não resolve sobreposição entre operações. Analisar confirmação/webhook, pendentes, estornos, concorrência e reconciliação. Sem gateway real nem evidência de dano em produção.
+- Compatibilidade: pedidos e resumos com ambos os alvos passam a falhar inclusive replay de pagamento histórico; conciliar original antes de nova tentativa. Testar clientes em homologação e planejar rollout.
+- Próximos passos: corrigir de forma abrangente o risco de pagamento misto antes de implantar; validar CI remoto. Nenhum deploy ou merge.

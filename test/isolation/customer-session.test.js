@@ -501,13 +501,16 @@ describe('customer session authorization', { skip: !hasDatabase() }, () => {
     for (const patch of [
       { amount: 3 },
       { method: 'PIX' },
-      { sessionId: first.session.id },
     ])
       assert.equal(
         (await send('POST', '/api/payments', first, { ...body, ...patch }))
           .statusCode,
         409
       );
+    const ambiguous = await send('POST', '/api/payments', first, { ...body, sessionId: first.session.id });
+    assert.equal(ambiguous.statusCode, 400, ambiguous.body);
+    assert.equal(ambiguous.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    assert.equal(ambiguous.json().payment, undefined);
   });
   it('simultaneous cross-session payment keys cannot leak either payment on conflict', async () => {
     const key = randomUUID();
@@ -527,21 +530,16 @@ describe('customer session authorization', { skip: !hasDatabase() }, () => {
       undefined
     );
   });
-  it('both payment targets must belong to the same authorized table; malformed legacy rows stay hidden', async () => {
+  it('rejects both targets without disclosing other tables; malformed legacy rows stay hidden', async () => {
     for (const body of [
       { orderId: order1.id, sessionId: second.session.id },
       { orderId: order2.id, sessionId: first.session.id },
-    ])
-      assert.equal(
-        (
-          await send('POST', '/api/payments', first, {
-            ...body,
-            amount: 1,
-            method: 'CASH',
-          })
-        ).statusCode,
-        404
-      );
+    ]) {
+      const res = await send('POST', '/api/payments', first, { ...body, amount: 1, method: 'CASH' });
+      assert.equal(res.statusCode, 400, res.body);
+      assert.equal(res.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+      assert.equal(res.json().payment, undefined);
+    }
     const mixed = (
       await query(
         `INSERT INTO payments(store_id,order_id,session_id,amount,method,status)

@@ -150,6 +150,21 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
     assert.equal(summary.storeId, storeA.id);
   });
 
+  it('caixa rejeita pagamento combinado e resumo com dois alvos', async (t) => {
+    if (skipWithoutDb(t)) return;
+    const { order, tableSession } = await makeOrder();
+    const { query } = await import('../../src/infrastructure/db.js');
+    const before = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    const res = await app.inject({ method: 'POST', url: `/api/cash/sessions/${cashSessionId}/payments`, headers: hdr(ownerA.cookie), payload: { orderId: order.id, sessionId: tableSession.id, items: [{ method: 'OTHER', amount: 1 }] } });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.equal(res.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    const summary = await app.inject({ method: 'GET', url: `/api/cash/checkout-summary?orderId=${order.id}&sessionId=${tableSession.id}`, headers: hdr(ownerA.cookie) });
+    assert.equal(summary.statusCode, 400, summary.body);
+    assert.equal(summary.json().error.code, 'PAYMENT_TARGET_AMBIGUOUS');
+    const after = await query('SELECT count(*)::int AS n FROM payments WHERE store_id=$1', [storeA.id]);
+    assert.equal(after.rows[0].n, before.rows[0].n);
+  });
+
   it('pagamento combinado: dinheiro (com troco) + PIX numa única operação', async (t) => {
     if (skipWithoutDb(t)) return;
 

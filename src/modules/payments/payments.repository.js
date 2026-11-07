@@ -31,6 +31,17 @@ export class PaymentError extends Error {
   }
 }
 
+// Cada cobrança ou resumo usa um único alvo. Não escolher implicitamente entre
+// pedido e comanda: o total e a atribuição contábil seriam ambíguos.
+function assertSingleTarget({ orderId, sessionId }) {
+  if (!orderId && !sessionId) {
+    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
+  }
+  if (orderId && sessionId) {
+    throw new PaymentError('PAYMENT_TARGET_AMBIGUOUS', 'Informe apenas orderId ou sessionId, não ambos.');
+  }
+}
+
 export async function findPaymentById(storeId, paymentId) {
   const { rows } = await query(`SELECT * FROM payments WHERE id = $1 AND store_id = $2`, [paymentId, storeId]);
   return rows[0] ? mapPayment(rows[0]) : null;
@@ -87,9 +98,7 @@ export async function listPayments(storeId, { sessionId = null, orderId = null, 
  * PENDING não desconta (anti-DoS financeiro).
  */
 export async function amountDue(storeId, { orderId = null, sessionId = null } = {}, { client = null } = {}) {
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
   const runner = client ? client.query.bind(client) : query;
   const { rows } = await runner(
     `WITH items AS (
@@ -274,9 +283,7 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
     metadata = {},
   } = input;
 
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
   if (!amount || Number(amount) <= 0) {
     throw new PaymentError('INVALID_AMOUNT', 'Valor inválido.');
   }
@@ -575,9 +582,7 @@ export async function createSplitPayments(storeId, { orderId = null, sessionId =
   if (items.length > 8) {
     throw new PaymentError('SPLIT_TOO_MANY', 'Máximo de 8 métodos por pagamento.');
   }
-  if (!orderId && !sessionId) {
-    throw new PaymentError('TARGET_REQUIRED', 'Informe orderId ou sessionId.');
-  }
+  assertSingleTarget({ orderId, sessionId });
 
   const normalized = items.map((item, index) => {
     const method = String(item?.method || '').toUpperCase();

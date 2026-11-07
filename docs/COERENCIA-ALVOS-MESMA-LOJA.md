@@ -5,7 +5,7 @@ Revisão local sobre a branch de auditoria, 2026-11-07. Os testes
 repositórios de pedido e carrinho rejeitam adicional de outro produto da mesma
 loja sem gravar pedido/item ou avançar a versão do carrinho, aceitam adicional
 válido, e que o repositório de pagamentos rejeita pedido e sessão diferentes,
-mas aceita pedido e sua própria sessão. São testes dos caminhos de aplicação,
+e que a nova regra rejeita ambos os alvos, mesmo quando correspondem. São testes dos caminhos de aplicação,
 não prova de integridade para SQL direto nem para todos os fluxos.
 
 ## Consultas para investigação de dados legados
@@ -38,8 +38,9 @@ contextual; não presumir que histórico deve ser editado ou descartado.
 
 ## Achado: semântica ambígua ao informar os dois alvos
 
-`amountDue` usa a união dos itens do pedido e da sessão quando ambos são
-informados. O pagamento resultante registra os dois IDs. Experimento em banco
+Antes da proteção descrita abaixo, `amountDue` usava a união dos itens do pedido
+e da sessão quando ambos eram informados e o pagamento registrava os dois IDs.
+Experimento anterior em banco
 PostgreSQL descartável, sem gateway real: sessão com pedido A de R$ 10 e pedido B
 de R$ 20; `amountDue` de A retorna R$ 10, com A e sessão retorna R$ 30; a criação
 de pagamento `OTHER`, **PENDING**, de R$ 25 com ambos os IDs foi aceita e
@@ -48,9 +49,27 @@ mas é ambíguo e pode apresentar o pagamento como associado a um único pedido 
 valor inferior; efeitos de confirmação, resumos, estornos, concorrência e mistura
 de pagamentos por pedido e sessão exigem análise antes de definir correção.
 
-Ainda não há decisão sobre exclusividade dos alvos, prioridade de um alvo ou
-rateio; mudar apenas uma consulta poderia causar inconsistências financeiras.
-Nenhuma semântica financeira foi alterada nesta revisão. Não se afirma que houve
-pagamento real, cobrança em produção ou perda financeira. Recomendação: acordar
-o contrato funcional, reproduzir combinações e concorrência e corrigir criação,
-split, leitura, idempotência e resumos em conjunto, com plano de compatibilidade.
+## Mitigação aplicada e risco remanescente
+
+Após decisão de usar um único alvo, a aplicação rejeita ambos os IDs com
+`PAYMENT_TARGET_AMBIGUOUS` em criação, pagamento combinado e resumo. É mudança
+incompatível: clientes devem enviar somente `orderId` ou `sessionId`. Retentativas
+com ambos os IDs, **inclusive de pagamentos históricos**, passam a falhar; não
+reenviar com novos parâmetros/chave sem reconciliar o pagamento original. Dados
+históricos permanecem inalterados. Isso é validação da aplicação, não constraint
+SQL; `GET /api/payments` continua aceitando ambos como filtros de listagem.
+
+**Risco financeiro ainda aberto — bloquear implantação até revisar.** Em um
+experimento posterior no PostgreSQL descartável, pedido único de R$ 10 foi pago
+por sessão usando split `OTHER` com status PAID. O resumo da sessão ficou R$ 0,
+mas `amountDue` por pedido permaneceu R$ 10 e aceitou novo pagamento PENDING de
+R$ 10 para o pedido. Não houve gateway real ou cobrança em produção. A regra de
+alvo único não impede essa sobreposição entre solicitações distintas. Pagamentos
+pendentes também não são descontados por desenho; confirmação de pendentes e
+webhooks, concorrência, pagamentos históricos, estornos e rateio exigem análise
+integral antes de se considerar o problema resolvido. Não contornar o risco com
+uma alteração isolada de query nem presumir que a suíte verde o elimina.
+
+Antes de qualquer implantação, combinar contrato para pagamentos mistos,
+reconciliação e migração de clientes/retentativas, e validar em homologação com
+backup. Não se afirma pagamento real, cobrança em produção ou perda financeira.
