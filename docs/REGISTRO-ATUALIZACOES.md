@@ -98,3 +98,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: eventos com `store_id` nulo e pagamento não nulo não são protegidos pela FK composta; ledger proíbe UPDATE mas permite DELETE e exclusões por cascata, e não garante retenção. Correspondência exata entre alvos da mesma loja e usuários não é protegida. Verificar versão de PostgreSQL, locks, preflights e política de retenção em homologação. Nada executado em produção.
 - Próximos passos: avaliar lacuna de eventos sem loja, coerência semântica dos vínculos e política de retenção/autorização para ledger; conferir CI remoto.
 - Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Revisão de coerência de vínculos da mesma loja
+
+- Objetivo: verificar validações de produto/adicional e pedido/sessão de pagamento além das FKs por loja.
+- Mudanças: `test/isolation/same-store-target-coherence.test.js` cobre rejeição de adicionais de outro produto da mesma loja em pedido/carrinho, atomicidade e versão do carrinho, adicional válido e pagamento com pedido/sessão incompatíveis ou compatíveis; `docs/COERENCIA-ALVOS-MESMA-LOJA.md` documenta consultas de investigação e achado financeiro. Nenhuma migration ou regra financeira alterada.
+- Testes: PostgreSQL 18.6 local descartável; 5 testes novos aprovados; suíte completa 342/342, 0 falhas/skips/cancelamentos, guard aprovado, 224,32 s. Experimento sintético isolado reproduziu pedido de R$ 10 e comanda de R$ 30 aceitando pagamento PENDING de R$ 25 com ambos os IDs; não houve gateway real nem produção. `git diff --check` aprovado.
+- Limitações: validações verificadas nos repositórios não são garantia de banco ou de todos os fluxos/concorrência. O comportamento financeiro ao misturar alvos é ambíguo; não se afirma cobrança real ou dano. Faltam decisão do contrato de cobrança, investigação de pagamentos mistos e testes de confirmação, resumo, estorno e concorrência.
+- Próximos passos: definir se alvos são exclusivos, se um tem prioridade ou se haverá rateio; revisar compatibilidade antes de modificar os cálculos e os consumidores.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
