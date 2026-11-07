@@ -1,19 +1,92 @@
-# Plano pós-auditoria — sujeito a autorização
+# Plano de execução após auditoria — Admin-Restaurant
 
-Nada abaixo foi implementado nesta etapa. Todos os testes usam infraestrutura descartável, nunca produção. Dependências e tarefas em comum devem ter dono único para evitar edições concorrentes nas mesmas rotas/migrations.
+Este plano é derivado da inspeção estática de 07/11/2026. Nenhuma tarefa abaixo foi implementada nesta etapa. Revalidar contra a main antes de iniciar cada frente.
 
-| ID/prioridade | Evidência e impacto | Escopo e dependências | Aceite e testes | Risco de regressão |
-|---|---|---|---|---|
-| P0-01 | MT-01 webhook billing aceita provider sem segredo e `storeId` arbitrário; assinatura de outra loja pode mudar | Bloquear desconhecido/sem segredo; autenticar e resolver assinatura do lado servidor, idempotência; coordenar migrations com P1-02 | Sem segredo/assinatura/loja divergente/replay: nenhum efeito; eventos legítimos A/B funcionam; teste de isolamento e contrato | Provedor existente pode parar; compatibilidade e rotação de segredo |
-| P1-01 | CI main falha; PR #159 enfraquece teste; banco não disponível aqui | Reproduzir CI em Postgres descartável, preservar teste completo, determinar causa antes de corrigir | suíte completa com zero falhas/cancelados/skips e guard de contagem; frontend build | Mudanças em fixtures podem mascarar isolamento |
-| P1-02 | MT-02: FKs simples não garantem mesmo tenant | Inventário de writes/joins, dados inválidos e plano de constraints; depois de P0-01 | Casos cruzados e concorrentes negados; migrations em DB limpo e existente | Bloqueio de dados legados e locks |
-| P1-03 | MT-03 fallback Redis e possível duplicação SSE | Escolher topologia e cliente Redis; idempotência/reconexão; depende de infra local reproduzível | 2 processos, falha/recuperação, cache e eventos A/B sem perda silenciosa/duplicação | Comportamento de cache, eventos e reconnect |
-| P1-04 | MT-04 advisories npm | Atualizar/testar lockfiles e possível major Zod, avaliar exposição | audit reavaliado e suíte/contratos sem regressões | Validação de entrada e build |
-| P1-05 | MT-06 mocks e jobs desconhecidos completados; backup sem restore demonstrado | Implementar apenas adapters aprovados, sem falso sucesso; runbook backup e restore; depende de infraestrutura isolada | retry/crash/requeue/idempotência externa e restauração testados; alertas | Eventos duplicados e interrupção de impressão |
-| P1-06 | Vercel rewrite SPA não prova proxy API; deploy não verificado | Inventário com acesso autorizado; matriz local e segundo provedor; preservar vercel.json | smoke host/cookies/CORS/API/SSE/migrations/health e restore; não exigir Vercel | DNS, login e sessão |
-| P2-01 | Matriz CLI/PRD/GAR/CX incompleta | Definir paridade com acesso read-only ao semi-final e escopo; depende P0/P1 | E2E de QR → carrinho → produção → entrega → pagamento → fechamento, com 2 lojas | Pedidos e valores históricos |
-| P2-02 | REL-09 usa timezone global; estoque/CSV/CRM com lacunas | Corrigir por loja e priorizar apenas requisitos aceitos; dependem de isolamento | Fronteiras de tempo, privacidade, CSV reversível e testes A/B | Agregações existentes e dados pessoais |
-| P2-03 | billing mock e integrações fiscais/PIX real não comprovadas | Definir produto/provider e contratos após P0-01 | Webhook autenticado, replay e reconciliação em sandbox | Cobrança, duplicação, compatibilidade |
-| P3-01 | PWA offline/UX e métricas de produção sem paridade demonstrada | Priorizar após fluxo online estável; separar fila por loja/dispositivo | offline, conflitos, reenvio idempotente e aparelho físico | Duplicação de pedidos |
+## P0 — segurança e proteção contra regressão
 
-Frentes paralelas após autorização: segurança billing; reprodução CI/infra isolada; investigação deploy/backup; inventário funcional read-only. Coordenar toda alteração em `migrations/`, `src/app.js`, manifests e fixtures por responsável único. Resolver P0 antes de tratar billing como funcional em ambiente exposto. Não fechar issues nem mesclar PR sem revisão própria e autorização.
+### P0-01 — Preservar testes de sessão customer
+- Evidência: PR #159 remove 827 linhas líquidas/828 linhas do arquivo `test/isolation/customer-session.test.js`, deixando o arquivo com uma linha.
+- Ação: não mesclar PR #159 como está; restaurar e adaptar os testes para os hosts canônicos sem reduzir cenários.
+- Aceite: suite de customer session volta a cobrir origem real do QR, vínculo loja/mesa/sessão, expiração, revogação, replay, tentativa cross-tenant e operações proibidas.
+- Testes: customer-session + entry-contexts + http-isolation.
+
+### P0-02 — Completar revisão de isolamento cross-tenant
+- Evidência: issue #105 aberta e matriz de testes parcial.
+- Ação: inventariar cada repository/route, query, cache, evento, job, relatório e operação de plataforma.
+- Aceite: duas lojas A/B; testes negativos para leitura/escrita/exports/SSE/jobs/cache/customer token; FKs/joins confirmados.
+- Testes: todas as suítes de isolamento com banco real e fail=0/skipped=0.
+
+## P1 — confiabilidade, CI e runtime
+
+### P1-01 — Diagnosticar falha atual da CI
+- Evidência: run 42363761822 (main SHA auditada) com conclusion failure.
+- Ação: consultar logs/jobs no GitHub Actions; reproduzir em ambiente local idêntico; corrigir em PR isolada.
+- Aceite: backend integration suite e frontend build verdes, sem skipped inesperados; issue automática de falha agrupada/encerrada somente após confirmar que cada run antigo foi superseded.
+- Testes: `npm ci`, `npm run db:migrate`, `npm run db:seed`, `npm run test:suite`, `npm ci --prefix frontend`, `npm run build --prefix frontend`.
+
+### P1-02 — Redis/pub-sub multi-instância
+- Evidência: import dinâmico de redis/ioredis sem dependência declarada; fallback Map em memória.
+- Ação: declarar/instalar cliente como dependência opcional ou adapter documentado; garantir serviço local via compose quando necessário; readiness informa backend ativo.
+- Aceite: duas instâncias recebem eventos/invalidações sem vazamento entre tenants; restart não quebra estado compartilhado.
+- Testes: integration com broker e teste de fallback single-process.
+
+### P1-03 — Separar ciclo de vida do worker quando escalar
+- Evidência: `src/server.js` inicia worker no mesmo processo da API.
+- Ação: manter modo simples local; permitir comando/processo worker separado sem duplicar scheduler/claim.
+- Aceite: API e worker podem operar isolados com idempotência/locks; graceful shutdown validado.
+- Testes: worker integration, retries, lock timeout, duplicate claims.
+
+### P1-04 — Vercel frontend + backend persistente
+- Evidência: `frontend/vercel.json` é rewrite SPA; Fastify usa listener persistente e worker.
+- Ação: documentar e validar URLs/CORS/cookies/Host/proxy entre SPA Vercel e API, ou proxy same-origin quando aplicável.
+- Aceite: deploy frontend mantém navegação SPA e todas as rotas API/SSE apontam para backend correto; OAuth/cookies funcionam.
+- Testes: smoke hospedado e reconexão SSE.
+
+### P1-05 — backup e restore
+- Evidência: decisão de portabilidade exige backup/restore; não foi executado nesta auditoria.
+- Ação: validar runbook e drill em banco isolado.
+- Aceite: backup restaurado, migrations compatíveis, contagem/consistência verificadas.
+
+## P2 — paridade funcional do semi-final
+
+### P2-01 — Caixa completo
+- Evidência: issues #107–#110 ainda abertas na busca; escopos incluem sessão de operador, ledger, pagamento combinado/estorno e relatório.
+- Ação: verificar implementação atual antes de desenvolver; completar somente lacunas.
+- Aceite: pagamentos parciais/combinados, estorno rastreável, sessão de caixa, suprimento/sangria, conciliação e export.
+
+### P2-02 — Produção por item
+- Evidência: issue #114 aberta para estado agregado/produção parcial; semi-final tem ciclo detalhado por item.
+- Ação: comparar estados, cancelamento por item, histórico, fila independente cozinha/bar e aceitação/retirada/entrega.
+- Aceite: máquina de estados documentada/testada, pedido parcialmente pronto correto.
+
+### P2-03 — Estoque, receitas e CMV
+- Evidência: issues #119–#122 abertas; sem módulo stock/ingredients/recipes na árvore Admin observada.
+- Ação: definir modelo tenant-aware, unidades/conversões, ficha técnica versionada, ledger e CMV.
+- Aceite: saldo reconstruível, consumo por venda idempotente e relatórios com custo/origem.
+
+### P2-04 — Importação de cardápio e reversão
+- Evidência: semi-final possui importação/reversão; não evidenciado na árvore Admin.
+- Ação: preview, validação, importação transacional e rollback por loja.
+- Aceite: CSV inválido não altera catálogo; import pode ser revertido sem apagar alterações posteriores.
+
+### P2-05 — Dashboard e relatórios
+- Evidência: Admin tem dashboard/reports, mas a matriz classifica personalização e relatórios como parciais.
+- Ação: inventariar métricas, filtros, timezone, export e personalização.
+- Aceite: totais reconciliáveis com pedidos/pagamentos/entregas por tenant.
+
+### P2-06 — Lifecycle de equipe e garçom
+- Evidência: semi-final tem PWA, tokens, transferência e autoria; Admin tem RBAC/staff mas paridade precisa ser comprovada.
+- Ação: conferir perfis, garçom separado de staff, desligamento, rotação/revogação de tokens e OAuth.
+- Aceite: remoção/desativação revoga sessões/tokens e mantém auditoria.
+
+## P3 — evolução
+
+- PWA offline com fila IndexedDB, sync idempotente, conflitos e isolamento por loja.
+- Adapters de impressora/gaveta/leitor/balança.
+- Integrações externas de delivery e reconciliação de webhooks.
+- CRM, promoções, loyalty e multiunidade, conforme prioridade comercial.
+- Testes E2E em dispositivos reais e testes de carga de operação.
+
+## Regra de execução
+
+Antes de qualquer implementação, comparar a tarefa com a main atual e issues/PRs. Não criar trabalho duplicado. Não alterar o repositório semi-final. Não fazer merge/fechar issue automaticamente só por checks verdes; revisar diff, testes, escopo e regressões. Desenvolver localmente e manter portabilidade.

@@ -1,86 +1,105 @@
 # Auditoria geral — Admin-Restaurant
 
-Data/hora inicial: 2026-11-07 10:26:12 UTC. `main` local e `git ls-remote` coincidem em `d79278a92d4007235f72877ed351a21e16f93a28`. A referência semi-final retornou HTTP 403 tanto em `git ls-remote` quanto na API GitHub; SHA e estado atual desconhecidos. Não foi clonada ou alterada. O inventário anterior é fonte secundária e não verifica a main do semi-final.
+- Data: 07/11/2026
+- Estado analisado: branch `main`
+- SHA da base analisada: `d79278a92d4007235f72877ed351a21e16f93a28`
+- Referência funcional: `lanchonete-qr-semi-final`
+- SHA da referência: `47c5d7fd77f601b142ed8a0bb2d519998c5e0d87`
+- Escopo desta entrega: inspeção estática de árvores, documentação, manifests, configurações, módulos selecionados, migrations, testes listados, issues, PRs e status de CI.
+- Limitação: não foi possível clonar/executar o projeto neste ambiente conectado ao GitHub; portanto nenhum teste local, build, migration ou cenário E2E foi executado nesta auditoria. Não atribuir maturidade M4/M5 sem execução reproduzível.
 
-## Resumo e limites
+## 1. Resumo executivo
 
-Maturidade: fundação funcional substancial, mas **não demonstrada pronta para produção multi-tenant**. P0 MT-01: endpoint público de billing pode alterar status de assinatura de outra loja quando provider não tem segredo. P1: Redis não instalado/fallback, eventos possivelmente duplicados, FKs sem garantias compostas, advisories, jobs mock, timezone global e CI falho. Ver [segurança](AUDITORIA-MULTI-TENANT-SEGURANCA.md). Esses achados têm diferentes níveis de certeza; nenhum teste invasivo foi feito.
+O Admin-Restaurant é uma aplicação SaaS multi-tenant real em estrutura, não apenas um protótipo de interface: contém backend Fastify, PostgreSQL, módulos de tenancy, auth, permissões, pedidos, mesas, cozinha, caixa, delivery, pagamentos, relatórios, billing, jobs, realtime e uma SPA React separada. A árvore auditada tem 276 entradas, 28 migrations principais (0001–0028), 39 arquivos sob `test/` (incluindo README/helpers) e 151 arquivos sob `src/` + `frontend/src/`.
 
-Código relacionado a QR, cardápio, sessões, pedidos, cozinha, pagamentos, caixa, CRM, RBAC e relatórios existe; E2E e paridade estão incompletamente validados. Offline/PWA e estoque não foram evidenciados; não confundir ausência de evidência com inexistência absoluta. Billing e impressão usam mocks. [Matriz com IDs](MATRIZ-FUNCIONAL-ADMIN-RESTAURANT.md) e [portabilidade](AUDITORIA-PORTABILIDADE-HOSPEDAGEM.md). O estado efetivo Vercel não foi acessível.
+O semi-final tem uma superfície funcional e operacional mais extensa: árvore com 759 entradas, 40 migrations (0001–0040), 136 arquivos sob `tests/` (incluindo suites e helpers) e aplicações web/PWA mais amplas. Esses números são contagens de arquivos versionados, não métricas diretas de qualidade. A diferença mostra que a paridade funcional não deve ser presumida.
 
-Método: inventário de `docs/` (arquitetura, `AGENTES.md`, `SECURITY.md`, `DECISIONS.md`, `ENTRY-CONTEXTS.md`, deploy, backup, smoke), `src/modules/`, páginas frontend, migrations 0001–0028, manifests e `.github/workflows/ci.yml`; inspeção seletiva de código, controles e testes; não linha a linha. A comparação direta dos dois repositórios e a revisão exaustiva de rotas permanecem bloqueadas/incompletas.
+A auditoria funcional preexistente em `docs/AUDITORIA-FUNCIONAL-QR-ADMIN-SEMI-FINAL.md` já documenta um inventário detalhado e classifica várias áreas do Admin como parciais/a confirmar. Esta auditoria confirma a direção geral: a base multi-tenant existe, mas o Admin ainda não demonstra paridade integral com as rotinas operacionais maduras do semi-final.
 
-## Execução e CI
+## 2. Evidências positivas encontradas
 
-Ambiente Node v22.22.3 / npm 10.9.8; instalações `npm ci --no-audit --no-fund` e `npm --prefix frontend ci --no-audit --no-fund` concluídas. `npm run lint`: exit 0, mas é apenas echo placeholder. `npm run web:build`: sucesso, Vite 6.4.3, 60 módulos, 1,68 s. `npm run test:unit`: 25 pass, 0 fail, 0 skip, 0 cancelados, 0,435 s. `node --test test/unit/config.test.js`: 8 pass, 0 fail/skip/cancelados, 0,083 s. `npm run test:isolation`: 202 testes, 60 pass, 0 fail, 73 skipped, 69 cancelados, 4,374 s; NÃO é sucesso de isolamento. Shell em pipeline ocultou exit code, por isso não foi inferido. PostgreSQL/psql e Docker indisponíveis; migrations/seed/test:suite não executados, nenhum banco externo usado. Sem script real de typecheck ou build backend em `package.json`. `npm audit` resultados em segurança.
+- Arquitetura separa frontend e API: `frontend/` (React/Vite) e `src/` (Fastify).
+- Multi-tenancy tem módulo dedicado: `src/modules/tenancy/`, com resolução por subdomínio, domínio customizado e fallback de header controlado.
+- Banco PostgreSQL usa migrations versionadas em `migrations/`.
+- Contextos de entrada e papéis de plataforma/loja/cliente estão documentados em `docs/ARCHITECTURE.md`, `docs/ENTRY-CONTEXTS.md` e `docs/CUSTOMER-SESSIONS.md`.
+- Há testes de isolamento cobrindo auth, sessão de cliente, contexto de entrada, host, HTTP, pedidos, caixa, pagamentos, SSE, cache, RBAC, tabelas e resolução de tenant.
+- Segurança documenta proteção de webhook, validação de valores, atomicidade, cookies, CORS, sessões e escopo por loja.
+- Há módulos para pagamentos PIX/webhook, delivery/provider adapter, CRM/consentimento, billing, relatórios, observabilidade e jobs persistidos.
+- A configuração Vercel existente é um rewrite de SPA para `/index.html`; o status Vercel observado na SHA auditada estava success.
 
-[CI da main](https://github.com/deividjmoura/Admin-Restaurant/actions/runs/42363761822) falhou no SHA auditado; log não acessível (`log not found`), causa inconclusiva. Workflow tem `MIN_TESTS=281`, Postgres 18 e guard contra skip.
+## 3. Lacunas e riscos prioritários
 
-## Triagem GitHub
+### P0 — não declarar isolamento concluído sem auditoria integral
 
-Consulta read-only: 54 issues abertas: 17 parciais, 25 pendentes provisórias, 12 inconclusivas; 0 classificadas entregue/duplicada/obsoleta por falta de evidência suficiente. Classificação pelo título e evidência selecionada, não confirmação integral dos critérios de cada issue. Especialmente #160–169 são falhas históricas, não demonstram que o mesmo defeito ainda ocorre; não declarar duplicação sem logs.
+A issue #105 continua aberta e descreve explicitamente lacunas no inventário de queries, cache, eventos/realtime e rotas administrativas. A existência de testes não substitui a inspeção completa. Não foi executada nesta etapa uma suíte negativa cross-tenant completa nem revisão linha a linha de todos os repositories/handlers.
 
-| Issue | Classificação | Evidência / lacuna | Recomendação |
-|---|---|---|---|
-| [#169](https://github.com/deividjmoura/Admin-Restaurant/issues/169) CI failure 35917640990 a3b060c | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#168](https://github.com/deividjmoura/Admin-Restaurant/issues/168) CI failure 35917291888 57653d5 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#167](https://github.com/deividjmoura/Admin-Restaurant/issues/167) CI failure 35916901648 7d0ba65 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#166](https://github.com/deividjmoura/Admin-Restaurant/issues/166) CI failure 35915261314 fd7fb32 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#165](https://github.com/deividjmoura/Admin-Restaurant/issues/165) CI failure 35914482176 bff1a48 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#164](https://github.com/deividjmoura/Admin-Restaurant/issues/164) CI failure 35910471675 7b32383 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#163](https://github.com/deividjmoura/Admin-Restaurant/issues/163) CI failure 35910195264 ee1331e | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#162](https://github.com/deividjmoura/Admin-Restaurant/issues/162) CI failure 35909836589 8200191 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#161](https://github.com/deividjmoura/Admin-Restaurant/issues/161) CI failure 35906584552 abc5e37 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#160](https://github.com/deividjmoura/Admin-Restaurant/issues/160) CI failure 35906580795 5ea1116 | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#138](https://github.com/deividjmoura/Admin-Restaurant/issues/138) [AUTOMATION] Jobs com retry, deduplicação e dead-letter | parcial | jobs/repository: retry linear e status dead; PR adiciona recursos; testes insuficientes | revisar aceite e completar, sem fechar |
-| [#137](https://github.com/deividjmoura/Admin-Restaurant/issues/137) [LOYALTY] Pontos/cashback com ledger idempotente | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#136](https://github.com/deividjmoura/Admin-Restaurant/issues/136) [MARKETING] Motor de promoções: cupons, descontos e combos | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#135](https://github.com/deividjmoura/Admin-Restaurant/issues/135) [CRM] Clientes, histórico e consentimento | parcial | crm e consentimento em src/modules/crm; completude não demonstrada | revisar aceite e completar, sem fechar |
-| [#134](https://github.com/deividjmoura/Admin-Restaurant/issues/134) [DEVICES] Adapters para impressoras, gaveta, leitores e balanças | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#133](https://github.com/deividjmoura/Admin-Restaurant/issues/133) [OFFLINE] Fila local, sincronização e conflitos | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#132](https://github.com/deividjmoura/Admin-Restaurant/issues/132) [MULTIUNIT] Dashboard consolidado por loja/período | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#131](https://github.com/deividjmoura/Admin-Restaurant/issues/131) [MULTIUNIT] Hierarquia organização → lojas e acesso múltiplo | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#130](https://github.com/deividjmoura/Admin-Restaurant/issues/130) [FISCAL] Contingência e retorno à operação normal | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#129](https://github.com/deividjmoura/Admin-Restaurant/issues/129) [FISCAL] Documentos, XML, rejeições e retry idempotente | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#128](https://github.com/deividjmoura/Admin-Restaurant/issues/128) [FISCAL] Abstração de provider fiscal | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#127](https://github.com/deividjmoura/Admin-Restaurant/issues/127) [FINANCE] DRE gerencial | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#126](https://github.com/deividjmoura/Admin-Restaurant/issues/126) [FINANCE] Conciliação com recebimentos externos | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#125](https://github.com/deividjmoura/Admin-Restaurant/issues/125) [FINANCE] Fluxo de caixa consolidado | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#124](https://github.com/deividjmoura/Admin-Restaurant/issues/124) [FINANCE] Contas a pagar e a receber | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#123](https://github.com/deividjmoura/Admin-Restaurant/issues/123) [PURCHASING] Fornecedores, pedido de compra e recebimento | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#122](https://github.com/deividjmoura/Admin-Restaurant/issues/122) [INVENTORY] CMV e margem | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#121](https://github.com/deividjmoura/Admin-Restaurant/issues/121) [INVENTORY] Movimentações e inventário (ledger) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#120](https://github.com/deividjmoura/Admin-Restaurant/issues/120) [INVENTORY] Ficha técnica versionada | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#119](https://github.com/deividjmoura/Admin-Restaurant/issues/119) [INVENTORY] Insumos, unidades e conversões | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#118](https://github.com/deividjmoura/Admin-Restaurant/issues/118) [DELIVERY] Idempotência de eventos externos e reconciliação | parcial | delivery e idempotência presentes; reconciliação não comprovada | revisar aceite e completar, sem fechar |
-| [#117](https://github.com/deividjmoura/Admin-Restaurant/issues/117) [DELIVERY] Arquitetura de providers/adapters para canais externos | parcial | delivery/provider.interface.js e mock; provider real não demonstrado | revisar aceite e completar, sem fechar |
-| [#116](https://github.com/deividjmoura/Admin-Restaurant/issues/116) [KDS] Métricas de produção por estação, produto e período | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#115](https://github.com/deividjmoura/Admin-Restaurant/issues/115) [KDS] SLA, atrasos e tempo alvo por estação/produto | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#114](https://github.com/deividjmoura/Admin-Restaurant/issues/114) [KDS] Estados por item e pedido parcialmente pronto | parcial | orders/status-machine.js e kitchen; ciclo completo a validar | revisar aceite e completar, sem fechar |
-| [#113](https://github.com/deividjmoura/Admin-Restaurant/issues/113) [KDS] Estações de produção com roteamento consistente de itens | parcial | migrations/0008_stations.sql e kitchen; roteamento completo a validar | revisar aceite e completar, sem fechar |
-| [#112](https://github.com/deividjmoura/Admin-Restaurant/issues/112) [TABLES] Mesas/comandas: sessão ativa, vínculo de itens e bloqueio pós-fechamento | parcial | tables e migration 0021; testes com banco não executados | revisar aceite e completar, sem fechar |
-| [#111](https://github.com/deividjmoura/Admin-Restaurant/issues/111) [ORDERS] Máquina de estados formal: transições, cancelamentos e motivos | parcial | orders/status-machine.js; cancelamentos completos a validar | revisar aceite e completar, sem fechar |
-| [#110](https://github.com/deividjmoura/Admin-Restaurant/issues/110) [POS] Relatório e fechamento de caixa | parcial | cash e reports; fechamento/relatório completo não demonstrado | revisar aceite e completar, sem fechar |
-| [#109](https://github.com/deividjmoura/Admin-Restaurant/issues/109) [POS] Pagamento parcial/combinado e estorno | parcial | payments/cash; divisão e estorno completos a validar | revisar aceite e completar, sem fechar |
-| [#108](https://github.com/deividjmoura/Admin-Restaurant/issues/108) [POS] Movimentações de caixa (ledger: suprimento, sangria, estorno, ajuste) | parcial | cash repository e migration 0025; ledger completo a validar | revisar aceite e completar, sem fechar |
-| [#107](https://github.com/deividjmoura/Admin-Restaurant/issues/107) [POS] Sessão de caixa: abertura, operador, fechamento e reconciliação | parcial | cash e migration 0025; reconciliação completa a validar | revisar aceite e completar, sem fechar |
-| [#106](https://github.com/deividjmoura/Admin-Restaurant/issues/106) [OPS] Observabilidade: logs estruturados, métricas, health/ready | parcial | ops, metrics e readiness; alertas e operação real não demonstrados | revisar aceite e completar, sem fechar |
-| [#105](https://github.com/deividjmoura/Admin-Restaurant/issues/105) [SEC] Revisão completa de isolamento multi-tenant (queries, cache, eventos, admin) | parcial | test/isolation e controles; auditoria integral não concluída | revisar aceite e completar, sem fechar |
-| [#102](https://github.com/deividjmoura/Admin-Restaurant/issues/102) test-permissao-apagar | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#100](https://github.com/deividjmoura/Admin-Restaurant/issues/100) feat(frontend): S3 — painéis operação (cozinha / bar / garçom / caixa) | parcial | páginas staff existem; E2E e paridade não demonstrados | revisar aceite e completar, sem fechar |
-| [#77](https://github.com/deividjmoura/Admin-Restaurant/issues/77) design(frontend): direção visual 'parecido com QRAdmin' — proposta de identidade + pontos de veredito (discussão) | inconclusiva | histórico CI diferente da main ou intenção/aceite exige revisão | reproduzir ou esclarecer; não fechar |
-| [#64](https://github.com/deividjmoura/Admin-Restaurant/issues/64) feat(frontend): PWA dedicado para o garçom (epic #58) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#63](https://github.com/deividjmoura/Admin-Restaurant/issues/63) feat(menu): cupons, cashback e upsell no carrinho (epic #58) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#62](https://github.com/deividjmoura/Admin-Restaurant/issues/62) feat(payments): cartão de crédito e carteiras digitais (epic #58) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#59](https://github.com/deividjmoura/Admin-Restaurant/issues/59) feat(ai): chatbot de atendimento via WhatsApp com IA generativa (epic #58) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#58](https://github.com/deividjmoura/Admin-Restaurant/issues/58) Epic: Fase 10 — Growth e Diferenciais Competitivos (paridade com Anota AI) | parcial | billing mock e módulos operacionais existem; metas amplas não comprovadas | revisar aceite e completar, sem fechar |
-| [#51](https://github.com/deividjmoura/Admin-Restaurant/issues/51) feat(payments): integrar provider real de PIX (Mercado Pago ou similar) | pendente (provisório) | escopo proposto; entrega integral não evidenciada na inspeção | confirmar escopo e dependências antes de implementar |
-| [#10](https://github.com/deividjmoura/Admin-Restaurant/issues/10) Epic: Fase 9 — Operação (Filas, Impressão, Observabilidade, Backup) | parcial | jobs, métricas, health e backup documentado; providers/restore reais não validados | revisar aceite e completar, sem fechar |
+### P1 — CI da main falhando
 
-### PR aberto: #159
+O workflow `.github/workflows/ci.yml` executado para a SHA auditada terminou com `conclusion=failure` (run 42363761822). O status contextual Vercel estava success, mas isso não equivale à aprovação da suíte GitHub Actions. A API consultada não retornou os jobs/logs desse run; causa exata permanece inconclusiva e precisa ser obtida no GitHub Actions UI/logs ou rerun controlado.
 
-[PR #159](https://github.com/deividjmoura/Admin-Restaurant/pull/159), base `main`, head `feat/jobs-dead-letter-138` `ad5a667d7e8557a5b2a75bccaffbf82959cc8768`: GitHub `MERGEABLE`, `UNSTABLE`; backend falhou, frontend e Vercel preview reportaram sucesso histórico, nenhuma review. Diff inclui migration 0029, jobs, CI e testes. Main já tem retry linear e `dead` (`jobs.repository.js`), mas não demonstra os endpoints/backoff propostos no PR. Diff remove 828 linhas de `test/isolation/customer-session.test.js` e adiciona apenas `PLACEHOLDER_WILL_REPLACE`: regressão crítica de cobertura e arquivo de teste inválido. Não aprovar/mesclar; restaurar cobertura, comparar diff integral e reproduzir checks antes de decisão. PR diz não ter testes próprios de isolamento. Não se garante que todas as alterações tenham sido revistas.
+### P1 — PR #159 contém remoção extensa de testes
 
-## Integridade desta etapa
+A única PR aberta encontrada na busca foi #159, para jobs/dead-letter. O diff reporta 216 adições e 882 remoções em 12 arquivos. Em particular, substitui `test/isolation/customer-session.test.js` de 828 linhas por um arquivo de uma linha e remove um caso de `/api/menu` do teste de contexto de entrada. Mesmo que existam ajustes válidos na funcionalidade de jobs, essa perda de cobertura é regressão grave. Não mesclar sem restaurar cobertura equivalente e revisar o restante do diff. A PR está aberta, não mesclada, e a issue #138 continua aberta.
 
-Somente cinco documentos novos neste repositório; sem mudança de código funcional, migrations, configuração, deploy, merge, fechamento ou edição de issues/PRs. Instalações/build geraram apenas artefatos ignorados. Repositório semi-final não acessível e não modificado; não foi possível verificar seu estado remoto. [Plano ordenado](PLANO-EXECUCAO-POS-AUDITORIA.md). Os critérios de conclusão que exigem acesso à referência, banco isolado, conta Vercel e revisão exaustiva permanecem abertos.
+### P1 — Redis não é dependência instalada no manifest
+
+`src/infrastructure/redis.js` tenta importar dinamicamente `redis` ou `ioredis`, mas nenhum dos dois aparece em `dependencies` do `package.json` auditado. Com `REDIS_URL` configurado sem instalar cliente, o código cai em memória. Isso pode ser intencional como fallback local, mas não fornece pub/sub compartilhado entre processos/instâncias. É bloqueio para realtime/cache distribuído se o deploy exigir múltiplas réplicas.
+
+### P2 — paridade operacional incompleta
+
+A matriz existente marca como parcial/a confirmar cozinha/bar, garçom, caixa, dashboard, cardápio administrativo, relatórios, privacidade e offline. Estoque detalhado, importação/reversão CSV e PWA offline não têm evidência suficiente no Admin. O semi-final possui recursos concretos nessas áreas, documentados em README, módulos e migrations.
+
+### P2 — workflow CI com permissões maiores que o mínimo aparente
+
+O workflow declara `contents: write` e `issues: write`. A criação automática de issue na falha explica a permissão de issues, mas não foi identificada necessidade de escrita em contents no fluxo. Avaliar redução para menor privilégio, sem alterar durante esta auditoria.
+
+## 4. Estado de Vercel
+
+Foi confirmado no repositório:
+- `frontend/vercel.json` faz rewrite de todas as rotas para `/index.html`.
+- O status associado à SHA auditada apresenta contexto `Vercel: success`.
+
+Não foi possível confirmar por esta conexão o domínio ativo, root directory configurado no projeto, variáveis, histórico de deploy, nem se o Vercel está hospedando exclusivamente o frontend. O arquivo e o status não provam por si só toda a topologia. Pela estrutura, Vercel é adequado para a SPA estática; o backend Fastify, SSE persistente e worker contínuo precisam de runtime/processo adequado separado ou adaptação arquitetural. Não remover a configuração atual.
+
+## 5. Issues e PRs
+
+- Busca do GitHub retornou 54 issues abertas no Admin-Restaurant.
+- Parte relevante são issues automáticas de falha de CI em commits antigos (#160–#169); devem ser agrupadas por run/causa e não tratadas como 10 bugs independentes sem comparação com main.
+- Issues de roadmap ainda abertas incluem #105 (auditoria multi-tenant), #107–#110 (caixa), #114 (estado agregado/produção), #119–#122 (estoque/ficha técnica/ledger/CMV), entre outras.
+- Uma PR aberta foi encontrada: #159. Ver análise acima.
+- Nenhuma issue foi fechada e nenhuma PR foi mesclada nesta auditoria.
+
+## 6. Maturidade provisória
+
+| Área | Diagnóstico provisório | Maturidade máxima comprovada nesta auditoria |
+|---|---|---|
+| Fundação SaaS/tenancy | Estrutura e módulos presentes; auditoria integral pendente | M2 |
+| Auth/RBAC/sessões | Código e testes dedicados presentes; execução não realizada | M2 |
+| Cardápio/cliente/QR | Backend e telas principais presentes; paridade detalhada pendente | M2 |
+| Pedidos/mesas/carrinho | Módulos, migrations e testes presentes | M2 |
+| Cozinha/bar/realtime | Backend e eventos presentes; equivalência visual/operacional parcial | M2 |
+| Garçom/offline/PWA | Paridade não demonstrada; semi-final tem PWA offline mais completa | M1 |
+| Caixa/pagamentos | Módulos e migrations presentes; sessão de caixa/ledger e paridade a fechar | M2 |
+| Delivery | Módulo próprio e adapter presentes; integrações reais a validar | M1–M2 |
+| Estoque/receitas/CMV | Não evidenciado no Admin auditado | M0 |
+| Relatórios/dashboard | Base presente, cobertura menor/indeterminada | M1–M2 |
+| Jobs/filas | Base persistida existe; melhoria #138 em PR insegura para merge como está | M1–M2 |
+| Billing/SaaS | Módulo e migration presentes; fluxo real/provedor a validar | M1–M2 |
+| Portabilidade | Configuração por env e PostgreSQL; Redis fallback limitado; execução local não validada | M1 |
+
+M2 aqui significa implementação localizada em código/configuração e testes existentes no repositório, não execução comprovada nesta auditoria. Nenhuma área recebe M3–M5 nesta entrega porque não foi possível executar testes.
+
+## 7. Próximos passos recomendados
+
+1. Resolver a falha atual da CI e agrupar issues automáticas antigas por causa.
+2. Bloquear merge da PR #159 até restaurar o teste de sessão de cliente e as verificações removidas.
+3. Concluir auditoria P0 de isolamento em repositories, rotas, cache, SSE, jobs, exports e painel de plataforma.
+4. Fechar paridade operacional cliente → produção → garçom → caixa com critérios e testes por item.
+5. Decidir explicitamente escopo de estoque/importação/offline e criar implementação tenant-aware somente depois.
+6. Validar setup local com instalação limpa e PostgreSQL local.
+7. Confirmar topologia Vercel (frontend) + backend Fastify em runtime compatível.
+8. Executar teste de backup/restore e validação em segundo provedor antes de declarar portabilidade.
+
+## 8. Integridade da referência
+
+O repositório `lanchonete-qr-semi-final` foi somente consultado. Nenhuma escrita, commit, issue, PR, migration ou configuração foi feita nele durante esta auditoria.

@@ -21,7 +21,7 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 ## 2026-11-07 — Auditoria e documentação preliminar
 
 - Objetivo: auditar o Admin-Restaurant e propor uma ordem de execução, sem alterar o repositório de referência.
-- Mudanças locais: `docs/AUDITORIA-GERAL-ADMIN-RESTAURANT.md`, `docs/MATRIZ-FUNCIONAL-ADMIN-RESTAURANT.md`, `docs/AUDITORIA-MULTI-TENANT-SEGURANCA.md`, `docs/AUDITORIA-PORTABILIDADE-HOSPEDAGEM.md`, `docs/PLANO-EXECUCAO-POS-AUDITORIA.md`. A main remota avançou posteriormente com documentos próprios de mesmo nome; estas versões locais não foram reconciliadas ou publicadas.
+- Mudanças locais: `docs/AUDITORIA-GERAL-ADMIN-RESTAURANT.md`, `docs/MATRIZ-FUNCIONAL-ADMIN-RESTAURANT.md`, `docs/AUDITORIA-MULTI-TENANT-SEGURANCA.md`, `docs/AUDITORIA-PORTABILIDADE-HOSPEDAGEM.md`, `docs/PLANO-EXECUCAO-POS-AUDITORIA.md`. A main remota avançou posteriormente com documentos próprios de mesmo nome; na preparação do PR, os documentos da main foram preservados nos caminhos originais e as versões locais foram preservadas com prefixo `COMPLEMENTO-LOCAL-`.
 - Evidência: análise da main então em `d79278a92d4007235f72877ed351a21e16f93a28`; repositório de referência retornou 403 neste ambiente. O inventário de 105 IDs foi enumerado, com análise parcial e limitações explícitas.
 - Testes então: `npm run test:unit` 25 aprovados; `node --test test/unit/config.test.js` 8 aprovados; `npm run web:build` passou. Sem PostgreSQL nessa etapa, a suíte de isolamento não foi validada.
 - Publicação/deploy: não realizados nesta sessão.
@@ -53,3 +53,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: esta etapa protege somente relações do cardápio, não fecha a auditoria de todos os módulos. FKs podem exigir locks e a migration pode falhar com dados legados inconsistentes; nenhum banco de produção foi consultado ou alterado. Antes de implantação, consultar contagens, investigar e planejar a correção, sem apagar dados automaticamente.
 - Próximos passos: ampliar a análise para sessões, pedidos, pagamentos e relações restantes; avaliar caches e realtime em múltiplas instâncias. Revisar e validar em ambiente de homologação antes de publicar.
 - Publicação/deploy: não realizados nesta sessão.
+
+## 2026-11-07 — Preparação do pull request
+
+- Objetivo: preparar revisão das alterações acumuladas contra a main atual, sem fazer merge ou deploy.
+- Mudanças: preservados os cinco documentos de auditoria da main nos caminhos originais e as versões locais em `docs/COMPLEMENTO-LOCAL-*`, sem apagar conteúdo. Integração da main na branch de trabalho apenas para resolver conflitos de documentação.
+- Testes: a suíte completa do código antes da integração documental passou com 310 testes, 0 falhas, 0 skips e 0 cancelados em PostgreSQL local; `git diff --check` executado após reconciliação. A integração não alterou código ou migrations.
+- Limitações: os complementos são registros históricos, não equivalem ao estado atual. CI remoto ainda deve ser acompanhado no PR.
+- Próximos passos: revisão do diff e dos checks; validação de dados legados antes de aplicar migration 0031.
+- Publicação/deploy: PR solicitado; nenhum deploy ou merge.

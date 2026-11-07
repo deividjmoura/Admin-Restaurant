@@ -1,38 +1,83 @@
-# Auditoria multi-tenant e segurança — 07/11/2026
+# Auditoria multi-tenant e segurança — Admin-Restaurant
 
-Base: `d79278a92d4007235f72877ed351a21e16f93a28`. Inspeção estática selecionada, não exaustiva; sem PostgreSQL de teste disponível. Não há demonstração dinâmica de invasão nem garantia de ausência de outros P0.
+- Base analisada: `main` SHA `d79278a92d4007235f72877ed351a21e16f93a28`
+- Data: 07/11/2026
+- Método: inspeção estática de arquitetura, tenant resolver/plugin, config, security docs, árvore de testes e issues. Não foi executada suíte nem fuzzing nesta entrega.
 
-## Achados priorizados
+## 1. Controles positivos encontrados
 
-### MT-01 — P0: webhook de billing aceita alteração de assinatura sem autenticação (confirmado por código; execução não realizada)
-`src/modules/billing/billing-routes.js`, rota pública `/api/billing/webhooks/:provider`: só compara header se existir `BILLING_WEBHOOK_SECRET_<PROVIDER>`; caso contrário continua. Qualquer nome de provider sem segredo satisfaz essa condição mesmo se outro provider tiver segredo configurado. `gateway.js:normalizeBillingWebhook` aceita `storeId` do corpo; a rota passa esse ID para `setSubscriptionStatus` com `active`, `cancelled`, `past_due` ou `suspended`, sem validar correspondência com provider/assinatura. Pré-condições: rota acessível e UUID de loja com assinatura; impacto: alteração indevida cross-tenant de estado comercial/entitlements, inclusive suspensão. Não se afirma efeito financeiro downstream específico sem teste. Mitigação posterior: desabilitar providers desconhecidos/sem configuração, autenticar corpo conforme contrato do provedor, resolver assinatura no servidor, validar vínculo, deduplicar evento e testar replay.
+- `src/modules/tenancy/resolve-tenant.js`: host normalizado; reserved hosts apex/platform não viram loja; prioridade subdomínio, domínio customizado e fallback header condicionado; fallback query exige rota opt-in.
+- `src/modules/tenancy/tenant-plugin.js`: injeta store/storeId no request e expõe `requireTenant`; log contextualizado por store.
+- `docs/ARCHITECTURE.md`: define contextos marketing/platform/store/customer, JWT por tipo, membership ativa e ausência de bypass SUPER_ADMIN.
+- `docs/SECURITY.md`: descreve CSRF/origin, CORS fail-closed, cookies, rate limit, webhooks assinados, transações e validação de totais.
+- `test/isolation/`: cobre entry hosts/contexts, customer sessions, HTTP isolation/security, order scoping, repository isolation, SSE tenant, menu cache, RBAC, payments e table session race.
+- Migrations de stores/users/roles, permissões, audit, sessões customer, delivery checkout e caixa estão versionadas.
 
-Reprodução **somente em banco local descartável**: criar lojas A/B com assinaturas; chamar endpoint com provider deliberadamente não configurado e corpo `{"storeId":"<id de B>","type":"subscription.suspended"}` sem credencial; comparar status de B antes/depois. Esperado seguro: 401/404 e nenhum efeito. Não executar em produção.
+## 2. Achados e riscos
 
-### MT-02 — P1: FKs simples não garantem relações da mesma loja (risco de integridade)
-`migrations/0005_menu.sql`, `0007_orders.sql`, `0010_shared_cart.sql`, `0012_payments.sql` e `0025_cash_sessions.sql` armazenam `store_id` e referências individuais por ID, sem FK composta assegurando a loja do registro relacionado. Não demonstra endpoint explorável: invariantes podem ser aplicadas na aplicação. Se validação for esquecida ou houver corrida, um vínculo A→B pode persistir; verificar cada write/transaction e, após análise de dados existentes, considerar chaves compostas. Cenário local: enviar product/session/payment de B em operação de A, inclusive lotes e corrida; exigir rejeição e nenhuma escrita. Referências: `test/isolation/repository-isolation.test.js`, `orders-atomicity.test.js`, `cash-payments.test.js` (não executados com banco nesta auditoria).
+### MT-01 — revisão integral de queries ainda não comprovada (P0 até fechar auditoria)
 
-### MT-03 — P1: fallback Redis e eventos (confirmado estaticamente)
-`package.json` não declara `redis` nem `ioredis`; `src/infrastructure/redis.js:getRedis` tenta importá-los e cai em memória, inclusive após erro, sem nova tentativa até reinicialização. Réplicas não compartilham cache/eventos; reinício perde memória. Se um cliente for instalado e Redis funcionar, `src/modules/realtime/store-events.js:publishStoreOrderEvent` despacha localmente e a assinatura Redis despacha novamente o eco; a marca `_fromRedis` não é usada para filtrá-lo. Risco de eventos duplicados, desatualização e perda; não implica vazamento confirmado. Validar com duas instâncias, falha/reconexão, contagem de eventos, autenticação e permissões. Exigir infraestrutura distribuída ou fail-closed para topologia que dela depende.
+Issue #105 permanece aberta. O escopo da issue solicita inventário módulo → queries → filtro de tenant e testes cross-tenant para leitura, escrita, cache, eventos e admin. A existência de repositories com storeId e testes parciais não prova que todas as queries e rotas estão cobertas.
 
-### MT-04 — P1: bibliotecas com advisories (detecção por npm audit, exploração não confirmada)
-`npm audit --omit=dev`: 3 pacotes (1 high: zod; 2 moderate: fastify, fast-uri). Zod [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), DoS com coleções sob condições específicas; upgrade sugerido major, avaliar validação e limites de payload. `npm --prefix frontend audit`: 2 high (vite, source-map-js), sobretudo toolchain; verificar exposição real dos cenários descritos nos advisories antes de atribuir exploração. Corrigir dependências e regressões após autorização.
+**Ação:** inventariar todas as consultas em cada repository/route; checar joins e FKs compostas; testar IDs de loja A contra token/host da loja B. Manter issue aberta até evidência.
 
-### MT-05 — P1: timezone global em relatórios
-`src/modules/tenancy/store-routes.js` expõe timezone por loja, mas `src/modules/reports/reports.repository.js` usa constante `APP_TIMEZONE` global. Lojas com fusos diferentes podem ter períodos e totais por dia incorretos. Testar fronteiras de dia/DST e intervalo customizado com duas lojas. Não é vazamento demonstrado.
+### MT-02 — fallback Redis em memória não escala horizontalmente (P1)
 
-### MT-06 — P1: jobs podem registrar sucesso sem efeito real
-`src/modules/jobs/handlers.js`: impressão/notificação são mocks; tipo desconhecido retorna `{skipped:true}`, e `worker.js` chama `completeJob`. Pode sinalizar impressão/conclusão sem operação real; em produção requer adaptadores, estados explícitos e alertas. `jobs.repository.js` usa lock `SKIP LOCKED`, tentativas e status dead com backoff linear; verificação de recuperação após crash e idempotência externa permanece aberta.
+`src/infrastructure/redis.js` usa Map local para cache/pub-sub quando Redis não está ativo ou o cliente não pode ser importado. O manifest principal não declara `redis` nem `ioredis`. Isso é aceitável como fallback de desenvolvimento em processo único, mas não compartilha invalidação/eventos entre instâncias e perde estado no restart. Não tratar como equivalente a Redis em produção multi-réplica.
 
-## Superfícies e controles observados
+**Ação:** definir dependência opcional/extra documentada e ambiente local reproduzível; exigir Redis compartilhado (ou broker equivalente) quando múltiplas instâncias forem usadas. Adicionar teste multi-instância.
 
-- Resolução: `tenancy/resolve-tenant.js` usa Host, domínio customizado e fallback header; query só em rota opt-in. Em produção fallback requer host e Origin permitidos; Origin/Host são entrada controlável e não provam identidade. `tenant-plugin.js` compara sessão store com tenant. `auth/auth-plugin.js` e `permissions/` fornecem vínculo/permissões, mas revisão rota a rota não completa.
-- Senhas/sessões: `auth/password.js`, `auth/session.js`, `customer/customer-session.js`; cookies e revogação existem; examinar revogação distribuída, troca de senha e expiração em banco. CSRF/CORS/Helmet/rate-limit em `src/app.js`, `shared/origin-policy.js` e auth; validar proxy confiável e origem efetiva em ambiente real. Limite de identidade é `Map` por processo.
-- SQL: há `store_id`, índices de idempotência, sessão aberta única e locks nas migrations 0007, 0012, 0021 e 0025; joins, agregações e todos os lotes ainda precisam inspeção sistemática e execução negativa. UUID não substitui autorização.
-- Cache `menu/menu-cache.js` inclui loja; eventos `realtime/store-events.js` particionam canal por loja e `canReceiveEvent` aplica permissões e estação. Testes `menu-cache.test.js` passaram localmente; SSE cross-tenant e tickets/reconexão não foram executados com banco.
-- Pagamentos: `payments/webhook-auth.js` verifica HMAC do corpo bruto; `payments-routes.js` e migration 0019 fornecem deduplicação; isso **não** cobre o webhook de billing. Replay, valores, concorrência e trilha devem ser executados em DB isolado. Não confundir PIX estático com confirmação bancária.
-- Plataforma: `platform/platform-routes.js` separa contexto; verificar todas operações cross-tenant e RBAC efetivo. Jobs incluem store_id e idempotência por loja; conclusão/falha por ID interno em `jobs.repository.js`, verificar ownership/lease em retries.
-- Upload/storage/URL assinada, OAuth/state/PKCE e e-mail: implementação completa não evidenciada nesta inspeção; SSRF, XSS, traversal, CSP, secrets/logs, retenção e anonimização não foram auditados exaustivamente. Não assumir segurança por ausência de evidência. `infrastructure/logger.js` e `shared/redact.js` são pontos de revisão.
+### MT-03 — PR #159 remove teste crítico de sessão de cliente (P0/P1)
 
-## Cenários negativos a executar localmente
-Com sessões independentes A/B: (1) usuário A em host B e header/query adulterados, inclusive `Origin` forjado; (2) ler/mutar pedidos, carrinhos, mesas, pagamentos, clientes e exports B com ID de B; (3) relacionar item de B com pedido A, com corrida e lote; (4) revogar membro A e repetir via cookie, token e SSE; (5) SSE A não recebe B após reconexão; (6) invalidar cache A preserva B; (7) job A com recurso B e retries não opera B; (8) webhook billing MT-01 e webhook payment assinado, sem assinatura e replay; (9) operações plataforma negadas a staff. Em todos: resposta negada e banco/eventos inalterados; testes somente em ambiente descartável.
+O diff da PR substitui `test/isolation/customer-session.test.js` (828 linhas) por um arquivo de uma linha. Também remove do teste `entry-contexts.test.js` a verificação de `/api/menu` para token de plataforma. O PR altera fixtures e cabeçalhos host, mas a remoção do teste inteiro elimina proteção contra abuso de credencial customer, sessão de outra loja, expiração/revogação e ações proibidas. Não mesclar no estado atual.
+
+**Ação:** restaurar a suíte e adaptar somente os fixtures necessários; garantir cobertura equivalente por testes explícitos. Revisar as alterações restantes antes de considerar merge.
+
+### MT-04 — workflow CI usa contents:write (P2)
+
+`.github/workflows/ci.yml` declara `contents: write` e `issues: write`. O job cria issue em falha, o que explica issues:write; contents:write não parece necessário pelo workflow visível.
+
+**Ação:** reduzir permissões ao mínimo após validar todos os passos.
+
+### MT-05 — status da CI da main falhou na SHA auditada (P1)
+
+Run 42363761822 para SHA auditada terminou em failure. A API de jobs/logs retornou lista vazia nesta consulta; causa exata não confirmada. O contexto Vercel foi success. Não confundir sucesso de deploy frontend com CI completa.
+
+**Ação:** abrir o run no GitHub Actions e capturar job/step que falhou; corrigir a causa em PR separada e reexecutar.
+
+## 3. Superfície que precisa de revisão manual linha a linha
+
+| Superfície | Arquivos/áreas | Verificações |
+|---|---|---|
+| Resolução do tenant | `tenancy/resolve-tenant.js`, `tenant-host.js`, `tenant-plugin.js` | Host spoofing, proxy trust, reserved hosts, fallback por header/origin |
+| Autenticação | `auth/*`, `customer/*` | tipo de token, audience/issuer, expiração, revogação e troca de tenant |
+| Autorização | todas as rotas com preHandler, `permissions/*` | membership ativa e permissão em toda mutação/leitura |
+| Persistência | todos `*.repository.js` | store_id em WHERE/JOIN/UPDATE/DELETE e FKs compostas |
+| Carrinho/pedidos | `tables/*`, `orders/*` | lock, idempotência, sessão fechada e replay cross-store |
+| Pagamentos | `payments/*`, `cash/*` | valor devido, webhook, estorno, operador e loja derivada do registro |
+| Cache | `menu/menu-cache.js`, `infrastructure/redis.js` | prefixo tenant, invalidação e fallback |
+| Realtime | `realtime/store-events.js`, `kitchen/*` | canal por loja, autorização de assinatura, reconexão |
+| Jobs | `jobs/*` | storeId obrigatório, payload validado, requeue tenant-aware |
+| Arquivos | módulos de upload/URLs (se habilitados) | prefixo por tenant, autorização e URL assinada |
+| Relatórios/exports | `reports/*`, `crm/*` | filtros tenant/timezone em agregações e exportações |
+| Plataforma | `platform/*`, `billing/*` | operações globais explícitas e trilha auditável |
+
+## 4. Cenários negativos mínimos
+
+Executar em banco de teste com duas lojas A e B:
+1. Token A + host B: deve retornar 403 sem revelar dados.
+2. Token platform em rota de loja: deve negar; nenhum bypass implícito.
+3. IDs de pedido, item, mesa, pagamento, sessão ou job de B consultados por A: 404/negado conforme contrato, sem mutação.
+4. POST/PUT com `storeId` de B no body usando sessão A: ignorar/rejeitar campo; derivar tenant do contexto autenticado.
+5. Cache de cardápio A nunca retornar conteúdo de B; invalidação A não invalidar B.
+6. SSE de A não receber eventos de B, inclusive após reconexão e fallback.
+7. Job criado em A não pode executar nem requeue um recurso de B.
+8. Webhook com loja/pagamento divergente não deve alterar pagamento; assinatura inválida não deve persistir evento.
+9. Export/relatório A não deve incluir dados de B por agregação/join.
+10. Sessão customer do QR A não pode consultar pedido/pagamento de B nem sobreviver a revogação/fechamento conforme política.
+11. Hostnames reserved (apex/platform) não podem ser convertidos em tenant por header/query.
+12. Concorrência de checkout/pagamento não pode duplicar efeitos ou ultrapassar saldo devido.
+
+## 5. Veredito
+
+A arquitetura e os controles fundamentais existem e são promissores. Porém, a conclusão de “multi-tenant seguro” ainda não está demonstrada: issue #105 aberta, CI atual falhando e remoção de teste de sessão de cliente em PR aberta impedem fechar a auditoria. Nenhuma vulnerabilidade de cross-tenant foi confirmada nesta inspeção estática, mas também não foi possível declarar ausência delas.
