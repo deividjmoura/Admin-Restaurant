@@ -62,3 +62,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: os complementos são registros históricos, não equivalem ao estado atual. CI remoto ainda deve ser acompanhado no PR.
 - Próximos passos: revisão do diff e dos checks; validação de dados legados antes de aplicar migration 0031.
 - Publicação/deploy: PR solicitado; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento de mesas, sessões e pedidos
+
+- Objetivo: impedir relações de mesa/sessão/pedido entre lojas e evitar exposição de informações em JOINs quando houver dados legados inconsistentes.
+- Mudanças: `migrations/0032_table_order_tenant_constraints.sql` e rollback em `migrations/rollback/0032_table_order_tenant_constraints.sql`; `src/modules/orders/orders.repository.js` adiciona igualdade de loja aos JOINs de sessões e mesas; `test/isolation/table-order-tenant-constraints.test.js` cobre escrita, alteração, consulta e delivery sem sessão; `docs/INTEGRIDADE-MULTITENANT-MESAS-PEDIDOS.md` documenta pré-checagem e riscos.
+- Testes: PostgreSQL 18.6 descartável; migration aplicada em banco atualizado. Quatro suítes de integração direcionadas: 24 aprovados, sem falhas/skips/cancelamentos. `SKIP_MIGRATE=1 npm run test:suite`: 316 aprovados, 0 falhas, 0 cancelados, 0 skips; guard aprovado, 222,97 s. Em banco separado com dados legados sintéticos, JOINs não revelaram número da mesa estrangeira; cada vínculo inválido bloqueou a migration sem perda; aplicação, rollback e reaplicação passaram. `git diff --check` passou.
+- Limitações: validação exige plano para inconsistências legadas, backup e janela para locks; nenhuma consulta ou migration foi feita em produção. Outros vínculos como itens, carrinhos e pagamentos não estão cobertos pelas novas FKs. CI remoto deve ser confirmado após atualização do PR.
+- Próximos passos: revisar os demais relacionamentos multi-tenant e seus efeitos operacionais; homologar antes de aplicar migrations.
+- Publicação/deploy: alterações preparadas para atualizar o PR #170; nenhum deploy ou merge.
