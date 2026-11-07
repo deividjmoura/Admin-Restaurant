@@ -89,3 +89,12 @@ publicadas/implantadas. Se nada foi alterado, nenhuma entrada é necessária.
 - Limitações: nenhuma consulta ou alteração em produção; validar backup, preflight e locks em homologação. As FKs cobrem loja, não a correspondência exata adicional/produto nem pedido/sessão; ledger/eventos e outras relações não estão cobertos. Compatibilidade de exclusão verificada em PG18, não em todas as versões suportadas.
 - Próximos passos: revisar correspondência entre recursos da mesma loja, ledger de caixa, eventos e regras de retenção; validar CI remoto do PR.
 - Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
+
+## 2026-11-07 — Isolamento do ledger e eventos de pagamento
+
+- Objetivo: restringir vínculos entre lojas preservando a semântica existente de eventos nulos e retenção do ledger.
+- Mudanças: migration 0035 e rollback; `test/isolation/payment-events-cash-ledger-tenant.test.js`; guia `docs/INTEGRIDADE-MULTITENANT-LEDGER-EVENTOS.md`; correção da descrição de DELETE no README do caixa. Corrigida a expectativa de concorrência em `orders-state-machine.test.js`: com `SELECT FOR UPDATE`, CONFIRMED e depois PREPARING podem ambas ser transições válidas; a asserção verifica os dois resultados e estado final sem enfraquecer o outro teste de transições idênticas.
+- Testes: 7 testes novos aprovados em PostgreSQL 18.6 local descartável; cinco preflights independentes, aplicação, rollback e reaplicação com dados sintéticos. A primeira suíte completa falhou em 1/337 no teste preexistente de transições diferentes, que assumia indevidamente um único sucesso. Após correção da expectativa, teste de estado: 11/11; suíte completa: 337/337, 0 falhas/skips/cancelamentos, guard aprovado, 224,42 s.
+- Limitações: eventos com `store_id` nulo e pagamento não nulo não são protegidos pela FK composta; ledger proíbe UPDATE mas permite DELETE e exclusões por cascata, e não garante retenção. Correspondência exata entre alvos da mesma loja e usuários não é protegida. Verificar versão de PostgreSQL, locks, preflights e política de retenção em homologação. Nada executado em produção.
+- Próximos passos: avaliar lacuna de eventos sem loja, coerência semântica dos vínculos e política de retenção/autorização para ledger; conferir CI remoto.
+- Publicação/deploy: atualização preparada para PR #170; nenhum deploy ou merge.
