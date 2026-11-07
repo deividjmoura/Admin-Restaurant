@@ -100,6 +100,7 @@ export async function listPayments(storeId, { sessionId = null, orderId = null, 
 export async function amountDue(storeId, { orderId = null, sessionId = null } = {}, { client = null } = {}) {
   assertSingleTarget({ orderId, sessionId });
   const runner = client ? client.query.bind(client) : query;
+  await assertCompatiblePaymentScope(runner, storeId, { orderId, sessionId });
   const { rows } = await runner(
     `WITH items AS (
        SELECT COALESCE(SUM((oi.unit_price + oi.addons_total) * oi.quantity), 0) AS items_total
@@ -262,12 +263,47 @@ function assertPaymentReplay(existing, { orderId, sessionId, method, amount }) {
   }
 }
 
+// Serializa criação por pedido e por comanda no mesmo lock da sessão de mesa.
+// A leitura inicial não tranca; a associação é conferida novamente após os locks.
 async function lockPaymentTarget(client, storeId, { orderId = null, sessionId = null }) {
+  let orderSessionId = null;
   if (orderId) {
-    await client.query(`SELECT id FROM orders WHERE id = $1 AND store_id = $2 FOR UPDATE`, [orderId, storeId]);
+    const { rows } = await client.query('SELECT table_session_id FROM orders WHERE id=$1 AND store_id=$2', [orderId, storeId]);
+    orderSessionId = rows[0]?.table_session_id ?? null;
   }
-  if (sessionId) {
-    await client.query(`SELECT id FROM table_sessions WHERE id = $1 AND store_id = $2 FOR UPDATE`, [sessionId, storeId]);
+  const tableSessionId = sessionId || orderSessionId;
+  if (tableSessionId) {
+    await client.query('SELECT id FROM table_sessions WHERE id=$1 AND store_id=$2 FOR UPDATE', [tableSessionId, storeId]);
+  }
+  if (orderId) {
+    const { rows } = await client.query('SELECT table_session_id FROM orders WHERE id=$1 AND store_id=$2 FOR UPDATE', [orderId, storeId]);
+    if (rows[0] && rows[0].table_session_id !== orderSessionId) {
+      throw new PaymentError('PAYMENT_TARGET_CHANGED', 'O alvo mudou durante a operação. Recarregue e tente novamente.');
+    }
+  }
+}
+
+// Sem rateio não há como atribuir um pagamento de comanda a pedidos individuais.
+// PENDING também bloqueia mistura: pode ser confirmado mais tarde por webhook.
+async function assertCompatiblePaymentScope(runner, storeId, { orderId, sessionId }) {
+  let conflict;
+  if (orderId) {
+    ({ rows: conflict } = await runner(
+      `SELECT 1 FROM orders o JOIN payments p
+         ON p.store_id=o.store_id AND (p.session_id=o.table_session_id OR (p.order_id=o.id AND p.session_id IS NOT NULL))
+       WHERE o.store_id=$1 AND o.id=$2 AND p.status IN ('PENDING','PAID') LIMIT 1`,
+      [storeId, orderId]
+    ));
+  } else {
+    ({ rows: conflict } = await runner(
+      `SELECT 1 FROM payments p JOIN orders o
+         ON o.id=p.order_id AND o.store_id=p.store_id
+       WHERE p.store_id=$1 AND (o.table_session_id=$2 OR p.session_id=$2) AND p.status IN ('PENDING','PAID') LIMIT 1`,
+      [storeId, sessionId]
+    ));
+  }
+  if (conflict.length) {
+    throw new PaymentError('PAYMENT_SCOPE_CONFLICT', 'Há pagamento pendente ou pago no outro escopo. Concilie antes de continuar.');
   }
 }
 

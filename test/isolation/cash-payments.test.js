@@ -165,6 +165,19 @@ describe('Caixa — pagamento combinado, estorno e relatórios (issues #109/#110
     assert.equal(after.rows[0].n, before.rows[0].n);
   });
 
+  it('rejeita cobrança e resumo por pedido quando já existe pagamento por comanda', async (t) => {
+    if (skipWithoutDb(t)) return;
+    const { order, tableSession } = await makeOrder();
+    const { createSplitPayments } = await import('../../src/modules/payments/payments.repository.js');
+    await createSplitPayments(storeA.id, { sessionId: tableSession.id, items: [{ method: 'OTHER', amount: 10, confirm: true }] });
+    const payment = await app.inject({ method: 'POST', url: '/api/payments', headers: hdr(ownerA.cookie), payload: { orderId: order.id, amount: 5, method: 'OTHER' } });
+    assert.equal(payment.statusCode, 409, payment.body);
+    assert.equal(payment.json().error.code, 'PAYMENT_SCOPE_CONFLICT');
+    const summary = await app.inject({ method: 'GET', url: `/api/cash/checkout-summary?orderId=${order.id}`, headers: hdr(ownerA.cookie) });
+    assert.equal(summary.statusCode, 409, summary.body);
+    assert.equal(summary.json().error.code, 'PAYMENT_SCOPE_CONFLICT');
+  });
+
   it('pagamento combinado: dinheiro (com troco) + PIX numa única operação', async (t) => {
     if (skipWithoutDb(t)) return;
 

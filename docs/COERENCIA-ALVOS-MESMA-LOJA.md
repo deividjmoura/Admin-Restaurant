@@ -73,3 +73,47 @@ uma alteração isolada de query nem presumir que a suíte verde o elimina.
 Antes de qualquer implantação, combinar contrato para pagamentos mistos,
 reconciliação e migração de clientes/retentativas, e validar em homologação com
 backup. Não se afirma pagamento real, cobrança em produção ou perda financeira.
+
+## Mitigação parcial de escopos mistos (2026-11-07)
+
+Novas criações por pedido são bloqueadas se a comanda tiver pagamento `PENDING`
+ou `PAID`; novas criações por comanda são bloqueadas se qualquer pedido dela
+possuir pagamento `PENDING` ou `PAID`. O resumo também retorna
+`PAYMENT_SCOPE_CONFLICT` (409) quando o outro escopo impede cálculo confiável.
+Criações concorrentes pela aplicação usam o lock da sessão de mesa antes do
+pedido; a associação é conferida novamente após os locks. `REFUNDED`, `FAILED` e
+`CANCELLED` não bloqueiam a troca de escopo. Nenhum rateio é feito.
+
+**Incompatibilidade:** um restaurante não pode pagar parte por pedido e parte
+pela comanda enquanto houver pagamentos ativos no outro escopo. Pendente bloqueia
+mesmo sem confirmação, pois pode ser pago externamente mais tarde; o sistema
+atual não oferece cancelamento seguro para todos os pendentes. Atendimento e
+operação precisam conciliar com o provedor antes de tentar outra forma; não mudar
+status, apagar pagamentos ou reenviar automaticamente para desbloquear. Consultas
+em dados históricos mistos podem passar a responder 409. Replays existentes
+podem não obter o resumo. Confirmar compatibilidade de clientes e acesso a
+reconciliação antes de qualquer rollout. Os dados existentes não são alterados.
+
+### Limitações críticas — bloqueio de implantação mantido
+
+Esta proteção não torna o fluxo financeiro seguro por completo. Em experimento
+isolado, um pedido de R$ 10 aceitou **dois pagamentos PENDING de R$ 10**, e ambas
+as confirmações manuais passaram a PAID, totalizando R$ 20. O cálculo existente
+não reserva valores pendentes e a confirmação não revalida o saldo. Nenhum
+provedor real foi acionado; isso demonstra comportamento interno, não prova de
+cobrança ou dano em produção.
+
+A proteção de mistura atua em criação e resumo, não nas confirmações manuais ou
+webhooks de registros legados; estes podem mudar estado apesar de uma situação
+histórica conflitante. Rejeitar um webhook de pagamento real sem plano de
+reconciliação pode ocultar dinheiro efetivamente recebido; não implementar isso
+sem desenhar persistência de evidência, reprocessamento, alertas e operação. A
+mudança não protege SQL direto, mudanças diretas nas associações de pedido, nem
+concorrência com outras rotas que não usam o mesmo protocolo de lock. Estornos,
+pedidos cancelados, pagamentos externos e sessões encerradas também requerem
+revisão de regra e testes. Testes de concorrência cobrem criações pela aplicação,
+não todas as transições ou configurações de isolamento.
+
+**Não implantar até** projetar e verificar o ciclo completo de reservas,
+confirmações manuais, webhooks autenticados, idempotência, estornos e conciliação
+de pagamentos legados, com estratégia para estados externos já recebidos.

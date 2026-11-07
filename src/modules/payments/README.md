@@ -21,10 +21,15 @@ retentativas de solicitações antigas com ambos: consultar e reconciliar o
 pagamento original antes de qualquer nova tentativa. Não altera dados históricos.
 A listagem pode filtrar pelos dois IDs.
 
-**Risco aberto:** pagamento por sessão seguido de pagamento por pedido pode
-sobrepor valores, pois o resumo por pedido não rateia o pagamento da sessão.
-Não implantar até revisão e testes de conciliação e concorrência. Detalhes em
-`docs/COERENCIA-ALVOS-MESMA-LOJA.md`.
+**Escopos mistos:** a aplicação bloqueia criação e resumo quando há pagamento
+PENDING ou PAID no outro escopo da mesma comanda; não há rateio automático. Isso
+é uma restrição operacional e não corrige pagamentos legados. Pendentes podem
+bloquear troca de escopo e não devem ser apagados para contornar a regra.
+
+**Risco aberto:** múltiplos pendentes para o mesmo alvo podem ser confirmados
+além do valor devido; confirmações e webhooks de dados legados também precisam de
+revisão. Não implantar até resolver e testar conciliação do ciclo financeiro.
+Detalhes em `docs/COERENCIA-ALVOS-MESMA-LOJA.md`.
 
 ## Tabelas
 

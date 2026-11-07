@@ -65,6 +65,7 @@ describe('coerência de produto e alvos dentro da loja', { skip: !hasDatabase() 
     await assert.rejects(payments.createPayment(store.id, { orderId: order.id, sessionId: session.id, amount: 1, method: 'OTHER', idempotencyKey: key }), e => e.code === 'PAYMENT_TARGET_AMBIGUOUS');
     const rows = await db.query('SELECT id FROM payments WHERE store_id=$1 AND idempotency_key=$2', [store.id,key]);
     assert.equal(rows.rowCount,1); assert.equal(rows.rows[0].id,id);
+    await db.query('DELETE FROM payments WHERE id=$1', [id]);
   });
   it('pagamento com um único pedido permanece permitido', async () => {
     const result = await payments.createPayment(store.id, { orderId: order.id, amount: 1, method: 'OTHER' });
