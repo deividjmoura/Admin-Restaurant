@@ -95,7 +95,7 @@ export async function listPayments(storeId, { sessionId = null, orderId = null, 
  *   - ignora pedidos CANCELLED
  *   - desconta pagamentos já PAID
  *   - soma frete delivery quando alvo é orderId (delivery_orders.delivery_fee)
- * PENDING não desconta (anti-DoS financeiro).
+ * PENDING não abate due, mas reserva saldo para criação de novas cobranças.
  */
 export async function amountDue(storeId, { orderId = null, sessionId = null } = {}, { client = null } = {}) {
   assertSingleTarget({ orderId, sessionId });
@@ -157,6 +157,7 @@ export async function amountDue(storeId, { orderId = null, sessionId = null } = 
     paidTotal,
     pendingTotal,
     due: round2(Math.max(0, itemsTotal + deliveryFee - paidTotal)),
+    availableToInitiate: Math.max(0, toCents(itemsTotal) + toCents(deliveryFee) - toCents(paidTotal) - toCents(pendingTotal)) / 100,
   };
 }
 
@@ -357,9 +358,10 @@ export async function createPayment(storeId, input, { customer = null } = {}) {
       await assertPaymentTarget(storeId, { orderId, sessionId }, { client });
 
       const due = await amountDue(storeId, { orderId, sessionId }, { client });
-      if (Number(amount) > due.due + AMOUNT_TOLERANCE) {
-        throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Valor acima do total devido (R$ ${due.due.toFixed(2)}).`, {
+      if (toCents(amount) > toCents(due.availableToInitiate)) {
+        throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Valor acima do disponível para nova cobrança (R$ ${due.availableToInitiate.toFixed(2)}).`, {
           due: due.due,
+          availableToInitiate: due.availableToInitiate,
           requested: round2(amount),
         });
       }
@@ -682,9 +684,10 @@ export async function createSplitPayments(storeId, { orderId = null, sessionId =
 
     const before = await amountDue(storeId, { orderId, sessionId }, { client });
     const requestedTotal = sumMoney(normalized.map((item) => item.amount));
-    if (requestedTotal > before.due + AMOUNT_TOLERANCE) {
-      throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Soma dos pagamentos (R$ ${requestedTotal.toFixed(2)}) acima do devido (R$ ${before.due.toFixed(2)}).`, {
+    if (toCents(requestedTotal) > toCents(before.availableToInitiate)) {
+      throw new PaymentError('AMOUNT_EXCEEDS_DUE', `Soma dos pagamentos (R$ ${requestedTotal.toFixed(2)}) acima do disponível (R$ ${before.availableToInitiate.toFixed(2)}).`, {
         due: before.due,
+        availableToInitiate: before.availableToInitiate,
         requested: requestedTotal,
       });
     }

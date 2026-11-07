@@ -26,9 +26,16 @@ PENDING ou PAID no outro escopo da mesma comanda; não há rateio automático. I
 é uma restrição operacional e não corrige pagamentos legados. Pendentes podem
 bloquear troca de escopo e não devem ser apagados para contornar a regra.
 
-**Risco aberto:** múltiplos pendentes para o mesmo alvo podem ser confirmados
-além do valor devido; confirmações e webhooks de dados legados também precisam de
-revisão. Não implantar até resolver e testar conciliação do ciclo financeiro.
+**Reserva parcial:** PENDING não reduz o `due`, mas reduz o novo campo
+`availableToInitiate`, usado como limite para novas cobranças individuais e
+combinadas. Replays idênticos não criam nova reserva. A reserva não expira
+automaticamente: um pendente pode bloquear o fluxo e ser usado para negação de
+serviço. Não liberar saldo sem confirmação/reconciliação externa segura.
+
+**Risco aberto:** pendentes legados em excesso ainda podem ser confirmados além
+do valor devido; confirmações e webhooks não foram modificados. Cancelamentos de
+pedido, alterações de valor e SQL direto também exigem revisão. Não implantar até
+resolver abuso e testar conciliação do ciclo financeiro.
 Detalhes em `docs/COERENCIA-ALVOS-MESMA-LOJA.md`.
 
 ## Tabelas

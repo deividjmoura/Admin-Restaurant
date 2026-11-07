@@ -65,7 +65,7 @@ por sessão usando split `OTHER` com status PAID. O resumo da sessão ficou R$ 0
 mas `amountDue` por pedido permaneceu R$ 10 e aceitou novo pagamento PENDING de
 R$ 10 para o pedido. Não houve gateway real ou cobrança em produção. A regra de
 alvo único não impede essa sobreposição entre solicitações distintas. Pagamentos
-pendentes também não são descontados por desenho; confirmação de pendentes e
+pendentes não eram descontados na criação à época; confirmação de pendentes e
 webhooks, concorrência, pagamentos históricos, estornos e rateio exigem análise
 integral antes de se considerar o problema resolvido. Não contornar o risco com
 uma alteração isolada de query nem presumir que a suíte verde o elimina.
@@ -96,10 +96,10 @@ reconciliação antes de qualquer rollout. Os dados existentes não são alterad
 
 ### Limitações críticas — bloqueio de implantação mantido
 
-Esta proteção não torna o fluxo financeiro seguro por completo. Em experimento
-isolado, um pedido de R$ 10 aceitou **dois pagamentos PENDING de R$ 10**, e ambas
-as confirmações manuais passaram a PAID, totalizando R$ 20. O cálculo existente
-não reserva valores pendentes e a confirmação não revalida o saldo. Nenhum
+Esta proteção de escopos não torna o fluxo financeiro seguro por completo. Antes
+da reserva descrita abaixo, um experimento isolado mostrou que um pedido de
+R$ 10 aceitou **dois pagamentos PENDING de R$ 10** e ambas as confirmações
+passaram a PAID, totalizando R$ 20. A confirmação ainda não revalida saldo. Nenhum
 provedor real foi acionado; isso demonstra comportamento interno, não prova de
 cobrança ou dano em produção.
 
@@ -117,3 +117,28 @@ não todas as transições ou configurações de isolamento.
 **Não implantar até** projetar e verificar o ciclo completo de reservas,
 confirmações manuais, webhooks autenticados, idempotência, estornos e conciliação
 de pagamentos legados, com estratégia para estados externos já recebidos.
+
+
+## Reserva de pagamentos pendentes (2026-11-07)
+
+Na criação individual ou combinada, `availableToInitiate` limita novas reservas:
+`max(0, itens + frete - pagos - pendentes)`, calculado em centavos. `due`
+continua significando total não pago (não desconta pendentes); `pendingTotal`
+mostra os pendentes. Uma operação idempotente existente não cria nova reserva.
+A serialização anterior da sessão/pedido protege criações pela aplicação; valores
+históricos em excesso não são apagados e deixam disponibilidade zero. A reserva
+não é garantia sobre confirmações legadas ou estados externos.
+
+**Mudança incompatível e risco de disponibilidade:** antes era possível criar
+vários pendentes até o valor devido; agora o primeiro pode reservar tudo e impedir
+outros meios de pagamento. Não existe expiração/cancelamento seguro universal
+nem reconciliação automatizada. Uma pessoa autorizada ou abusiva pode bloquear
+novas tentativas; não contornar apagando pagamentos nem supondo que um PIX ou
+provider não possa confirmar depois. É necessário projetar autorização, limites,
+recuperação e verificação junto ao provedor antes do rollout.
+
+Bloqueio de implantação **mantido**: confirmações de pendentes antigos excessivos,
+webhooks, disputas, alterações/cancelamento de pedido, race com transições que não
+compartilham lock, dados legados e reconciliação externa não foram resolvidos.
+Também não há prova de integração financeira real. Não cancelar automaticamente
+uma reserva nem rejeitar evidência de recebimento real sem protocolo de conciliação.

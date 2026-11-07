@@ -217,10 +217,11 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
 
   it('metadata do cliente é rejeitada/ignorada (nunca vai para o banco)', async (t) => {
     if (skipWithoutDb(t)) return;
+    const order = await makeOrderWithAddons();
     const res = await post(storeA.slug, {
       amount: 5,
       method: 'CASH',
-      orderId: orderA.id,
+      orderId: order.id,
       metadata: { markPaid: true, providerPaymentId: 'hack', internal: 'x' },
     });
     assert.equal(res.statusCode, 400, res.body);
@@ -234,7 +235,7 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
         ...auth(storeA.slug),
       },
       // sem metadata: aceito
-      payload: { amount: 5, method: 'CASH', orderId: orderA.id },
+      payload: { amount: 5, method: 'CASH', orderId: order.id },
     });
     assert.equal(ok.statusCode, 201, ok.body);
     const paymentId = ok.json().payment.id;
@@ -248,10 +249,11 @@ describe('pagamentos públicos — ownership e valor devido (integration)', () =
 
   it('GET /api/payments/:id público não expõe metadata nem dados internos', async (t) => {
     if (skipWithoutDb(t)) return;
+    const order = await makeOrderWithAddons();
     const created = await post(storeA.slug, {
       amount: 5,
       method: 'CASH',
-      orderId: orderA.id,
+      orderId: order.id,
       idempotencyKey: `pub-${Date.now()}`,
     });
     assert.equal(created.statusCode, 201, created.body);

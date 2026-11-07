@@ -480,15 +480,16 @@ describe(
       );
       assert.equal(partial.statusCode, 201, partial.body);
 
-      // PENDING não reduz saldo (anti-DoS): ainda não dá para "reservar" o valor.
+      // PENDING não abate o devido, mas reserva R$ 10 para novas tentativas.
       const stillFull = await api(
         'POST',
         '/api/payments',
         checkout.token,
         {},
-        { orderId: checkout.orderId, amount: 25.01, method: 'CASH' }
+        { orderId: checkout.orderId, amount: 15.01, method: 'CASH' }
       );
       assert.equal(stillFull.statusCode, 409);
+      assert.equal(stillFull.json().error.details.availableToInitiate, 15);
 
       const owner = await makeUserWithRole(A.store.id, { role: 'OWNER' });
       allUsers.push(owner.user.id);
