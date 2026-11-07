@@ -801,10 +801,9 @@ describe('customer session authorization', { skip: !hasDatabase() }, () => {
     }
   });
   it('log serializers never expose QR or bearer credentials', async () => {
-    const logs = [];
-    const loggingApp = await buildApp({
-      logger: { level: 'info', stream: { write: (chunk) => logs.push(chunk) } },
-    });
+    const { createMemoryLogger } = await import('../../src/infrastructure/logger.js');
+    const memory = createMemoryLogger('info');
+    const loggingApp = await buildApp({ loggerInstance: memory.logger });
     try {
       const res = await loggingApp.inject({
         method: 'GET',
@@ -817,8 +816,8 @@ describe('customer session authorization', { skip: !hasDatabase() }, () => {
         url: `/api/orders/${order1.id}`,
         headers: first.headers,
       });
-      const log = logs.join('');
-      assert.ok(log.includes('[redacted]'));
+      const log = memory.raw();
+      assert.ok(log.includes('/api/tables/by-token/:token'), 'deve registrar apenas o padrão da rota');
       assert.ok(!log.includes(first.table.public_token));
       assert.ok(!log.includes(first.headers.authorization.slice(7)));
     } finally {

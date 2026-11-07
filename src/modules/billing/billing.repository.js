@@ -158,6 +158,46 @@ export async function setSubscriptionStatus(storeId, status, { metadata = {} } =
   return getSubscription(storeId);
 }
 
+/** Apply one authenticated event atomically. Never identify a tenant from the body. */
+export async function processBillingWebhook({ provider, externalEventId, providerSubscriptionId, bodyStoreId, status, payloadHash }) {
+  return withTransaction(async (client) => {
+    // Lock all matches: an ambiguous provider reference is unsafe, even if old
+    // data predates the reference index. Fail closed instead of choosing one.
+    const { rows } = await client.query(
+      `SELECT id, store_id FROM subscriptions
+       WHERE provider = $1 AND provider_subscription_id = $2
+       FOR UPDATE`,
+      [provider, providerSubscriptionId]
+    );
+    if (rows.length !== 1) throw new BillingError('SUBSCRIPTION_NOT_FOUND', 'Assinatura não encontrada ou referência ambígua.');
+    const subscription = rows[0];
+    if (bodyStoreId && String(bodyStoreId).toLowerCase() !== String(subscription.store_id).toLowerCase()) {
+      throw new BillingError('SUBSCRIPTION_MISMATCH', 'Loja não corresponde à assinatura.');
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO billing_webhook_events (provider, external_event_id, subscription_id, payload_sha256)
+       VALUES ($1, $2, $3, $4) ON CONFLICT (provider, external_event_id) DO NOTHING RETURNING external_event_id`,
+      [provider, externalEventId, subscription.id, payloadHash]
+    );
+    if (!inserted.rowCount) {
+      const existing = await client.query(
+        `SELECT subscription_id, payload_sha256 FROM billing_webhook_events WHERE provider = $1 AND external_event_id = $2`,
+        [provider, externalEventId]
+      );
+      if (existing.rows[0]?.subscription_id !== subscription.id || existing.rows[0]?.payload_sha256 !== payloadHash) {
+        throw new BillingError('EVENT_CONFLICT', 'ID de evento já usado com conteúdo diferente.');
+      }
+      return { duplicate: true, applied: false };
+    }
+    await client.query(
+      `UPDATE subscriptions SET status = $2, metadata = metadata || $3::jsonb, updated_at = now() WHERE id = $1`,
+      [subscription.id, status, JSON.stringify({ webhookType: status, provider })]
+    );
+    return { duplicate: false, applied: true, storeId: subscription.store_id, subscriptionId: subscription.id };
+  }, { operation: 'tx:billing_webhook' });
+}
+
 /**
  * Feature-gating: módulos habilitados pelo plano + status da assinatura.
  * Sem assinatura → trata como trial implícito do plano Start (onboarding futuro).

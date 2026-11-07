@@ -1,10 +1,12 @@
 import fp from 'fastify-plugin';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
+import { verifyHmac } from '../payments/webhook-auth.js';
 import {
   listPlans,
   getSubscription,
   upsertSubscription,
-  setSubscriptionStatus,
+  processBillingWebhook,
   resolveEntitlements,
   BillingError,
 } from './billing.repository.js';
@@ -112,48 +114,70 @@ async function billingRoutes(app) {
     }
   );
 
-  /** Webhook do provider de assinatura (público + secret opcional). */
-  app.post('/api/billing/webhooks/:provider', async (request, reply) => {
-    const provider = String(request.params.provider || '').toLowerCase();
-    const secret = process.env[`BILLING_WEBHOOK_SECRET_${provider.toUpperCase()}`];
-    if (secret) {
-      const hdr = request.headers['x-billing-signature'] || request.headers['x-signature'];
-      if (hdr !== secret) {
-        return sendError(
-          reply,
-          new AppError('WEBHOOK_SIGNATURE_INVALID', 'Assinatura inválida.', 401)
-        );
+  // The only defined webhook contract is the local mock. A real provider must
+  // implement its own authenticated adapter before it can be enabled here.
+  await app.register(async (scope) => {
+    scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, body, done) => {
+      try {
+        request.rawBody = body;
+        done(null, body.length ? JSON.parse(body.toString('utf8')) : {});
+      } catch (err) {
+        err.statusCode = 400;
+        done(err);
       }
-    }
+    });
 
-    const event = normalizeBillingWebhook(provider, request.body || {});
-    if (!event.storeId && !event.providerSubscriptionId) {
-      return sendError(
-        reply,
-        new AppError('WEBHOOK_INVALID', 'storeId ou subscription id obrigatório.', 400)
-      );
-    }
+    scope.post('/api/billing/webhooks/:provider', {
+      config: { rateLimit: { max: 300, timeWindow: '1 minute' } },
+    }, async (request, reply) => {
+      const provider = String(request.params.provider || '').toLowerCase();
+      const secret = provider === 'mock_billing' ? process.env.BILLING_WEBHOOK_SECRET_MOCK_BILLING : null;
+      if (!secret || !secret.trim()) {
+        return sendError(reply, new AppError('WEBHOOK_PROVIDER_UNKNOWN', 'Provider não habilitado.', 404));
+      }
+      const signature = request.headers['x-billing-signature'] || request.headers['x-signature'];
+      if (!verifyHmac(request.rawBody, signature, secret)) {
+        return sendError(reply, new AppError('WEBHOOK_SIGNATURE_INVALID', 'Assinatura inválida.', 401));
+      }
 
-    // Mock / mapeamento simples de status
-    const statusMap = {
-      'subscription.activated': 'active',
-      'subscription.past_due': 'past_due',
-      'subscription.cancelled': 'cancelled',
-      'subscription.suspended': 'suspended',
-      active: 'active',
-      past_due: 'past_due',
-      cancelled: 'cancelled',
-      suspended: 'suspended',
-    };
-    const nextStatus = statusMap[event.type] || statusMap[event.status];
-    if (nextStatus && event.storeId) {
-      await setSubscriptionStatus(event.storeId, nextStatus, {
-        metadata: { webhookType: event.type, provider },
-      });
-    }
+      const event = normalizeBillingWebhook(provider, request.body || {});
+      const validId = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 255;
+      if (!validId(event.externalEventId) || !validId(event.providerSubscriptionId) ||
+          (event.storeId != null && !validId(event.storeId))) {
+        return sendError(reply, new AppError('WEBHOOK_INVALID', 'ID do evento e referência da assinatura são obrigatórios.', 400));
+      }
+      const statusMap = {
+        'subscription.activated': 'active', 'subscription.past_due': 'past_due',
+        'subscription.cancelled': 'cancelled', 'subscription.suspended': 'suspended',
+        active: 'active', past_due: 'past_due', cancelled: 'cancelled', suspended: 'suspended',
+      };
+      // Only an explicitly supported event type can change state; no arbitrary
+      // body status fallback for unknown event types.
+      const nextStatus = Object.hasOwn(statusMap, event.type) ? statusMap[event.type] : null;
+      if (!nextStatus) return sendError(reply, new AppError('WEBHOOK_INVALID', 'Tipo de evento não suportado.', 400));
 
-    return { ok: true, applied: Boolean(nextStatus) };
+      try {
+        const result = await processBillingWebhook({
+          provider, externalEventId: event.externalEventId,
+          providerSubscriptionId: event.providerSubscriptionId, bodyStoreId: event.storeId,
+          status: nextStatus, payloadHash: createHash('sha256').update(request.rawBody).digest('hex'),
+        });
+        if (result.applied) await auditRequest(request, {
+          action: 'billing.webhook_applied', storeId: result.storeId,
+          resource: 'subscription', resourceId: result.subscriptionId,
+          metadata: { provider, eventType: event.type },
+        });
+        return { ok: true, applied: result.applied, duplicate: result.duplicate };
+      } catch (err) {
+        if (err instanceof BillingError) {
+          const code = err.code === 'SUBSCRIPTION_NOT_FOUND' ? 404 : 409;
+          return sendError(reply, new AppError(err.code, err.message, code));
+        }
+        throw err;
+      }
+    });
   });
+
 }
 
 export default fp(billingRoutes, {
